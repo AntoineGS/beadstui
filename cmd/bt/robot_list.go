@@ -48,12 +48,8 @@ var robotListCmd = &cobra.Command{
 			if err := bql.Validate(parsed); err != nil {
 				return fmt.Errorf("BQL validation error: %w", err)
 			}
-			issueMap := make(map[string]*model.Issue, len(baseIssues))
-			for i := range baseIssues {
-				issueMap[baseIssues[i].ID] = &baseIssues[i]
-			}
 			executor := bql.NewMemoryExecutor()
-			baseIssues = executor.Execute(parsed, baseIssues, bql.ExecuteOpts{IssueMap: issueMap})
+			baseIssues = executor.Execute(parsed, baseIssues, bql.ExecuteOpts{IssueMap: loadedIssueMap()})
 		}
 		issues := filterIssuesForList(baseIssues, statusFilter, priorityFilter, typeFilter, hasLabelFilter)
 

@@ -21,6 +21,20 @@ func timeNowUTCRFC3339() string {
 	return time.Now().UTC().Format(time.RFC3339)
 }
 
+// loadedIssueMap indexes every loaded issue (after --repo, before any robot
+// scoping) for BQL dependency lookups. blocked= and EXPAND resolve against
+// the whole loaded corpus, so --source/--label/--recipe narrow which issues
+// come back, never whether one counts as blocked (bt-5muh4, bt-qamol). The
+// TUI does the same: prefiltered issues, full m.data.issueMap.
+func loadedIssueMap() map[string]*model.Issue {
+	corpus := appCtx.issuesForSearch
+	issueMap := make(map[string]*model.Issue, len(corpus))
+	for i := range corpus {
+		issueMap[corpus[i].ID] = &corpus[i]
+	}
+	return issueMap
+}
+
 // filterBySource filters issues to those whose ID prefix or SourceRepo field
 // matches one of the comma-separated projects in sourceFilter. Unlike
 // filterByRepo (which does flexible prefix matching for the UI), this does

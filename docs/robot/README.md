@@ -556,7 +556,7 @@ bt robot list --global --status in_progress
 | `offset` | int | Offset that was applied (omitted when 0) |
 | `issues` | array | Returned issues (after offset + limit windowing) |
 
-**Note**: BQL syntax is documented in code; a dedicated reference is tracked in bt-01pk. Also accepts `--bql` global flag as a pre-filter on top of the local `--query`. When run outside a beads project (no local `.beads/`), the error message will suggest `--global` to query the global Dolt server.
+**Note**: BQL syntax is documented in [docs/bql.md](../bql.md). The common robot flags apply before `--query`: `--source`, `--bql` (a pre-filter), `--label`, `--recipe`; `--as-of` is refused like every robot subcommand. Scoping narrows which issues come back, not how `blocked` is computed: blockers resolve against every loaded issue, so `--source bt --query 'blocked = true'` still counts a bt issue blocked by another project's open issue (bt-qamol). When run outside a beads project (no local `.beads/`), the error message will suggest `--global` to query the global Dolt server.
 
 **Examples**:
 ```bash
