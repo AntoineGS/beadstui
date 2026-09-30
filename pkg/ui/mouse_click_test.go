@@ -711,7 +711,11 @@ func TestSinglePaneListRenderGeometry(t *testing.T) {
 	if !strings.Contains(lines[1], "Search:") {
 		t.Fatalf("line 1 should be the search row, got %q", lines[1])
 	}
-	if !strings.Contains(lines[2], "TYPE") {
+	// Keyed on TITLE rather than TYPE: this asserts row geometry (which line
+	// the header occupies), and TITLE is the one label stable across the column
+	// vocabulary, which changed when type/pri/status fused into a chip
+	// (bt-evuf.2).
+	if !strings.Contains(lines[2], "TITLE") {
 		t.Fatalf("line 2 should be the column header, got %q", lines[2])
 	}
 	if !strings.Contains(lines[chrome], "cc0") {
