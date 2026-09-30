@@ -1133,6 +1133,13 @@ func (fd FooterData) Render() string {
 	lensLvl := lensFull
 	hintsCompact := false
 
+	// Left indent so the footer's leftmost content (the lens scope) sits just
+	// inside where the body's left border wall lands rather than flush under the
+	// corner, now that every ViewList surface is a bordered panel (bt-r5v9k).
+	// Counted in the width math below so the right zone stays pinned to the edge:
+	// the filler absorbs the indent, the total/hints/bell badges do not shift.
+	const footerLeftPad = 1
+
 	rightWidth := func() int {
 		w := lipgloss.Width(renderStaticHints(hintsCompact)) + bellWidth
 		if alertsSection != "" {
@@ -1141,7 +1148,7 @@ func (fd FooterData) Render() string {
 		return w
 	}
 	contentWidth := func() int {
-		return lipgloss.Width(renderLens(fd, lensLvl)) +
+		return footerLeftPad + lipgloss.Width(renderLens(fd, lensLvl)) +
 			lipgloss.Width(statsSection) + lipgloss.Width(countBadge) +
 			optionalWidth() + rightWidth()
 	}
@@ -1177,8 +1184,9 @@ func (fd FooterData) Render() string {
 	hintsSection := renderStaticHints(hintsCompact)
 
 	// nonHint sums everything except the ?/; slot; the anomaly badge and bell
-	// are reserved here so nothing can squeeze them out.
-	nonHint := lipgloss.Width(lensSection) + lipgloss.Width(statsSection) +
+	// are reserved here so nothing can squeeze them out. The left indent counts
+	// too so the filler shrinks by it and the right zone stays edge-pinned.
+	nonHint := footerLeftPad + lipgloss.Width(lensSection) + lipgloss.Width(statsSection) +
 		lipgloss.Width(countBadge) + optionalWidth() +
 		lipgloss.Width(alertsSection) + bellWidth
 
@@ -1206,6 +1214,9 @@ func (fd FooterData) Render() string {
 			parts = append(parts, s)
 		}
 	}
+	// Leading indent (see footerLeftPad): always present so the left content
+	// clears the border wall even when the lens degrades to empty.
+	parts = append(parts, strings.Repeat(" ", footerLeftPad))
 	addIf(lensSection)
 	addIf(statsSection)
 	addIf(optional["phase2Section"].content)
