@@ -216,9 +216,10 @@ func evalIn(e *InExpr, issue model.Issue) bool {
 		return e.Not
 	}
 
-	// String comparison for other fields
+	// String comparison for other fields, case-insensitive like = (the
+	// validator lower-cases enum values, so "type in (Decision)" must match).
 	for _, v := range e.Values {
-		if strVal == v.String {
+		if strings.EqualFold(strVal, v.String) {
 			return !e.Not
 		}
 	}

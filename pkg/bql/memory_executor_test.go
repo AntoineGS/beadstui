@@ -198,6 +198,32 @@ func TestExecute_NotInExpression(t *testing.T) {
 	}
 }
 
+// TestExecute_InIsCaseInsensitive covers bt-h5jz.1: IN matches like =, so a
+// value the validator accepts case-insensitively also filters.
+func TestExecute_InIsCaseInsensitive(t *testing.T) {
+	result := exec(t, "type in (Bug, FEATURE)")
+	if len(result) != 2 {
+		t.Fatalf("got %d results, want 2 (bt-001, bt-002)", len(result))
+	}
+}
+
+// TestExecute_DecisionType covers bt-h5jz.1: a bd v1.3.0 built-in type
+// beyond the fork's original five validates and filters end to end.
+func TestExecute_DecisionType(t *testing.T) {
+	issues := append([]model.Issue{{ID: "bt-dec", Title: "Decision", Status: model.StatusOpen, IssueType: "decision"}}, testIssues...)
+	query, err := Parse("type = decision")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if err := Validate(query); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	result := NewMemoryExecutor().Execute(query, issues, testOpts())
+	if len(result) != 1 || result[0].ID != "bt-dec" {
+		t.Fatalf("got %v, want only bt-dec", result)
+	}
+}
+
 func TestExecute_LabelIn(t *testing.T) {
 	result := exec(t, "label in (urgent, search)")
 	if len(result) != 2 {

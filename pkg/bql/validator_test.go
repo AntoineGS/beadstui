@@ -1,6 +1,9 @@
 package bql
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestValidate_ValidQueries(t *testing.T) {
 	queries := []string{
@@ -68,6 +71,43 @@ func TestValidate_InvalidTypeValue(t *testing.T) {
 	}
 	if err := Validate(query); err == nil {
 		t.Error("expected error for invalid type value")
+	}
+}
+
+// TestValidate_ValidTypeValues covers bt-h5jz.1: every bd v1.3.0 built-in
+// type validates (type=decision used to exit 1 on the live fleet), matched
+// case-insensitively like status.
+func TestValidate_ValidTypeValues(t *testing.T) {
+	for _, typ := range []string{
+		"bug", "feature", "task", "epic", "chore", "decision",
+		"message", "molecule", "gate", "spike", "story", "milestone", "event",
+		"Decision",
+	} {
+		t.Run(typ, func(t *testing.T) {
+			query, err := Parse("type = " + typ)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if err := Validate(query); err != nil {
+				t.Errorf("Validate(type = %s): %v", typ, err)
+			}
+		})
+	}
+}
+
+func TestValidate_InvalidTypeValueListsBuiltins(t *testing.T) {
+	query, err := Parse("type = nonexistent")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	err = Validate(query)
+	if err == nil {
+		t.Fatal("expected error for invalid type value")
+	}
+	for _, want := range []string{"decision", "spike", "milestone", "event"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q should list built-in type %q", err.Error(), want)
+		}
 	}
 }
 
