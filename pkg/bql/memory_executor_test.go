@@ -1,9 +1,11 @@
 package bql
 
 import (
+	"sort"
 	"testing"
 	"time"
 
+	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
 
@@ -414,4 +416,129 @@ func ids(issues []model.Issue) []string {
 		out[i] = issue.ID
 	}
 	return out
+}
+
+// blockedFixture covers every branch of bt's blocked predicate (bt-5muh4):
+//
+//	blocker (open)      <-blocks-  epic (open)
+//	epic                <-parent-  story (open)      propagated
+//	story               <-parent-  subtask (open)    propagated, depth 2
+//	epic                <-parent-  done-child (closed): closed never blocked
+//	blocker             <-blocks-  closed-dependent (closed): closed never blocked
+//	gone (absent)       <-blocks-  orphan (open): missing target never blocks
+//	finished (closed)   <-blocks-  unblocked (open): closed blocker never blocks
+//	cycle-a <-parent-> cycle-b, cycle-a <-blocks- blocker: cycle terminates
+//	upstream-x (other project, open) <-blocks- xproj (open): cross-prefix counts
+func blockedFixture() []model.Issue {
+	dep := func(target string, typ model.DependencyType) *model.Dependency {
+		return &model.Dependency{DependsOnID: target, Type: typ}
+	}
+	return []model.Issue{
+		{ID: "bt-blocker", Status: model.StatusOpen},
+		{ID: "bt-epic", Status: model.StatusOpen, Dependencies: []*model.Dependency{dep("bt-blocker", model.DepBlocks)}},
+		{ID: "bt-story", Status: model.StatusOpen, Dependencies: []*model.Dependency{dep("bt-epic", model.DepParentChild)}},
+		{ID: "bt-subtask", Status: model.StatusInProgress, Dependencies: []*model.Dependency{dep("bt-story", model.DepParentChild)}},
+		{ID: "bt-done-child", Status: model.StatusClosed, Dependencies: []*model.Dependency{dep("bt-epic", model.DepParentChild)}},
+		{ID: "bt-closed-dependent", Status: model.StatusClosed, Dependencies: []*model.Dependency{dep("bt-blocker", model.DepBlocks)}},
+		{ID: "bt-orphan", Status: model.StatusOpen, Dependencies: []*model.Dependency{dep("bt-gone", model.DepBlocks)}},
+		{ID: "bt-finished", Status: model.StatusClosed},
+		{ID: "bt-unblocked", Status: model.StatusOpen, Dependencies: []*model.Dependency{dep("bt-finished", model.DepBlocks)}},
+		{ID: "bt-cycle-a", Status: model.StatusOpen, Dependencies: []*model.Dependency{dep("bt-cycle-b", model.DepParentChild), dep("bt-blocker", model.DepBlocks)}},
+		{ID: "bt-cycle-b", Status: model.StatusOpen, Dependencies: []*model.Dependency{dep("bt-cycle-a", model.DepParentChild)}},
+		{ID: "bd-upstream-x", Status: model.StatusOpen},
+		{ID: "bt-xproj", Status: model.StatusOpen, Dependencies: []*model.Dependency{dep("bd-upstream-x", model.DepBlocks)}},
+		{ID: "bt-related", Status: model.StatusOpen, Dependencies: []*model.Dependency{dep("bt-blocker", model.DepRelated)}},
+	}
+}
+
+var wantBlockedFixture = []string{"bt-cycle-a", "bt-cycle-b", "bt-epic", "bt-story", "bt-subtask", "bt-xproj"}
+
+func issueMapOf(issues []model.Issue) map[string]*model.Issue {
+	m := make(map[string]*model.Issue, len(issues))
+	for i := range issues {
+		m[issues[i].ID] = &issues[i]
+	}
+	return m
+}
+
+func runBlocked(t *testing.T, issues, corpus []model.Issue) []string {
+	t.Helper()
+	query, err := Parse("blocked = true")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	got := ids(NewMemoryExecutor().Execute(query, issues, ExecuteOpts{IssueMap: issueMapOf(corpus)}))
+	sort.Strings(got)
+	return got
+}
+
+func TestBlocked_Semantics(t *testing.T) {
+	issues := blockedFixture()
+	if got := runBlocked(t, issues, issues); !equalStrings(got, wantBlockedFixture) {
+		t.Fatalf("blocked = true: got %v, want %v", got, wantBlockedFixture)
+	}
+}
+
+// TestBlocked_ScopedInputFullCorpus pins the robot/TUI contract: executing over
+// a scoped subset with the full corpus as IssueMap gives each issue the same
+// answer it gets unscoped, including blockers outside the subset.
+func TestBlocked_ScopedInputFullCorpus(t *testing.T) {
+	corpus := blockedFixture()
+	var btOnly []model.Issue
+	for _, issue := range corpus {
+		if issue.ID != "bd-upstream-x" {
+			btOnly = append(btOnly, issue)
+		}
+	}
+	if got := runBlocked(t, btOnly, corpus); !equalStrings(got, wantBlockedFixture) {
+		t.Fatalf("scoped blocked = true: got %v, want %v", got, wantBlockedFixture)
+	}
+}
+
+// TestBlocked_IssueOutsideMap covers an evaluated issue the IssueMap lacks: it
+// is judged from its own dependencies, including a blocked parent.
+func TestBlocked_IssueOutsideMap(t *testing.T) {
+	outsiders := []model.Issue{
+		{ID: "bt-new-child", Status: model.StatusOpen, Dependencies: []*model.Dependency{{DependsOnID: "bt-epic", Type: model.DepParentChild}}},
+		{ID: "bt-new-free", Status: model.StatusOpen, Dependencies: []*model.Dependency{{DependsOnID: "bt-finished", Type: model.DepBlocks}}},
+	}
+	if got := runBlocked(t, outsiders, blockedFixture()); !equalStrings(got, []string{"bt-new-child"}) {
+		t.Fatalf("got %v, want [bt-new-child]", got)
+	}
+}
+
+// TestBlocked_ParityWithAnalyzer keeps BQL's blocked predicate and
+// analysis.GetActionableIssues (triage, footer triad) from drifting: over the
+// same corpus, blocked = true must be exactly the non-closed issues the
+// analyzer does not call actionable (bt-5muh4).
+func TestBlocked_ParityWithAnalyzer(t *testing.T) {
+	issues := blockedFixture()
+
+	actionable := make(map[string]bool)
+	for _, issue := range analysis.NewAnalyzer(issues).GetActionableIssues() {
+		actionable[issue.ID] = true
+	}
+	var want []string
+	for _, issue := range issues {
+		if !isClosedLike(issue.Status) && !actionable[issue.ID] {
+			want = append(want, issue.ID)
+		}
+	}
+	sort.Strings(want)
+
+	if got := runBlocked(t, issues, issues); !equalStrings(got, want) {
+		t.Fatalf("BQL blocked = true %v != analyzer non-actionable %v", got, want)
+	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

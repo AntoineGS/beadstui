@@ -19,6 +19,7 @@ func NewMemoryExecutor() *MemoryExecutor {
 
 // Execute filters, sorts, and optionally expands the issue list.
 func (e *MemoryExecutor) Execute(query *Query, issues []model.Issue, opts ExecuteOpts) []model.Issue {
+	opts = prepareOpts(query, opts)
 	var result []model.Issue
 
 	// Filter
@@ -46,7 +47,31 @@ func (e *MemoryExecutor) Matches(query *Query, issue model.Issue, opts ExecuteOp
 	if query.Filter == nil {
 		return true
 	}
-	return evalExpr(query.Filter, issue, opts, 0)
+	return evalExpr(query.Filter, issue, prepareOpts(query, opts), 0)
+}
+
+// prepareOpts computes the blocked set once per call, and only when the
+// filter asks about it, so queries that never mention blocked stay O(n).
+func prepareOpts(query *Query, opts ExecuteOpts) ExecuteOpts {
+	if opts.blocked == nil && referencesField(query.Filter, "blocked") {
+		opts.blocked = blockedIDs(opts.IssueMap)
+	}
+	return opts
+}
+
+// referencesField reports whether expr compares or tests membership on field.
+func referencesField(expr Expr, field string) bool {
+	switch e := expr.(type) {
+	case *BinaryExpr:
+		return referencesField(e.Left, field) || referencesField(e.Right, field)
+	case *NotExpr:
+		return referencesField(e.Expr, field)
+	case *CompareExpr:
+		return e.Field == field
+	case *InExpr:
+		return e.Field == field
+	}
+	return false
 }
 
 // maxEvalDepth is the maximum recursion depth for expression evaluation.
@@ -90,7 +115,7 @@ func evalCompare(e *CompareExpr, issue model.Issue, opts ExecuteOpts) bool {
 	// Handle computed fields
 	switch e.Field {
 	case "blocked":
-		isBlocked := isIssueBlocked(issue, opts.IssueMap)
+		isBlocked := isIssueBlocked(issue, opts)
 		return isBlocked == e.Value.Bool
 	}
 
@@ -262,19 +287,93 @@ func fieldValue(issue model.Issue, field string) any {
 	}
 }
 
-// isIssueBlocked checks if an issue has open blocking dependencies.
-func isIssueBlocked(issue model.Issue, issueMap map[string]*model.Issue) bool {
+// maxParentBlockDepth caps parent-child blocked propagation, matching
+// GetActionableIssues in pkg/analysis/graph.go.
+const maxParentBlockDepth = 50
+
+// isIssueBlocked reports whether issue is blocked under bt's one blocked
+// predicate (decision bt-5muh4). An issue missing from opts.IssueMap is judged
+// from its own dependencies against the map.
+func isIssueBlocked(issue model.Issue, opts ExecuteOpts) bool {
+	if _, inMap := opts.IssueMap[issue.ID]; inMap {
+		return opts.blocked[issue.ID]
+	}
+	if isClosedLike(issue.Status) {
+		return false
+	}
+	if hasOpenBlocker(issue, opts.IssueMap) {
+		return true
+	}
+	for _, dep := range issue.Dependencies {
+		if dep != nil && dep.Type == model.DepParentChild && opts.blocked[dep.DependsOnID] {
+			return true
+		}
+	}
+	return false
+}
+
+// blockedIDs returns the IDs of blocked issues in issueMap, using the same
+// predicate as GetActionableIssues in pkg/analysis/graph.go (a parity test
+// keeps the two in step): an issue is blocked iff it is not closed/tombstone
+// and either has a blocking dependency on a non-closed issue present in
+// issueMap, or has a parent (via parent-child) that is itself blocked,
+// transitively. Dependency targets absent from issueMap never block, so
+// cross-project blockers count exactly when their project is loaded.
+func blockedIDs(issueMap map[string]*model.Issue) map[string]bool {
+	blocked := make(map[string]bool)
+	childrenOf := make(map[string][]string)
+	var frontier []string
+	for id, issue := range issueMap {
+		if issue == nil {
+			continue
+		}
+		for _, dep := range issue.Dependencies {
+			if dep == nil || dep.Type != model.DepParentChild {
+				continue
+			}
+			if _, exists := issueMap[dep.DependsOnID]; exists {
+				childrenOf[dep.DependsOnID] = append(childrenOf[dep.DependsOnID], id)
+			}
+		}
+		if !isClosedLike(issue.Status) && hasOpenBlocker(*issue, issueMap) {
+			blocked[id] = true
+			frontier = append(frontier, id)
+		}
+	}
+
+	for depth := 0; depth < maxParentBlockDepth && len(frontier) > 0; depth++ {
+		var next []string
+		for _, parentID := range frontier {
+			for _, childID := range childrenOf[parentID] {
+				if blocked[childID] || isClosedLike(issueMap[childID].Status) {
+					continue
+				}
+				blocked[childID] = true
+				next = append(next, childID)
+			}
+		}
+		frontier = next
+	}
+	return blocked
+}
+
+// hasOpenBlocker reports whether issue has a blocking dependency on a
+// non-closed issue present in issueMap.
+func hasOpenBlocker(issue model.Issue, issueMap map[string]*model.Issue) bool {
 	for _, dep := range issue.Dependencies {
 		if dep == nil || !dep.Type.IsBlocking() {
 			continue
 		}
-		if blocker, exists := issueMap[dep.DependsOnID]; exists && blocker != nil {
-			if !blocker.Status.IsClosed() && !blocker.Status.IsTombstone() {
-				return true
-			}
+		if blocker, exists := issueMap[dep.DependsOnID]; exists && blocker != nil && !isClosedLike(blocker.Status) {
+			return true
 		}
 	}
 	return false
+}
+
+// isClosedLike matches pkg/analysis's isClosedLikeStatus.
+func isClosedLike(status model.Status) bool {
+	return status.IsClosed() || status.IsTombstone()
 }
 
 // compareInts compares two ints using the given operator.
