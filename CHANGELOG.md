@@ -6,6 +6,31 @@ For architectural decisions, see `docs/adr/`. For issue tracking, use `bd list`.
 
 ---
 
+## 2026-09-30 — Post-beads-1.3.0 review: history scope label, BQL types, one blocked predicate, robot bql scoping
+
+**Acted on the read-only bt review from the beads fleet's crossing to bd v1.3.0 / schema 66 (bt-5ehhg; kickoff and review by pc:beads:684d2b74, report `~/.files/atlas/plans/2026-09-30-beads-v1.3.0-post-crossing-review/rev-bt.md`). The review found no breakages, only silent degradations. This session (pc:bt:70c94799) fixed the four that were code-sized, recorded one decision, and filed design beads for the rest. Every fix was verified read-only against the live PC fleet on :3308.**
+
+### Ships
+
+- **feat(correlation): History events labelled local to this machine (bt-nb9h)**. Beads migration 0062 made `events` dolt_ignored, so events written on another machine after the crossing never replicate. When events come from the Dolt extractor, `bt robot history` now carries `repo_status.events_scope: "local_machine"` and the TUI badge reads "N events (this machine)". JSONL-sourced history is unlabelled. Paired with sym-nb9h.
+- **fix(bql): accept bd v1.3.0 built-in issue types (bt-h5jz.1)**. `type=decision` used to exit 1, which left ~290 fleet issues unfilterable by type. The validator now mirrors bd's `AllIssueTypes` + `event`, matches case-insensitively like status, and builds its error hint from the same list. `in (...)` now compares case-insensitively, like `=`.
+- **fix(bql): `blocked=` uses the triage predicate (bt-qtb7f, decision bt-5muh4)**. BQL used to count closed issues and skip parent-child propagation, so it disagreed with both `bt robot triage` and bd (152 incl. 14 closed vs bd's 137). It now shares `GetActionableIssues`' predicate, and a parity test locks the two together. Live: `blocked=true` 151 = triage `blocked_count` 151, and every bd-blocked issue is included. The 14 bt-only issues fall into two classes, both kept on purpose: cross-prefix blockers, and dotted-ID children of a blocked epic (the bt-cuyiz implicit hierarchy).
+- **fix(cli): robot bql honors `--source` and the other robot flags (bt-qamol)**. It used to bypass `robotPreRun`: `--source bt` returned 138 fleet-wide rows under `project_filter: "bt"`, and `--bql`/`--label`/`--recipe`/`--as-of` were ignored. BQL dependency lookups now resolve against the full loaded set (`loadedIssueMap`), so scoping narrows results without changing blocked answers. Live: `--source bt` gives 33, all bt-*.
+- **fix(bql): dead SQLBuilder blocked subquery targets schema v50+ (bt-lbdib)**. It now uses a COALESCE dependency target instead of the removed `depends_on_id`, and documents its remaining parent-child gap. SQLBuilder still has zero callers.
+
+### Bead bookkeeping
+
+- Closed: **bt-nb9h**, **bt-h5jz.1**, **bt-qtb7f**, **bt-qamol**, **bt-lbdib** (shipped above); **bt-idg9t** (HOLD lifted, crossing done); **bt-k8u9t** (superseded). **bt-jov1** and **bt-wjzk** were superseded into **bt-aj3l.2**, whose notes now carry their requirements (plus a new class: dolt_ignore plane changes).
+- Filed: **bt-5muh4** (decision: one blocked predicate), **bt-9idgu** (design: retire the always-NULL `created_by_session`/`claimed_by_session`, source provenance from `provenance_events` 0063), **bt-96wpk** (robot search ignores `--source`, same bypass class), **bt-2716b** (the TUI `ready` filter's own predicate disagrees with the footer triad).
+- Commented with the v1.3.0 input: **bt-z0hu6** (events-first refresh cannot see pulled cross-machine changes after 0062), **bt-rdapi**, **bt-94a7**.
+
+### Notes
+
+- `pkg/bql/sql.go` is entirely dead; deleting it needs sms's go-ahead (AGENTS.md rule 1).
+- The gated integration tests (claim write, embedded snapshot) were not run at bd 1.3.0. They spawn the real bd, which is too close to real DBs; the work is carried to bt-aj3l.2.
+
+---
+
 ## 2026-07-20 — Merge wave: BackgroundWorker race, label robustness, footer policy, e2e parallelization (PRs #44–#48)
 
 **Wrap of the interrupted 2026-07-19 autonomous PM session (pc:bt:f50ec17c): four adversarially-reviewed draft PRs reviewed, merged, and their beads closed; the parked e2e-parallelization diff verified and re-shipped; small housekeeping and follow-ups filed. All four feature PRs merged on green CI; `go build`/`go vet`/`go install` clean and affected-package tests green on merged main.**
