@@ -165,7 +165,19 @@ type RepoStatus struct {
 	// produce a false positive on bt's own repo (deletion commit 90d8432d).
 	// See bt-ydjw phase 1 notes for the empirical verification.
 	JSONLTracked bool `json:"jsonl_tracked"`
+	// EventsScope names how far the report's lifecycle events reach.
+	// EventsScopeLocalMachine when they come from the Dolt events tables;
+	// empty when they come from JSONL git history (replicated through git)
+	// or when no events source was read.
+	EventsScope string `json:"events_scope,omitempty"`
 }
+
+// EventsScopeLocalMachine marks events read from the Dolt `events` /
+// `wisp_events` tables. Beads migration 0062 (bd v1.3.0) put `events` on the
+// dolt_ignored plane: rows stay durable locally but no longer replicate, so a
+// write made on another machine after the crossing never shows up here
+// (bt-nb9h). Pre-crossing history that already replicated stays visible.
+const EventsScopeLocalMachine = "local_machine"
 
 // HistoryReport is the top-level output structure for --robot-history
 type HistoryReport struct {

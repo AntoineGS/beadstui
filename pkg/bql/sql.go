@@ -235,16 +235,26 @@ func (b *SQLBuilder) dateToSQL(dateStr string) string {
 	}
 }
 
-// doltBlockedSubquery finds blocked issues via inline SQL (bypasses views).
+// doltBlockedSubquery finds directly blocked issues via inline SQL (bypasses
+// views). It targets beads schema v50+, where dependencies.depends_on_id was
+// split into depends_on_issue_id / depends_on_external / depends_on_wisp_id
+// (bt-lbdib); the COALESCE mirrors dependsOnTargetExpr in
+// internal/datasource/global_dolt.go. Status tests match the in-memory
+// predicate (anything not closed/tombstone counts as open).
+//
+// Not yet equivalent to BQL's blocked field: bt's predicate (decision
+// bt-5muh4, pkg/bql/memory_executor.go blockedIDs) also propagates blocked
+// state from a parent to its children, transitively. Add that (a recursive
+// CTE over parent-child edges) before wiring a DoltExecutor to this builder.
 const doltBlockedSubquery = `SELECT bi.id FROM issues bi
-WHERE bi.status IN ('open', 'in_progress', 'blocked', 'deferred', 'hooked')
+WHERE bi.status NOT IN ('closed', 'tombstone')
 AND EXISTS (
   SELECT 1 FROM dependencies d
-  WHERE d.issue_id = bi.id AND d.type = 'blocks'
+  WHERE d.issue_id = bi.id AND d.type IN ('blocks', '')
   AND EXISTS (
     SELECT 1 FROM issues blocker
-    WHERE blocker.id = d.depends_on_id
-    AND blocker.status IN ('open', 'in_progress', 'blocked', 'deferred', 'hooked')
+    WHERE blocker.id = COALESCE(d.depends_on_issue_id, d.depends_on_external)
+    AND blocker.status NOT IN ('closed', 'tombstone')
   )
 )`
 

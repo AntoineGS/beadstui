@@ -581,6 +581,25 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Settings screen (bt-54c3). This early return is what makes esc safe as
+	// the open key: while the screen is up, esc lands here and cancels, so the
+	// global "back / cancel" binding never sees it.
+	if m.activeModal == ModalSettings {
+		if msg.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+		m = m.handleSettingsModalKeys(msg)
+		return m, nil
+	}
+
+	if m.activeModal == ModalSettingsMenu {
+		if msg.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+		m = m.handleSettingsMenuKeys(msg)
+		return m, nil
+	}
+
 	// Handle quit confirmation first
 	if m.activeModal == ModalQuitConfirm {
 		switch msg.String() {
@@ -1081,14 +1100,23 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				m.focused = focusList
 				return m, nil
 			}
-			// At main list - first ESC clears filters, second shows quit confirm
+			// At main list - first ESC clears filters, second opens settings
 			if m.hasActiveFilters() {
 				m.clearAllFilters()
 				return m, nil
 			}
-			// No filters active - show quit confirmation
-			m.openModal(ModalQuitConfirm)
-			m.focused = focusQuitConfirm
+			// Nothing left to back out of, so esc has reached its base state.
+			// btop opens its menu here, which is the behaviour asked for
+			// (bt-54c3, and the bt-2aa49 amendment that funds this surface).
+			//
+			// The old esc-to-quit-confirm is not lost, it moves one level in:
+			// QUIT is an entry on this menu, exactly as in btop. `q` still
+			// quits directly without passing through here at all.
+			m.openModal(ModalSettingsMenu)
+			m.settingsMenu.Reset()
+			m.settingsMenu.SetTheme(m.theme)
+			m.settingsMenu.SetSize(m.width, m.height-1)
+			m.focused = focusSettingsMenu
 			return m, nil
 
 		case key.Matches(msg, m.keys.Global.Board):
@@ -1502,6 +1530,10 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			// BQL modal already handled in overlay dispatch above; no-op here
 			return m, nil
 
+		case focusSettings:
+			m = m.handleSettingsModalKeys(msg)
+		case focusSettingsMenu:
+			m = m.handleSettingsMenuKeys(msg)
 		case focusRecipePicker:
 			m = m.handleRecipePickerKeys(msg)
 
@@ -1651,21 +1683,15 @@ func (m Model) splitViewListChromeHeight() int {
 }
 
 // singlePaneListChromeHeight returns the Y coordinate of the first list item in
-// the single-pane list layout (renderListWithHeader, bt-bxu6u). Chrome above
-// the first item, top to bottom:
-//  1. renderSearchRow (always 1 row — bt-fxbl fixed-height across FilterStates;
-//     measured via lipgloss.Height for defense against future wrapping, and fed
-//     the same bodyWidth()-2 width renderListWithHeader renders it at).
-//  2. The column header strip ("TYPE PRI STATUS…"), clipped to width in
-//     renderListWithHeader so it never wraps — always 1 row.
-//
-// Unlike splitViewListChromeHeight there is NO panel top border: single-pane
-// renderListWithHeader joins the parts directly, without a titled panel frame.
+// the width-driven single-pane list layout (renderListWithHeader, bt-bxu6u).
+// Since bt-r5v9k the single-pane list renders through the same bordered issues
+// panel (renderIssuesPanel) as the split view and the on-demand "2" fullscreen,
+// so its chrome geometry is now identical to splitViewListChromeHeight: a panel
+// top border, then the fixed-height search row (bt-fxbl), then the column
+// header strip. It previously had NO panel top border and measured the search
+// row at bodyWidth()-2; both changed when the border landed.
 func (m Model) singlePaneListChromeHeight() int {
-	const columnHeader = 1
-	offset := lipgloss.Height(m.renderSearchRow(m.bodyWidth() - 2))
-	offset += columnHeader
-	return offset
+	return m.splitViewListChromeHeight()
 }
 
 // handleMouseClick processes mouse button press events. Scoped to:
@@ -1761,10 +1787,11 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (Model, tea.Cmd) {
 		if mouse.X >= m.bodyWidth() {
 			return m, nil
 		}
-		// Single-pane chrome has no panel top border, so the search row sits at
-		// Y=0 (vs Y=1 in split view) and the first list item below the column
-		// header (singlePaneListChromeHeight).
-		const singlePaneSearchRowY = 0
+		// Single-pane now renders a panel top border like split view (bt-r5v9k),
+		// so the search row sits at Y=1 (was Y=0 in the old borderless layout)
+		// and the first list item below the column header
+		// (singlePaneListChromeHeight).
+		const singlePaneSearchRowY = 1
 		return m.clickListPane(mouse, singlePaneSearchRowY, m.singlePaneListChromeHeight())
 	}
 
@@ -2148,7 +2175,14 @@ func (m Model) handleMouseWheel(msg tea.MouseWheelMsg) (Model, tea.Cmd) {
 // refreshFullscreenLayout (on-demand toggle, model_modes.go) so the two
 // entry points can never disagree about dimensions.
 func (m *Model) applyListDetailSizing(bodyW, bodyHeight int) {
-	if m.fullscreen != fullscreenNone {
+	// Fullscreen panes (bt-530vn) AND the width-driven single-pane layout both
+	// fill the full body inside one bordered panel (renderIssuesPanel /
+	// renderDetailsPanel), so both reserve the panel's 4-cell width chrome
+	// (2 borders + 2 padding) and its 2 border rows on height. Unified since
+	// bt-r5v9k gave the single-pane list and detail the same rounded border as
+	// the split and fullscreen surfaces — previously the single-pane branch
+	// sized m.list to the full bodyW with no border reserve.
+	if m.fullscreen != fullscreenNone || !m.isSplitView {
 		innerWidth := bodyW - 4
 		if innerWidth < 10 {
 			innerWidth = 10
@@ -2169,27 +2203,19 @@ func (m *Model) applyListDetailSizing(bodyW, bodyHeight int) {
 		return
 	}
 
-	if m.isSplitView {
-		availWidth := bodyW - 8
-		if availWidth < 10 {
-			availWidth = 10
-		}
-		listInnerWidth := int(float64(availWidth) * m.splitPaneRatio)
-		detailInnerWidth := availWidth - listInnerWidth
-		listHeight := bodyHeight - 4
-		if listHeight < 3 {
-			listHeight = 3
-		}
-		m.list.SetSize(listInnerWidth, listHeight)
-		m.viewport = viewport.New(viewport.WithWidth(detailInnerWidth), viewport.WithHeight(bodyHeight-2))
-	} else {
-		listHeight := bodyHeight - 2
-		if listHeight < 3 {
-			listHeight = 3
-		}
-		m.list.SetSize(bodyW, listHeight)
-		m.viewport = viewport.New(viewport.WithWidth(bodyW), viewport.WithHeight(bodyHeight-1))
+	// Split view: two bordered panels side by side.
+	availWidth := bodyW - 8
+	if availWidth < 10 {
+		availWidth = 10
 	}
+	listInnerWidth := int(float64(availWidth) * m.splitPaneRatio)
+	detailInnerWidth := availWidth - listInnerWidth
+	listHeight := bodyHeight - 4
+	if listHeight < 3 {
+		listHeight = 3
+	}
+	m.list.SetSize(listInnerWidth, listHeight)
+	m.viewport = viewport.New(viewport.WithWidth(detailInnerWidth), viewport.WithHeight(bodyHeight-2))
 }
 
 // handleWindowSize processes terminal resize events using a two-phase debounce
@@ -2278,7 +2304,10 @@ func (m Model) applyWindowSizeHeavy() Model {
 		detailInnerWidth := availWidth - listInnerWidth
 		m.renderer.SetWidthWithTheme(detailInnerWidth, m.theme)
 	default:
-		m.renderer.SetWidthWithTheme(bodyW, m.theme)
+		// Width-driven single-pane detail is now the bordered details panel
+		// (bt-r5v9k), so its viewport is bodyW-4, not the full bodyW. Render the
+		// markdown to the viewport's actual inner width or it overruns the frame.
+		m.renderer.SetWidthWithTheme(m.viewport.Width(), m.theme)
 	}
 	debug.LogTiming("applyHeavy.renderer.SetWidthWithTheme", time.Since(rendererStart))
 

@@ -39,14 +39,23 @@ const (
 	FieldDate
 )
 
-// ValidTypeValues are the valid values for the type field.
-var ValidTypeValues = map[string]bool{
-	"bug":     true,
-	"feature": true,
-	"task":    true,
-	"epic":    true,
-	"chore":   true,
+// validTypeList mirrors beads' built-in issue types as of bd v1.3.0:
+// types.AllIssueTypes plus the internal TypeEvent, which bd accepts wherever
+// it validates a type (internal/types/types.go). Types configured through bd's
+// types.custom are not known here (bt-h5jz.1).
+var validTypeList = []string{
+	"bug", "feature", "task", "epic", "chore", "decision",
+	"message", "molecule", "gate", "spike", "story", "milestone", "event",
 }
+
+// ValidTypeValues are the valid values for the type field.
+var ValidTypeValues = func() map[string]bool {
+	values := make(map[string]bool, len(validTypeList))
+	for _, t := range validTypeList {
+		values[t] = true
+	}
+	return values
+}()
 
 // ValidStatusValues are the valid values for the status field.
 var ValidStatusValues = map[string]bool{
@@ -207,8 +216,8 @@ func validateValue(field string, fieldType FieldType, value Value) error {
 	case FieldEnum:
 		switch field {
 		case "type":
-			if !ValidTypeValues[value.String] {
-				return fmt.Errorf("invalid value %q for field %q (valid: bug, feature, task, epic, chore)", value.String, field)
+			if !ValidTypeValues[strings.ToLower(value.String)] {
+				return fmt.Errorf("invalid value %q for field %q (valid: %s)", value.String, field, strings.Join(validTypeList, ", "))
 			}
 		case "status":
 			if !ValidStatusValues[strings.ToLower(value.String)] {

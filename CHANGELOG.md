@@ -6,6 +6,59 @@ For architectural decisions, see `docs/adr/`. For issue tracking, use `bd list`.
 
 ---
 
+## 2026-09-30 — Post-beads-1.3.0 review: history scope label, BQL types, one blocked predicate, robot bql scoping
+
+**Acted on the read-only bt review from the beads fleet's crossing to bd v1.3.0 / schema 66 (bt-5ehhg; kickoff and review by pc:beads:684d2b74, report `~/.files/atlas/plans/2026-09-30-beads-v1.3.0-post-crossing-review/rev-bt.md`). The review found no breakages, only silent degradations. This session (pc:bt:70c94799) fixed the four that were code-sized, recorded one decision, and filed design beads for the rest. Every fix was verified read-only against the live PC fleet on :3308.**
+
+### Ships
+
+- **feat(correlation): History events labelled local to this machine (bt-nb9h)**. Beads migration 0062 made `events` dolt_ignored, so events written on another machine after the crossing never replicate. When events come from the Dolt extractor, `bt robot history` now carries `repo_status.events_scope: "local_machine"` and the TUI badge reads "N events (this machine)". JSONL-sourced history is unlabelled. Paired with sym-nb9h.
+- **fix(bql): accept bd v1.3.0 built-in issue types (bt-h5jz.1)**. `type=decision` used to exit 1, which left ~290 fleet issues unfilterable by type. The validator now mirrors bd's `AllIssueTypes` + `event`, matches case-insensitively like status, and builds its error hint from the same list. `in (...)` now compares case-insensitively, like `=`.
+- **fix(bql): `blocked=` uses the triage predicate (bt-qtb7f, decision bt-5muh4)**. BQL used to count closed issues and skip parent-child propagation, so it disagreed with both `bt robot triage` and bd (152 incl. 14 closed vs bd's 137). It now shares `GetActionableIssues`' predicate, and a parity test locks the two together. Live: `blocked=true` 151 = triage `blocked_count` 151, and every bd-blocked issue is included. The 14 bt-only issues fall into two classes, both kept on purpose: cross-prefix blockers, and dotted-ID children of a blocked epic (the bt-cuyiz implicit hierarchy).
+- **fix(cli): robot bql honors `--source` and the other robot flags (bt-qamol)**. It used to bypass `robotPreRun`: `--source bt` returned 138 fleet-wide rows under `project_filter: "bt"`, and `--bql`/`--label`/`--recipe`/`--as-of` were ignored. BQL dependency lookups now resolve against the full loaded set (`loadedIssueMap`), so scoping narrows results without changing blocked answers. Live: `--source bt` gives 33, all bt-*.
+- **fix(bql): dead SQLBuilder blocked subquery targets schema v50+ (bt-lbdib)**. It now uses a COALESCE dependency target instead of the removed `depends_on_id`, and documents its remaining parent-child gap. SQLBuilder still has zero callers.
+
+### Bead bookkeeping
+
+- Closed: **bt-nb9h**, **bt-h5jz.1**, **bt-qtb7f**, **bt-qamol**, **bt-lbdib** (shipped above); **bt-idg9t** (HOLD lifted, crossing done); **bt-k8u9t** (superseded). **bt-jov1** and **bt-wjzk** were superseded into **bt-aj3l.2**, whose notes now carry their requirements (plus a new class: dolt_ignore plane changes).
+- Filed: **bt-5muh4** (decision: one blocked predicate), **bt-9idgu** (design: retire the always-NULL `created_by_session`/`claimed_by_session`, source provenance from `provenance_events` 0063), **bt-96wpk** (robot search ignores `--source`, same bypass class), **bt-2716b** (the TUI `ready` filter's own predicate disagrees with the footer triad).
+- Commented with the v1.3.0 input: **bt-z0hu6** (events-first refresh cannot see pulled cross-machine changes after 0062), **bt-rdapi**, **bt-94a7**.
+
+### Notes
+
+- `pkg/bql/sql.go` is entirely dead; deleting it needs sms's go-ahead (AGENTS.md rule 1).
+- The gated integration tests (claim write, embedded snapshot) were not run at bd 1.3.0. They spawn the real bd, which is too close to real DBs; the work is carried to bt-aj3l.2.
+
+---
+
+## 2026-07-26 — Full-backlog autonomy triage, port corpus, and the TUI freeze (bt-2aa49)
+
+**All 430 open beads classified for what an agent fleet can execute unattended vs what needs a human decision (100% coverage, 62 agents, adversarial second pass). The 2026-07-13 command-center product turn is now recorded as a citable bt decision instead of living only in memory files. Port candidates were harvested into an atlas corpus *before* closing, so requirement content survives the backlog shrinking. Open beads 425 → 358. No production code changed.**
+
+### Decision
+
+- **`bt-2aa49` — bt's TUI is frozen to daily-usability fixes.** Funded: (1) fixes to views that already exist, (2) shared-foundation data/robot surfaces, (3) design-lab work whose *decisions* port. Not funded: new top-level views, new TUI subsystems, deep redesigns, cockpit-shaped epics. Bug fixes in existing views are explicitly NOT frozen, and non-TUI areas are untouched. The freeze does not authorise closing anything on its own: a corpus entry must exist first.
+
+### Ships
+
+- **`port:command-center` added to `.beads/conventions/labels.md`** — new Port section. The label means *harvested*, not intended-to-harvest. Documents two non-obvious properties learned by executing the pass: it does not imply closed (`disposition: shared` beads stay open), and it does not propagate down an epic tree.
+- **Port corpus written to atlas** (`~/.files/atlas/brainstorms/2026-07-26-command-center-port-corpus.md`) — ~30 feature entries across ten groups, each carrying layer/v1/disposition and per-bead provenance, plus six LESSON entries, an Unhoused list, four FINDINGs, and the reproducible method. Backing store `…verdicts.jsonl`, 453 records with evidence, tagged `source: bt` so a sym pass appends.
+- **133 beads labelled, 68 closed** citing their corpus entry. All closes reversible via `bd reopen`.
+
+### Findings
+
+- **CI has been lying.** It never ran `go vet` despite AGENTS.md rule 7 mandating it, and never covered `./internal/...`, so the binding `bdroute` write-routing contract had zero enforcement. Separately `pkg/export` is at 66.0% against a required 68, so the coverage gate fails on `main` today (`bt-7q26`).
+- **Five ghost features trace to one cause** — sprint reads a missing file, `V` shells a renamed binary, `O` opens a Dolt-deleted JSONL, `x` dumps to the project root, robot sprint subcommands are hollow. One backend migration orphaned five frontends because rendering is not a test.
+- **Fourteen `type=decision` beads have a written `## Decision` section and are still open**, six of which the new product inherits.
+- **Disposition is not inheritable through the epic tree.** Nine epics refused to close because their open children are funded bt work; bt filed epics by theme while the freeze cuts by class. Epics close last, never via `--force`.
+
+### Notes
+
+- Held back from closing pending decisions the user has not made: five ghost-feature beads, two live class-1 bugs, `bt-dcby` (gates a fleet-executable child), `bt-gfxhz.4` (detail-pane owner undecided).
+- The sym half of the corpus is deliberately empty and labelled as such; until it exists, any v1 cut rests on bt evidence only.
+
+---
+
 ## 2026-07-20 — Merge wave: BackgroundWorker race, label robustness, footer policy, e2e parallelization (PRs #44–#48)
 
 **Wrap of the interrupted 2026-07-19 autonomous PM session (pc:bt:f50ec17c): four adversarially-reviewed draft PRs reviewed, merged, and their beads closed; the parked e2e-parallelization diff verified and re-shipped; small housekeeping and follow-ups filed. All four feature PRs merged on green CI; `go build`/`go vet`/`go install` clean and affected-package tests green on merged main.**
@@ -29,6 +82,23 @@ For architectural decisions, see `docs/adr/`. For issue tracking, use `bd list`.
 
 - Housekeeping: added `.bt.lock` to `.gitignore` — a sibling lock file leaked into the tree by test runs that launch bt; the existing `.bt/` pattern did not cover it.
 - The 2026-07-17 footer-dogfood batch (PRs #41/#42) has no CHANGELOG entry yet — pre-existing gap, not part of this wave.
+
+---
+
+## 2026-07-17 — ViewList chrome polish: single-pane border + footer double-all + indent (bt-r5v9k)
+
+**Dogfood polish pass on the ViewList surfaces, continued from an earlier bt session. Three chrome fixes, no data-layer changes.**
+
+### Ships
+
+- **feat(tui): border the width-driven single-pane list + detail (bt-r5v9k)** — the auto-collapsed single-pane list (`renderListWithHeader`) and single-pane detail (bare `viewport.View()`) rendered with no border, diverging from the bordered split view and the on-demand "2"/"3" fullscreen panes. Both now delegate to the same `renderIssuesPanel` / `renderDetailsPanel`, so every ViewList surface carries identical chrome (rounded border + superscript Issues/Details badge). Sizing (`applyListDetailSizing`, single-pane branch merged with fullscreen), single-pane click geometry (`singlePaneListChromeHeight`, search-row Y 0→1), and the single-pane detail Glamour width move in lockstep.
+- **fix(tui): suppress the redundant "all" status chip (bt-r5v9k)** — in cross-project mode the footer lens read `ALL(20) all …`; the default `all` status narrows nothing, so it now draws no chip (the same "all narrows nothing" rule `lensBareStatus` already applied at the terser degradation levels). A real narrowing status (open/blocked/…) still renders.
+- **feat(tui): indent the footer one column inside the border wall (bt-r5v9k)** — the footer's left content (the lens scope) sat flush under the border corner; it now sits just inside the wall, with the right zone (total / hints / bell) still pinned to the edge (the filler absorbs the indent).
+
+### Notes
+
+- Retires the borderless `renderListWithHeader` build in favour of delegation — one bordered issues-panel renderer shared by split / fullscreen / single-pane.
+- Three single-pane mouse-click geometry tests updated for the added top border (chrome height 2→3, search-row Y 0→1, render geometry border on line 0); one new lens regression test (`TestLensSuppressesAllStatusChip`).
 
 ---
 

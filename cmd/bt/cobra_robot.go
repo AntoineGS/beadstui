@@ -192,12 +192,8 @@ func robotPreRun() (*robotCtx, error) {
 		if err := bql.Validate(parsed); err != nil {
 			return nil, fmt.Errorf("BQL validation error: %w", err)
 		}
-		issueMap := make(map[string]*model.Issue, len(issues))
-		for i := range issues {
-			issueMap[issues[i].ID] = &issues[i]
-		}
 		executor := bql.NewMemoryExecutor()
-		issues = executor.Execute(parsed, issues, bql.ExecuteOpts{IssueMap: issueMap})
+		issues = executor.Execute(parsed, issues, bql.ExecuteOpts{IssueMap: loadedIssueMap()})
 	}
 
 	// Stable data hash (after repo filter but before recipes/label scope).
@@ -395,10 +391,11 @@ var robotBQLCmd = &cobra.Command{
 	Use:   "bql",
 	Short: "Output BQL-filtered issues as JSON",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := loadIssues(); err != nil {
-			if !flagGlobal {
-				return fmt.Errorf("%w (try --global if no local Dolt server is reachable)", err)
-			}
+		// robotPreRun applies --source, --bql, --label and --recipe and
+		// refuses --as-of; bypassing it served fleet-wide rows under a
+		// scope block that echoed the filter (bt-qamol).
+		rc, err := robotPreRun()
+		if err != nil {
 			return err
 		}
 		query, _ := cmd.Flags().GetString("query")
@@ -415,13 +412,8 @@ var robotBQLCmd = &cobra.Command{
 		if err := bql.Validate(parsed); err != nil {
 			return fmt.Errorf("BQL validation error: %w", err)
 		}
-		issues := appCtx.issues
-		issueMap := make(map[string]*model.Issue, len(issues))
-		for i := range issues {
-			issueMap[issues[i].ID] = &issues[i]
-		}
 		executor := bql.NewMemoryExecutor()
-		filtered := executor.Execute(parsed, issues, bql.ExecuteOpts{IssueMap: issueMap})
+		filtered := executor.Execute(parsed, rc.issues, bql.ExecuteOpts{IssueMap: loadedIssueMap()})
 
 		// Apply --offset and --limit for pagination.
 		limit, _ := cmd.Flags().GetInt("limit")

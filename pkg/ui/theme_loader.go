@@ -82,6 +82,21 @@ type ThemeColors struct {
 	Priority   map[string]*AdaptiveHex `yaml:"priority"`
 	PriorityBg map[string]*AdaptiveHex `yaml:"priority_bg"`
 
+	// Text attributes (bt-sk00v).
+	//
+	// Status is a categorical variable, but a color ramp is a quantitative
+	// channel. Encoding one on the other is why a monochrome palette reads as
+	// seven shades of the same thing: the states differ by degree when they
+	// need to differ in kind. Hue hides the error because hue is itself
+	// categorical; strip it and the mistake surfaces.
+	//
+	// Attributes are the categorical channel a palette with no hue still has,
+	// and the one monochrome terminals used before color existed. Values are
+	// TextAttr names; an absent or empty entry renders plain, so every existing
+	// theme is unaffected until it opts in.
+	StatusAttr   map[string]string `yaml:"status_attr"`
+	PriorityAttr map[string]string `yaml:"priority_attr"`
+
 	// Type
 	Type map[string]*AdaptiveHex `yaml:"type"`
 
@@ -96,7 +111,12 @@ type ThemeFile struct {
 	// Empty keeps bt's own embedded default. Any colors: block in the same
 	// file still overrides the named theme, so a user can pick a palette and
 	// tweak two tokens without restating the rest.
-	Theme  string      `yaml:"theme"`
+	Theme string `yaml:"theme"`
+	// Mono marks a palette that carries no chroma at all. The btop adapter
+	// detects it (bt-zelhm); a bt-native theme declares it. When set, bt never
+	// synthesizes a hue the palette does not already have, and separates every
+	// role by lightness instead.
+	Mono   bool        `yaml:"mono"`
 	Colors ThemeColors `yaml:"colors"`
 }
 
@@ -175,24 +195,44 @@ func init() {
 // LoadTheme loads the theme by merging layers: embedded defaults, user config,
 // project config. Each layer only overrides what it specifies.
 // Call ApplyThemeToGlobals after to update the Color* package vars.
-func LoadTheme() *ThemeFile {
+func LoadTheme() *ThemeFile { return loadThemeWith("") }
+
+// LoadThemeNamed resolves the full theme stack with an explicit palette name,
+// bypassing only the BT_THEME/file selection chain (bt-54c3).
+//
+// The picker previews through this rather than through ResolveTheme directly,
+// because ResolveTheme returns the palette alone. A user with per-token tweaks
+// in ~/.config/bt/theme.yaml would then see a preview that discards them and a
+// different UI once the choice was committed. Every other layer stays, so what
+// the picker shows is what the user gets.
+func LoadThemeNamed(name string) *ThemeFile { return loadThemeWith(name) }
+
+func loadThemeWith(override string) *ThemeFile {
 	// Layer 1: embedded defaults
 	base := loadEmbeddedTheme()
 
+	// Same helper the save path uses (bt-4ibsq). Deriving this path
+	// independently in each place is how bt ends up writing a theme to one
+	// file and reading it back from another.
 	var user *ThemeFile
-	if home, err := os.UserHomeDir(); err == nil {
-		user = loadThemeFile(filepath.Join(home, ".config", "bt", "theme.yaml"))
+	if path, err := userThemePath(); err == nil {
+		user = loadThemeFile(path)
 	}
 	proj := loadThemeFile(filepath.Join(".bt", "theme.yaml"))
 
-	// Layer 2: a named btop palette, if one is selected (bt-o6xx1). This sits
-	// UNDER the hand-written overlays so picking a theme never discards the
-	// per-token tweaks a user already wrote; the name is read from the same
-	// files, most specific first, with the env var winning so a palette can be
-	// tried for one run without editing anything.
-	if name := selectedThemeName(base, user, proj); name != "" {
-		if btopTF, err := LoadBtopTheme(name); err == nil {
-			mergeTheme(base, btopTF)
+	// Layer 2: a named palette, if one is selected -- bt-native or vendored
+	// btop, resolved by ResolveTheme (bt-o6xx1, bt-ba9fc). This sits UNDER the
+	// hand-written overlays so picking a theme never discards the per-token
+	// tweaks a user already wrote; the name is read from the same files, most
+	// specific first, with the env var winning so a palette can be tried for
+	// one run without editing anything.
+	name := override
+	if name == "" {
+		name = selectedThemeName(base, user, proj)
+	}
+	if name != "" {
+		if named, err := ResolveTheme(name); err == nil {
+			mergeTheme(base, named)
 		}
 		// A bad name falls through to the default palette rather than
 		// failing startup: a typo in a cosmetic setting must not cost the
@@ -210,6 +250,25 @@ func LoadTheme() *ThemeFile {
 	}
 
 	return base
+}
+
+// SelectedThemeName reports the palette name bt would resolve right now,
+// reading the same sources in the same order as LoadTheme (bt-54c3).
+//
+// The settings screen opens on this so it shows what is actually rendering
+// rather than the first name in the corpus. Empty means no palette is selected
+// and the embedded colors: block is in force.
+func SelectedThemeName() string {
+	base := loadEmbeddedTheme()
+	// Same helper the save path uses (bt-4ibsq). Deriving this path
+	// independently in each place is how bt ends up writing a theme to one
+	// file and reading it back from another.
+	var user *ThemeFile
+	if path, err := userThemePath(); err == nil {
+		user = loadThemeFile(path)
+	}
+	proj := loadThemeFile(filepath.Join(".bt", "theme.yaml"))
+	return selectedThemeName(base, user, proj)
 }
 
 // selectedThemeName resolves which vendored btop palette to use, most specific
@@ -265,6 +324,27 @@ func applyMapKey(m map[string]*AdaptiveHex, key string, target *color.Color) {
 		light, dark := getDefaults(target)
 		*target = hex.toColor(light, dark)
 	}
+}
+
+// parseAttrMap converts a theme's raw attribute strings into TextAttrs.
+//
+// Returns nil for an empty input rather than an empty map, so the common case
+// -- a palette that declares no attributes at all, which is every theme
+// predating bt-sk00v -- costs no allocation and reads as AttrNone on lookup.
+func parseAttrMap(raw map[string]string) map[string]TextAttr {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make(map[string]TextAttr, len(raw))
+	for k, v := range raw {
+		if a := ParseTextAttr(v); a != AttrNone {
+			out[k] = a
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // ApplyThemeToGlobals writes the loaded theme colors into the Color* package
@@ -326,6 +406,13 @@ func ApplyThemeToGlobals(tf *ThemeFile) {
 	applyMapKey(c.PriorityBg, "high", &ColorPrioHighBg)
 	applyMapKey(c.PriorityBg, "medium", &ColorPrioMediumBg)
 	applyMapKey(c.PriorityBg, "low", &ColorPrioLowBg)
+
+	// Text attributes (bt-sk00v). Rebuilt wholesale rather than merged, so
+	// switching to a theme that declares none clears the previous theme's
+	// instead of inheriting them -- an attribute is part of the palette's
+	// design, not a user preference that outlives it.
+	AttrStatus = parseAttrMap(c.StatusAttr)
+	AttrPriority = parseAttrMap(c.PriorityAttr)
 
 	// Type
 	applyMapKey(c.Type, "bug", &ColorTypeBug)
@@ -479,6 +566,11 @@ func loadThemeFile(path string) *ThemeFile {
 
 // mergeTheme deep-merges overlay into base. Only non-nil fields override.
 func mergeTheme(base, overlay *ThemeFile) {
+	// Mono is sticky: it records that the palette underneath declared itself
+	// monochrome, which stays true of that palette even if a user overlay then
+	// paints a token on top of it.
+	base.Mono = base.Mono || overlay.Mono
+
 	bc := &base.Colors
 	oc := &overlay.Colors
 

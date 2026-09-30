@@ -3350,6 +3350,27 @@ func TestHistoryModel_StatsLineEventsModeForDoltOnly(t *testing.T) {
 	}
 }
 
+// TestHistoryModel_StatsLineLabelsLocalEvents covers bt-nb9h: events read
+// from the Dolt events table stopped replicating at beads 0062, so the events
+// badge must say they are this machine's, and must not when no scope is set.
+func TestHistoryModel_StatsLineLabelsLocalEvents(t *testing.T) {
+	theme := testTheme()
+
+	report := createDoltOnlyHistoryReport()
+	report.RepoStatus.EventsScope = correlation.EventsScopeLocalMachine
+	h := NewHistoryModel(report, theme)
+	h.SetSize(120, 30)
+	if stats := h.renderStatsLine(); !strings.Contains(stats, "events (this machine)") {
+		t.Errorf("local-scoped events badge should read \"events (this machine)\"; got: %q", stats)
+	}
+
+	unscoped := NewHistoryModel(createDoltOnlyHistoryReport(), theme)
+	unscoped.SetSize(120, 30)
+	if stats := unscoped.renderStatsLine(); strings.Contains(stats, "this machine") {
+		t.Errorf("events badge without a scope should not claim a machine scope; got: %q", stats)
+	}
+}
+
 // TestHistoryModel_StatsLineCommitsModeForJSONL keeps the legacy commit-
 // centric stats badges in place when the underlying source is JSONL-tracked
 // (RepoStatus.JSONLTracked=true). Guards against regressions from the

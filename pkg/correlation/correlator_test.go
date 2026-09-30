@@ -521,6 +521,9 @@ func TestCorrelator_Dispatch_JSONLPath(t *testing.T) {
 	if !report.RepoStatus.JSONLTracked {
 		t.Errorf("JSONLTracked = false, want true (JSONL is on disk)")
 	}
+	if report.RepoStatus.EventsScope != "" {
+		t.Errorf("EventsScope = %q, want empty (JSONL history replicates through git)", report.RepoStatus.EventsScope)
+	}
 }
 
 // TestCorrelator_Dispatch_DoltOnlyPath covers branch 2 of extractEvents:
@@ -554,6 +557,11 @@ func TestCorrelator_Dispatch_DoltOnlyPath(t *testing.T) {
 	}
 	if report.RepoStatus.JSONLTracked {
 		t.Errorf("JSONLTracked = true, want false (no JSONL on disk -> Dolt-only)")
+	}
+	// bt-nb9h: Dolt events are dolt_ignored since beads 0062, so the report
+	// must say its events are local to this machine.
+	if report.RepoStatus.EventsScope != EventsScopeLocalMachine {
+		t.Errorf("EventsScope = %q, want %q", report.RepoStatus.EventsScope, EventsScopeLocalMachine)
 	}
 
 	h, ok := report.Histories["bt-1"]
@@ -595,6 +603,9 @@ func TestCorrelator_Dispatch_DoltOnly_NoDB(t *testing.T) {
 	}
 	if report.RepoStatus.JSONLTracked {
 		t.Errorf("JSONLTracked = true, want false")
+	}
+	if report.RepoStatus.EventsScope != "" {
+		t.Errorf("EventsScope = %q, want empty (no events source was read)", report.RepoStatus.EventsScope)
 	}
 
 	h, ok := report.Histories["bt-1"]

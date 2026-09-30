@@ -94,6 +94,13 @@ func collectHexes(t *testing.T, c ThemeColors) map[string]string {
 			out[name+".dark"] = ah.Dark
 			out[name+".light"] = ah.Light
 		case reflect.Map:
+			// Only the color maps hold *AdaptiveHex. The attribute maps
+			// (bt-sk00v) are map[string]string and carry no hex to collect,
+			// so gate on the element type rather than assuming every map on
+			// ThemeColors is a color group.
+			if f.Type().Elem() != reflect.TypeOf((*AdaptiveHex)(nil)) {
+				continue
+			}
 			for _, k := range f.MapKeys() {
 				mv := f.MapIndex(k)
 				if mv.IsNil() {
@@ -108,10 +115,55 @@ func collectHexes(t *testing.T, c ThemeColors) map[string]string {
 	return out
 }
 
+// swatchAttrSGR returns the ANSI attribute codes a theme assigns to a swatch
+// row's token, plus a plain-text name for the margin. Empty for tokens with no
+// attribute and for themes that declare none, which is every theme predating
+// bt-sk00v.
+func swatchAttrSGR(tf *ThemeFile, token string) (sgr, name string) {
+	var m map[string]string
+	switch {
+	case strings.HasPrefix(token, "Status["):
+		m = tf.Colors.StatusAttr
+	case strings.HasPrefix(token, "Priority["):
+		m = tf.Colors.PriorityAttr
+	default:
+		return "", ""
+	}
+	open, close := strings.Index(token, "["), strings.Index(token, "]")
+	if len(m) == 0 || open < 0 || close < open {
+		return "", ""
+	}
+	switch ParseTextAttr(m[token[open+1:close]]) {
+	case AttrBold:
+		return "\x1b[1m", "  bold"
+	case AttrFaint:
+		return "\x1b[2m", "  faint"
+	case AttrReverse:
+		return "\x1b[7m", "  reverse"
+	case AttrUnderline:
+		return "\x1b[4m", "  underline"
+	}
+	return "", ""
+}
+
 func TestBtopThemesResolveCompletely(t *testing.T) {
-	// Every field of ThemeColors must be populated by the adapter. Anything
-	// left nil would silently fall through to Tomorrow Night, mixing two
-	// palettes on screen.
+	// Every COLOR field of ThemeColors must be populated by the adapter.
+	// Anything left nil would silently fall through to Tomorrow Night, mixing
+	// two palettes on screen.
+	//
+	// The attribute groups (bt-sk00v) are exempt, and the reason is the same
+	// one that makes this test worth having. A nil color group is a HOLE -- the
+	// renderer reaches past it into another palette. A nil attribute group is
+	// an ANSWER: it means "render plain", which is complete and correct, and is
+	// what every theme predating attributes intends. Requiring the btop adapter
+	// to synthesize attributes would mean inventing emphasis no upstream author
+	// wrote, which is the same class of mistake as synthesizing a hue for a
+	// monochrome palette (bt-zelhm).
+	optionalGroups := map[string]bool{
+		"StatusAttr":   true,
+		"PriorityAttr": true,
+	}
+
 	wantFields := map[string]bool{}
 	rt := reflect.TypeOf(ThemeColors{})
 	for i := 0; i < rt.NumField(); i++ {
@@ -129,6 +181,9 @@ func TestBtopThemesResolveCompletely(t *testing.T) {
 		for i := 0; i < v.NumField(); i++ {
 			fname := rt.Field(i).Name
 			f := v.Field(i)
+			if optionalGroups[fname] {
+				continue
+			}
 			if (f.Kind() == reflect.Ptr || f.Kind() == reflect.Map) && f.IsNil() {
 				t.Errorf("%s: token group %s is unset", name, fname)
 			}
@@ -341,10 +396,27 @@ func TestBtopStatusesAreSeparable(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		bg, _ := parseBtopColor(h["Bg.dark"])
-		// A theme with no chromatic range genuinely cannot separate statuses
-		// by hue. greyscale is the honest example; it is not a defect.
-		if len(raw.accentPool(bg)) < 3 {
+		// A monochrome theme has no hue to separate with, so it owes a
+		// lightness delta instead. This replaces an earlier opt-out that
+		// skipped any theme with an accent pool under 3 -- which meant the one
+		// palette least able to keep these statuses apart was the one nothing
+		// asserted anything about (bt-zelhm).
+		if raw.isMono() {
+			toks := []string{
+				"Status[open].dark", "Status[in_progress].dark",
+				"Status[blocked].dark", "Status[review].dark",
+				"Status[hooked].dark",
+			}
+			for i := 0; i < len(toks); i++ {
+				for j := i + 1; j < len(toks); j++ {
+					a, _ := parseBtopColor(h[toks[i]])
+					b, _ := parseBtopColor(h[toks[j]])
+					if d := math.Abs(a.lstar() - b.lstar()); d < monoMinDeltaLstar {
+						t.Errorf("%s: %s (%s) and %s (%s) are %.1f L* apart, want >= %.1f",
+							name, toks[i], h[toks[i]], toks[j], h[toks[j]], d, monoMinDeltaLstar)
+					}
+				}
+			}
 			continue
 		}
 
@@ -359,6 +431,148 @@ func TestBtopStatusesAreSeparable(t *testing.T) {
 				t.Errorf("%s: %s and %s both resolved to %s", name, p.a, p.b, h[p.a])
 			}
 		}
+	}
+}
+
+// TestMonoThemesRenderWithoutChroma is the core of bt-zelhm.
+//
+// greyscale's source is genuinely achromatic -- every value is 2-char hex
+// shorthand, so R=G=B throughout -- but the adapter used to synthesize an
+// alarm hue wherever a semantic anchor failed, and 8 of its 18 rendered
+// tokens came out colored: open in #419055 green, blocked in #904741 red.
+// Painting in color the author deliberately left out is a defect regardless
+// of how good the color is, so this asserts on every resolved token rather
+// than on the handful the ramp touches.
+func TestMonoThemesRenderWithoutChroma(t *testing.T) {
+	monoFound := false
+	for _, name := range BtopThemeNames() {
+		raw, err := LoadBtopThemeRaw(name)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !raw.isMono() {
+			continue
+		}
+		monoFound = true
+
+		tf := raw.ThemeFile()
+		if !tf.Mono {
+			t.Errorf("%s: detected as monochrome but ThemeFile.Mono is false", name)
+		}
+		for label, hex := range collectHexes(t, tf.Colors) {
+			c, ok := parseBtopColor(hex)
+			if !ok {
+				continue
+			}
+			if _, s := c.hueSat(); s != 0 {
+				t.Errorf("%s: %s = %s carries saturation %.4f; a mono theme must "+
+					"never gain chroma its source did not have", name, label, hex, s)
+			}
+		}
+	}
+	if !monoFound {
+		t.Fatal("no monochrome theme in the corpus; greyscale should be one")
+	}
+}
+
+// TestMonoThemesHoldContrastFloor checks mono mode bought its separation with
+// lightness it actually had. Chrome is excluded because border and tombstone
+// are supposed to recede below the UI floor.
+func TestMonoThemesHoldContrastFloor(t *testing.T) {
+	chrome := map[string]bool{
+		"Border.dark": true, "Status[tombstone].dark": true,
+		"BgHighlight.dark": true, "BgSubtle.dark": true,
+		"Bg.dark": true, "BgDark.dark": true, "BgContrast.dark": true,
+		"Highlight.dark": true,
+	}
+	for _, name := range BtopThemeNames() {
+		raw, err := LoadBtopThemeRaw(name)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !raw.isMono() {
+			continue
+		}
+		tf := raw.ThemeFile()
+		h := collectHexes(t, tf.Colors)
+		bg, _ := parseBtopColor(h["Bg.dark"])
+		for label, hex := range h {
+			if chrome[label] || strings.Contains(label, "Bg[") ||
+				strings.Contains(label, "StatusBg") || strings.Contains(label, "PriorityBg") ||
+				strings.HasSuffix(label, ".light") {
+				continue
+			}
+			c, ok := parseBtopColor(hex)
+			if !ok {
+				continue
+			}
+			if r := contrastRatio(c, bg); r < accentMinContrast {
+				t.Errorf("%s: %s = %s has contrast %.2f, below the %.1f floor",
+					name, label, hex, r, accentMinContrast)
+			}
+		}
+	}
+}
+
+// TestMonoLadderIsAchromaticAndOrdered covers the ladder itself, including the
+// polarity flip a light monochrome theme would take. greyAtLstar is an exact
+// inverse rather than an approximation, so "no chroma" is a hard guarantee
+// here, not a tolerance.
+func TestMonoLadderIsAchromaticAndOrdered(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		bg, mut string
+	}{
+		{"dark", "#000000", "#7a7a7a"},
+		{"light", "#ffffff", "#8a8a8a"},
+		{"dark-offblack", "#0f0f0f", "#808080"},
+	} {
+		bg, _ := parseBtopColor(tc.bg)
+		mut, _ := parseBtopColor(tc.mut)
+		l := monoLadder(bg, mut)
+		if len(l) != monoAccentSlots {
+			t.Fatalf("%s: ladder has %d rungs, want %d", tc.name, len(l), monoAccentSlots)
+		}
+		for i, c := range l {
+			if _, s := c.hueSat(); s != 0 {
+				t.Errorf("%s: rung %d (%s) is not achromatic", tc.name, i, c.hex())
+			}
+			if r := contrastRatio(c, bg); r < accentMinContrast {
+				t.Errorf("%s: rung %d (%s) has contrast %.2f, below %.1f",
+					tc.name, i, c.hex(), r, accentMinContrast)
+			}
+			if i == 0 {
+				continue
+			}
+			// Each rung must climb away from the background, by a visible step.
+			prev := contrastRatio(l[i-1], bg)
+			if r := contrastRatio(c, bg); r <= prev {
+				t.Errorf("%s: rung %d (%.2f) does not climb past rung %d (%.2f)",
+					tc.name, i, r, i-1, prev)
+			}
+			if d := math.Abs(c.lstar() - l[i-1].lstar()); d < monoMinDeltaLstar {
+				t.Errorf("%s: rungs %d and %d are %.1f L* apart, want >= %.1f",
+					tc.name, i-1, i, d, monoMinDeltaLstar)
+			}
+		}
+	}
+}
+
+// TestMonoDetectionIsNarrow guards the threshold from both sides: the corpus's
+// one achromatic theme must be caught, and no chromatic theme may be.
+func TestMonoDetectionIsNarrow(t *testing.T) {
+	var mono []string
+	for _, name := range BtopThemeNames() {
+		raw, err := LoadBtopThemeRaw(name)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if raw.isMono() {
+			mono = append(mono, name)
+		}
+	}
+	if len(mono) != 1 || mono[0] != "greyscale" {
+		t.Errorf("expected greyscale to be the only monochrome vendored theme, got %v", mono)
 	}
 }
 
@@ -536,6 +750,8 @@ func TestBtopSwatchDump(t *testing.T) {
 		{"open", "Status[open].dark"},
 		{"in_progress", "Status[in_progress].dark"},
 		{"blocked", "Status[blocked].dark"},
+		{"deferred", "Status[deferred].dark"},
+		{"hooked", "Status[hooked].dark"},
 		{"review", "Status[review].dark"},
 		{"closed", "Status[closed].dark"},
 	}
@@ -544,11 +760,18 @@ func TestBtopSwatchDump(t *testing.T) {
 	report.WriteString("Contrast of each token against its theme background (WCAG).\n")
 	report.WriteString("AA body text needs 4.5; AA large/UI needs 3.0.\n\n")
 
-	for _, name := range BtopThemeNames() {
-		tf, err := LoadBtopTheme(name)
+	// Both corpora, resolved exactly the way BT_THEME resolves them, so the
+	// sheet shows what a user would actually get from the name it is filed
+	// under (bt-ba9fc).
+	names := ThemeNames()
+	for _, name := range names {
+		tf, err := ResolveTheme(name)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
+		// ":" is legal in an APFS filename but reads as a path separator in
+		// too many tools to be worth it.
+		file := strings.ReplaceAll(name, ":", "-")
 		hexes := collectHexes(t, tf.Colors)
 		bg, _ := parseBtopColor(hexes["Bg.dark"])
 		br, bgc, bb := int(bg.r*255), int(bg.g*255), int(bg.b*255)
@@ -564,9 +787,13 @@ func TestBtopSwatchDump(t *testing.T) {
 			}
 			cr, cg, cb := int(c.r*255), int(c.g*255), int(c.b*255)
 			ratio := contrastRatio(c, bg)
+			// The sheet has to show the categorical channel too (bt-sk00v),
+			// or it reports a palette as a set of tones and hides the half of
+			// the design that separates states which sit at similar tone.
+			sgr, attrName := swatchAttrSGR(tf, r.token)
 			sheet.WriteString(fmt.Sprintf(
-				"\x1b[48;2;%d;%d;%dm\x1b[38;2;%d;%d;%dm  %-12s %s  %4.1f:1  \x1b[0m\n",
-				br, bgc, bb, cr, cg, cb, r.label, c.hex(), ratio))
+				"\x1b[48;2;%d;%d;%dm\x1b[38;2;%d;%d;%dm%s  %-12s %s  %4.1f:1  \x1b[0m%s\n",
+				br, bgc, bb, cr, cg, cb, sgr, r.label, c.hex(), ratio, attrName))
 			// border is chrome and is SUPPOSED to recede; holding it to a
 			// text threshold would flag every well-designed theme in the
 			// corpus, so it is excluded rather than reported as a defect.
@@ -575,12 +802,15 @@ func TestBtopSwatchDump(t *testing.T) {
 			}
 		}
 
-		if err := os.WriteFile(filepath.Join(dir, name+".ansi"), []byte(sheet.String()), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, file+".ansi"), []byte(sheet.String()), 0o644); err != nil {
 			t.Fatalf("write swatch: %v", err)
 		}
 		status := "ok"
 		if len(low) > 0 {
 			status = "below 4.5: " + strings.Join(low, ", ")
+		}
+		if tf.Mono {
+			status = "[mono] " + status
 		}
 		report.WriteString(fmt.Sprintf("%-28s %s\n", name, status))
 	}
@@ -588,5 +818,5 @@ func TestBtopSwatchDump(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "contrast-report.txt"), []byte(report.String()), 0o644); err != nil {
 		t.Fatalf("write report: %v", err)
 	}
-	t.Logf("wrote %d swatch sheets + contrast-report.txt to %s", len(BtopThemeNames()), dir)
+	t.Logf("wrote %d swatch sheets + contrast-report.txt to %s", len(names), dir)
 }

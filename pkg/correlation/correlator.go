@@ -98,6 +98,9 @@ func (c *Correlator) GenerateReport(beads []BeadInfo, opts CorrelatorOptions) (*
 	if err != nil {
 		return nil, fmt.Errorf("extracting events: %w", err)
 	}
+	if !jsonlTracked && c.doltDB != nil {
+		repoStatus.EventsScope = EventsScopeLocalMachine
+	}
 
 	// Extract co-committed files
 	commits, err := c.coCommitter.ExtractAllCoCommits(events)
