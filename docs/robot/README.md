@@ -556,7 +556,7 @@ bt robot list --global --status in_progress
 | `offset` | int | Offset that was applied (omitted when 0) |
 | `issues` | array | Returned issues (after offset + limit windowing) |
 
-**Note**: BQL syntax is documented in code; a dedicated reference is tracked in bt-01pk. Also accepts `--bql` global flag as a pre-filter on top of the local `--query`. When run outside a beads project (no local `.beads/`), the error message will suggest `--global` to query the global Dolt server.
+**Note**: BQL syntax is documented in [docs/bql.md](../bql.md). The common robot flags apply before `--query`: `--source`, `--bql` (a pre-filter), `--label`, `--recipe`; `--as-of` is refused like every robot subcommand. Scoping narrows which issues come back, not how `blocked` is computed: blockers resolve against every loaded issue, so `--source bt --query 'blocked = true'` still counts a bt issue blocked by another project's open issue (bt-qamol). When run outside a beads project (no local `.beads/`), the error message will suggest `--global` to query the global Dolt server.
 
 **Examples**:
 ```bash
@@ -840,6 +840,14 @@ bt robot orphans --history-limit 100
 **Purpose**: Bead-to-commit correlation output - which commits are linked to which beads. Requires JSONL beads data (not Dolt-only installs) or global mode.
 
 **Note**: Requires accessible beads data. Will error if `.beads/` is not available in the local directory. When run outside a beads project (no local `.beads/`), the error message will suggest `--global` to query the global Dolt server.
+
+**`repo_status`** describes where the history came from:
+| Field | Type | Description |
+|---|---|---|
+| `repo_path` | string | Path probed for `git log` |
+| `inside_work_tree` | bool | False means git-derived data (commits, files) is empty |
+| `jsonl_tracked` | bool | True: events from JSONL git history. False: events from the Dolt `events` / `wisp_events` tables |
+| `events_scope` | string | `local_machine` when events come from the Dolt tables. Since beads migration 0062 (bd v1.3.0) `events` is dolt_ignored and no longer replicates, so events written on another machine after the crossing are absent. Omitted for JSONL history (replicated through git) or when no events source was read (bt-nb9h) |
 
 **Examples**:
 ```bash

@@ -41,11 +41,11 @@ Keywords are case-insensitive (`AND`, `and`, `And` all work). Field names and st
 | `notes` | string | `=` `!=` `~` `!~` `in` | Notes field. |
 | `status` | enum | `=` `!=` `in` | `open`, `in_progress`, `blocked`, `deferred`, `pinned`, `hooked`, `review`, `closed`, `tombstone` |
 | `priority` | priority | `=` `!=` `<` `>` `<=` `>=` `in` | `P0`–`P4` (or `0`–`4`). Lower number = higher priority, so `priority < P2` means P0 or P1. |
-| `type` | enum | `=` `!=` `in` | `bug`, `feature`, `task`, `epic`, `chore` |
+| `type` | enum | `=` `!=` `in` | beads' built-in types as of bd v1.3.0: `bug`, `feature`, `task`, `epic`, `chore`, `decision`, `message`, `molecule`, `gate`, `spike`, `story`, `milestone`, `event`. Custom types (bd `types.custom`) are rejected. |
 | `assignee` | string | `=` `!=` `~` `!~` `in` | |
 | `label` | string (multi-valued) | `=` `!=` `~` `!~` `in` `not in` | Membership test against the issue's label set. `label = bug` matches if any label equals `bug`. |
 | `source_repo` | string | `=` `!=` `~` `!~` `in` | Source project (cross-project hub mode). |
-| `blocked` | bool | `=` `!=` | Computed: true iff the issue has at least one open blocking dependency. |
+| `blocked` | bool | `=` `!=` | Computed, same predicate as `bt robot triage`: true iff the issue is not closed and either has an open `blocks` dependency on a loaded issue, or has a parent (`parent-child`) that is itself blocked, transitively. Blockers in other loaded projects count; blockers that are not loaded do not. |
 | `created_at` | date | `=` `!=` `<` `>` `<=` `>=` | See [Dates](#dates). |
 | `updated_at` | date | `=` `!=` `<` `>` `<=` `>=` | |
 | `due_date` | date | `=` `!=` `<` `>` `<=` `>=` | |

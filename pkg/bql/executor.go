@@ -19,6 +19,12 @@ type Executor interface {
 // ExecuteOpts provides context needed by the executor beyond the issue list.
 type ExecuteOpts struct {
 	// IssueMap enables dependency lookups for blocked field and EXPAND.
-	// Uses pointer values to match bt's Model.issueMap type.
+	// Uses pointer values to match bt's Model.issueMap type. Pass the full
+	// loaded corpus, not a scoped subset: whether an issue is blocked
+	// depends on issues outside the result set (bt-5muh4).
 	IssueMap map[string]*model.Issue
+
+	// blocked is blockedIDs(IssueMap), computed once per Execute/Matches
+	// call when the query references the blocked field.
+	blocked map[string]bool
 }

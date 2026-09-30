@@ -2344,7 +2344,13 @@ func (h *HistoryModel) renderStatsLine() string {
 		}
 		beadsBadge := badgeStyle.Render(valueStyle.Render(fmt.Sprintf("%d", beadsWithEvents)) + " beads")
 		badges = append(badges, beadsBadge)
-		eventsBadge := badgeStyle.Render(valueStyle.Render(fmt.Sprintf("%d", totalEvents)) + " events")
+		eventsLabel := " events"
+		// bt-nb9h: since beads 0062 the events table no longer replicates,
+		// so say so rather than imply the view covers every machine.
+		if h.report.RepoStatus.EventsScope == correlation.EventsScopeLocalMachine {
+			eventsLabel = " events (this machine)"
+		}
+		eventsBadge := badgeStyle.Render(valueStyle.Render(fmt.Sprintf("%d", totalEvents)) + eventsLabel)
 		badges = append(badges, eventsBadge)
 	}
 
