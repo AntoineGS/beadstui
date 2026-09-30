@@ -36,7 +36,7 @@ No force pushes: stale branches were brought up to date by merging main into the
 
 ### Notes
 
-- `pkg/bql/sql.go` is entirely dead; deleting it needs sms's go-ahead (AGENTS.md rule 1).
+- `pkg/bql/sql.go` (the never-wired SQLBuilder) was deleted on sms's go-ahead (bt-lbdib). That also retires the latent SQL-injection finding against it (bt-hmt9). BQL runs only in memory (`MemoryExecutor`). A future DoltExecutor would start from the in-memory blocked predicate (decision bt-5muh4), not from this builder.
 - The remote branch `worktree-notif-system-blank-row` is fully merged but still exists. Remote ref deletion is manual-only under the git safety guard.
 - The gated integration tests (claim write, embedded snapshot) were not run at bd 1.3.0. They spawn the real bd, which is too close to real DBs; the work is carried to bt-aj3l.2.
 
