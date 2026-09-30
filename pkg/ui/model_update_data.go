@@ -117,6 +117,11 @@ func (m Model) handleSnapshotReady(msg SnapshotReadyMsg) (Model, tea.Cmd) {
 	// Eventually these will be removed when all code reads from snapshot
 	m.data.issues = msg.Snapshot.Issues
 	m.data.issueMap = msg.Snapshot.IssueMap
+	// Derive the beads_global display label from the loaded issues so the
+	// namespace shows its real prefix rather than a hardcoded "atlas"
+	// (bt-l76b8). Idempotent and falls back to "atlas" when no global issue
+	// is present.
+	model.SetGlobalDisplayName(model.DeriveGlobalDisplayName(msg.Snapshot.Issues))
 	m.data.analyzer = msg.Snapshot.Analyzer
 	m.data.analysis = msg.Snapshot.Analysis
 	// Transient: setListItems (called below on every code path that rebuilds
@@ -967,8 +972,8 @@ func (m Model) handleFileChanged(msg FileChangedMsg) (Model, tea.Cmd) {
 			statusMsg += "; consider BT_BACKGROUND_MODE=1"
 		}
 	}
-	// Background-initiated reload — render in the inline hint slot so it
-	// doesn't clobber key hints (bt-y0k7); auto-dismiss after 3s.
+	// Reload feedback renders as a transient in the floating bubble
+	// (toast_bubble.go), not the footer (bt-c3gpe); auto-dismiss after 3s.
 	cmds = append(cmds, m.setInlineTransientStatus(statusMsg, 3*time.Second))
 	// Invalidate label-derived caches
 	m.labelHealthCached = false

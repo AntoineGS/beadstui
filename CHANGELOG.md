@@ -6,6 +6,58 @@ For architectural decisions, see `docs/adr/`. For issue tracking, use `bd list`.
 
 ---
 
+## 2026-07-26 — Full-backlog autonomy triage, port corpus, and the TUI freeze (bt-2aa49)
+
+**All 430 open beads classified for what an agent fleet can execute unattended vs what needs a human decision (100% coverage, 62 agents, adversarial second pass). The 2026-07-13 command-center product turn is now recorded as a citable bt decision instead of living only in memory files. Port candidates were harvested into an atlas corpus *before* closing, so requirement content survives the backlog shrinking. Open beads 425 → 358. No production code changed.**
+
+### Decision
+
+- **`bt-2aa49` — bt's TUI is frozen to daily-usability fixes.** Funded: (1) fixes to views that already exist, (2) shared-foundation data/robot surfaces, (3) design-lab work whose *decisions* port. Not funded: new top-level views, new TUI subsystems, deep redesigns, cockpit-shaped epics. Bug fixes in existing views are explicitly NOT frozen, and non-TUI areas are untouched. The freeze does not authorise closing anything on its own: a corpus entry must exist first.
+
+### Ships
+
+- **`port:command-center` added to `.beads/conventions/labels.md`** — new Port section. The label means *harvested*, not intended-to-harvest. Documents two non-obvious properties learned by executing the pass: it does not imply closed (`disposition: shared` beads stay open), and it does not propagate down an epic tree.
+- **Port corpus written to atlas** (`~/.files/atlas/brainstorms/2026-07-26-command-center-port-corpus.md`) — ~30 feature entries across ten groups, each carrying layer/v1/disposition and per-bead provenance, plus six LESSON entries, an Unhoused list, four FINDINGs, and the reproducible method. Backing store `…verdicts.jsonl`, 453 records with evidence, tagged `source: bt` so a sym pass appends.
+- **133 beads labelled, 68 closed** citing their corpus entry. All closes reversible via `bd reopen`.
+
+### Findings
+
+- **CI has been lying.** It never ran `go vet` despite AGENTS.md rule 7 mandating it, and never covered `./internal/...`, so the binding `bdroute` write-routing contract had zero enforcement. Separately `pkg/export` is at 66.0% against a required 68, so the coverage gate fails on `main` today (`bt-7q26`).
+- **Five ghost features trace to one cause** — sprint reads a missing file, `V` shells a renamed binary, `O` opens a Dolt-deleted JSONL, `x` dumps to the project root, robot sprint subcommands are hollow. One backend migration orphaned five frontends because rendering is not a test.
+- **Fourteen `type=decision` beads have a written `## Decision` section and are still open**, six of which the new product inherits.
+- **Disposition is not inheritable through the epic tree.** Nine epics refused to close because their open children are funded bt work; bt filed epics by theme while the freeze cuts by class. Epics close last, never via `--force`.
+
+### Notes
+
+- Held back from closing pending decisions the user has not made: five ghost-feature beads, two live class-1 bugs, `bt-dcby` (gates a fleet-executable child), `bt-gfxhz.4` (detail-pane owner undecided).
+- The sym half of the corpus is deliberately empty and labelled as such; until it exists, any v1 cut rests on bt evidence only.
+
+## 2026-07-20 — Merge wave: BackgroundWorker race, label robustness, footer policy, e2e parallelization (PRs #44–#48)
+
+**Wrap of the interrupted 2026-07-19 autonomous PM session (pc:bt:f50ec17c): four adversarially-reviewed draft PRs reviewed, merged, and their beads closed; the parked e2e-parallelization diff verified and re-shipped; small housekeeping and follow-ups filed. All four feature PRs merged on green CI; `go build`/`go vet`/`go install` clean and affected-package tests green on merged main.**
+
+### Ships
+
+- **fix(tui): close BackgroundWorker loop-cancel race causing 5s/2s stalls (bt-pgu0h, PR #44)** — `startLoop()` published `loopCtx`/`loopCancel`/`done` asynchronously from the spawned goroutine, so a fast `Stop()`/`attemptRecovery()` could capture a still-nil `loopCancel` and pay the full 5s/2s fallback wait. They are now created and published synchronously under the existing lock before the goroutine spawns; `runProcessLoop` receives the already-published trio and the redundant second `WorkerStopped` check is gone. Three tests 17s → ~0s; pkg/ui wall ~40s → ~22.6s; race-clean at `-count=5`. Root-cause correction: the bead's hypothesis (missing `ctx.Done()` selects at park points) did not match the code — this was a goroutine-startup race.
+- **fix(tui): guarantee non-empty memories group labels via Origin.Label() (bt-2ea7t.6, PR #45)** — new `Origin.Label()` (DisplayName → Scope → "unknown source") replaces two duplicated ad hoc fallbacks in `memories.go`. The live blank-header report was not reproducible on current main (most likely a stale binary predating the existing Scope fallback); fixed at source anyway so a recurrence is provably a new finding.
+- **fix(tui): derive beads_global display label from real prefix (bt-l76b8, PR #46)** — the "atlas" label now derives from the actual global namespace prefix (`DeriveGlobalDisplayName` + `SetGlobalDisplayName` wired at TUI snapshot load) instead of a hardcoded constant, with atlas as the fallback so this fleet is unchanged. Robot mode and `origin.go` still emit the default — filed as follow-up **bt-xzljd**.
+- **docs(tui): footer-speaks policy — bubble is the sole transient surface (bt-c3gpe, PR #47)** — the reported bubble+hint-slot double render was already dead code (removed by the bt-2vshd lens redesign); the bubble is already the only transient surface. Delivered the policy as self-documenting comments, a regression test locking the single-surface invariant, and the actual cause of the intermittent toast named with evidence: the `statusMsg` slot has no minimum display time, so a status replaced within one coalesced Bubble Tea frame never paints. Comment-only + one additive test.
+- **perf(tests): parallelize e2e suite (bt-xv7wf, PR #48, draft)** — resumed the interrupted diff: `t.Parallel()` across the `tests/e2e` tests plus `boundDefaultParallelism()` capping the default `-parallel` at 8 (each e2e test spawns bt subprocesses; the `GOMAXPROCS` default thrashes many-core machines per bt-qp1j; an explicit `-parallel N` still wins). e2e package wall time 523s → 74.0s (~7x) on this box, race-clean, and green rebased on merged main (72.2s). Additive only (353 insertions, 0 deletions). Draft pending review at merge time.
+
+### Bead bookkeeping
+
+- Closed: **bt-pgu0h** (#44), **bt-2ea7t.6** (#45), **bt-l76b8** (#46), **bt-c3gpe** (#47).
+- In progress / close-on-merge: **bt-xv7wf** (#48).
+- Filed follow-ups: **bt-1f7tz** (pre-existing BackgroundWorker `Stop()`-vs-`Start()` window, flagged during #44), **bt-xzljd** (derive the global label for robot mode + `origin.go`; refresh three stale "aliases to atlas" call-site comments, from #46), **bt-nz5o2** (remove dead hint-slot plumbing + ~15 stale `ShortHelp` docstrings — the bt-2vshd cleanup rider surfaced by #47).
+- Noted on existing beads: **bt-msxk** (toast minimum-display-time lifecycle, from #47).
+
+### Notes
+
+- Housekeeping: added `.bt.lock` to `.gitignore` — a sibling lock file leaked into the tree by test runs that launch bt; the existing `.bt/` pattern did not cover it.
+- The 2026-07-17 footer-dogfood batch (PRs #41/#42) has no CHANGELOG entry yet — pre-existing gap, not part of this wave.
+
+---
+
 ## 2026-07-17 — ViewList chrome polish: single-pane border + footer double-all + indent (bt-r5v9k)
 
 **Dogfood polish pass on the ViewList surfaces, continued from an earlier bt session. Three chrome fixes, no data-layer changes.**
