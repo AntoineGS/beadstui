@@ -24,9 +24,20 @@ For architectural decisions, see `docs/adr/`. For issue tracking, use `bd list`.
 - Filed: **bt-5muh4** (decision: one blocked predicate), **bt-9idgu** (design: retire the always-NULL `created_by_session`/`claimed_by_session`, source provenance from `provenance_events` 0063), **bt-96wpk** (robot search ignores `--source`, same bypass class), **bt-2716b** (the TUI `ready` filter's own predicate disagrees with the footer triad).
 - Commented with the v1.3.0 input: **bt-z0hu6** (events-first refresh cannot see pulled cross-machine changes after 0062), **bt-rdapi**, **bt-94a7**.
 
+### Merge wave (PR backlog cleared)
+
+sms handed merges and PR ceremony to the agent mid-session. Every open PR was landed, and the open-PR count went from 3 to 0:
+- **#50** (2026-07-26 label taxonomy + triage changelog, docs only).
+- **#52**, this session's work.
+- **#43** (bt-r5v9k single-pane border / double-all / footer indent). It was 2.5 months behind main: merged main in, resolved the CHANGELOG ordering, and verified with the render harness in place of the requested live look.
+- **#53**, which landed the stranded `worktree-panel-redesign` branch: content-first detail pane (bt-krx1.1), plus the row chip and peek strip (bt-evuf.2/.3). Those beads had been closed with no PR and the code never on main; its themes half had already landed via #49/#51. Handoff bead **bt-mvpzk** closed, and its unowned "Primary paints large fills" item filed as **bt-ft1vp**.
+
+No force pushes: stale branches were brought up to date by merging main into them. The CI test job was green on every PR before merge.
+
 ### Notes
 
 - `pkg/bql/sql.go` is entirely dead; deleting it needs sms's go-ahead (AGENTS.md rule 1).
+- The remote branch `worktree-notif-system-blank-row` is fully merged but still exists. Remote ref deletion is manual-only under the git safety guard.
 - The gated integration tests (claim write, embedded snapshot) were not run at bd 1.3.0. They spawn the real bd, which is too close to real DBs; the work is carried to bt-aj3l.2.
 
 ---
