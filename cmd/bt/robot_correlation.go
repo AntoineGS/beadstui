@@ -13,26 +13,29 @@ import (
 
 // resolveCorrelator constructs a *correlation.Correlator for the robot
 // history-family subcommands, mirroring the dispatch LoadHistoryCmd uses in
-// the TUI (pkg/ui/model.go, bt-ydjw phase 2). On JSONL-tracked repos it is
-// equivalent to the legacy NewCorrelator(repoPath, beadsPath) construction.
-// On Dolt-only repos (bt itself, post commit 90d8432d) it opens an ephemeral
-// connection through the active DataSource and wires the correlator via
-// NewCorrelatorWithDolt so GenerateReport dispatches to DoltExtractor.
+// the TUI (pkg/ui/model.go, bt-ydjw phase 2). When the active DataSource is a
+// Dolt server it opens an ephemeral connection and wires the correlator via
+// NewCorrelatorWithDolt so GenerateReport dispatches to DoltExtractor. The
+// legacy NewCorrelator(repoPath, beadsPath) JSONL path is the fallback only
+// when no Dolt connection is available.
 //
-// Dispatch order:
+// Dispatch order (bt-zxdl9: the configured backend decides, not whether a
+// JSONL file happens to exist - Dolt-canonical repos often keep a stale,
+// untracked .beads/issues.jsonl that would otherwise hijack dispatch):
 //
-//  1. JSONL on disk      -> NewCorrelator (unchanged path).
-//  2. SourceTypeDolt     -> open via datasource.NewDoltReader, borrow
+//  1. SourceTypeDolt     -> open via datasource.NewDoltReader, borrow
 //     reader.DB(), construct via NewCorrelatorWithDolt.
-//  3. SourceTypeDoltGlobal + currentProjectDB -> sql.Open against
+//  2. SourceTypeDoltGlobal + currentProjectDB -> sql.Open against
 //     datasource.PerDBDSN(globalDSN, currentProjectDB), Ping to verify
 //     reachability, construct via NewCorrelatorWithDolt.
+//  3. JSONL on disk      -> NewCorrelator (JSONL-in-git projects and
+//     BT_TEST_MODE fixtures, which have no Dolt source).
 //
 // The returned closer is nil when no Dolt connection was opened; callers
 // always defer it before invoking GenerateReport.
 //
 // err is returned only when none of the dispatch paths is available
-// (no JSONL on disk AND no usable Dolt DataSource). Replaces the misleading
+// (no usable Dolt DataSource AND no JSONL on disk). Replaces the misleading
 // "no beads file found in <repo>/.beads/" wedge that bt-5s3u closes.
 func resolveCorrelator(repoPath string) (*correlation.Correlator, func(), error) {
 	// Embedded (in-process Dolt) projects have neither git-tracked JSONL nor a
@@ -59,10 +62,6 @@ func resolveCorrelator(repoPath string) (*correlation.Correlator, func(), error)
 		if p, perr := loader.FindJSONLPath(beadsDir); perr == nil {
 			beadsPath = p
 		}
-	}
-
-	if correlation.HasJSONLOnDisk(repoPath) {
-		return correlation.NewCorrelator(repoPath, beadsPath), nil, nil
 	}
 
 	if appCtx.selectedSource != nil {
@@ -92,6 +91,10 @@ func resolveCorrelator(repoPath string) (*correlation.Correlator, func(), error)
 		if doltDB != nil {
 			return correlation.NewCorrelatorWithDolt(repoPath, doltDB, beadsPath), closer, nil
 		}
+	}
+
+	if correlation.HasJSONLOnDisk(repoPath) {
+		return correlation.NewCorrelator(repoPath, beadsPath), nil, nil
 	}
 
 	return nil, nil, fmt.Errorf("no beads data: %s has no .beads/*.jsonl on disk and no Dolt source is available", repoPath)

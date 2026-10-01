@@ -610,6 +610,48 @@ func TestHistoryDispatchTarget_GlobalEnumerationFailure(t *testing.T) {
 	}
 }
 
+// TestHistoryDispatchTarget_StaleJSONLDoesNotOutrankGlobal covers bt-zxdl9:
+// a Dolt-canonical repo that still carries an old .beads/issues.jsonl must
+// dispatch the History view to its shared-server database, not short-circuit
+// to ("", true). That empty projectDB made LoadHistoryCmd skip the Dolt
+// connection and run the legacy JSONL correlator, so the view came up empty.
+// JSONL stays the fallback when no candidate database validates.
+func TestHistoryDispatchTarget_StaleJSONLDoesNotOutrankGlobal(t *testing.T) {
+	savedFn := enumerateDoltDatabasesFn
+	t.Cleanup(func() { enumerateDoltDatabasesFn = savedFn })
+
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, ".beads"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".beads", "issues.jsonl"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	issues := []model.Issue{{ID: "mkt-1", Title: "T", Status: model.StatusOpen, SourceRepo: "mkt"}}
+	m := NewModel(issues, nil, "", &datasource.DataSource{
+		Type: datasource.SourceTypeDoltGlobal,
+		Path: "root@tcp(127.0.0.1:9999)/?parseTime=true",
+	}, nil)
+	m.currentProjectDB = ""
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+	m = updated.(Model)
+	ctx := m.historyContext()
+
+	enumerateDoltDatabasesFn = func(dsn string) []string { return []string{"mkt", "bt"} }
+	projectDB, ok := m.historyDispatchTarget(ctx, repo)
+	if !ok || projectDB != "mkt" {
+		t.Errorf("historyDispatchTarget = (%q, %v), want (\"mkt\", true): the Dolt database must win over a stale JSONL file", projectDB, ok)
+	}
+
+	enumerateDoltDatabasesFn = func(dsn string) []string { return nil }
+	projectDB, ok = m.historyDispatchTarget(ctx, repo)
+	if !ok || projectDB != "" {
+		t.Errorf("historyDispatchTarget with no resolvable DB = (%q, %v), want (\"\", true): JSONL on disk is the fallback", projectDB, ok)
+	}
+}
+
 // TestResolveHistoryRepoPath_BeadsLayout: explicit beads.jsonl under
 // <root>/.beads/ resolves to <root>. Underpins the dispatch-time path
 // resolution refactor in bt-uizm; the function must run without touching

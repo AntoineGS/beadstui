@@ -62,50 +62,62 @@ var enumerateDoltDatabasesFn = func(dsn string) []string {
 // return ("", false) and the caller is expected to short-circuit to the
 // polite empty-state.
 //
+// A Dolt source is resolved before the JSONL-on-disk check (bt-zxdl9):
+// Dolt-canonical repos often keep a stale, untracked .beads/issues.jsonl,
+// and checking it first made a global source dispatch with an empty
+// projectDB, which sent LoadHistoryCmd down the legacy JSONL path. JSONL
+// is the fallback only when no Dolt source can serve the view.
+//
 // Single helper used by both enterHistoryView's gate and its dispatch
 // site so the two cannot disagree (gate admits / dispatcher targets
 // empty was the bt-ydjw.1 Case B failure mode).
 func (m Model) historyDispatchTarget(ctx HistoryContext, repoPath string) (string, bool) {
-	if correlation.HasJSONLOnDisk(repoPath) {
-		return "", true
-	}
-	if m.data.dataSource == nil {
-		return "", false
-	}
-	switch m.data.dataSource.Type {
-	case datasource.SourceTypeDolt:
-		// Single-repo DSN already pins a database; LoadHistoryCmd ignores the
-		// projectDB argument in this case.
-		return "", true
-	case datasource.SourceTypeDoltGlobal:
-		knownDBs := enumerateDoltDatabasesFn(m.data.dataSource.Path)
-		if len(knownDBs) == 0 {
-			return "", false
-		}
-		candidates := make([]string, 0, 4)
-		// SourceRepo carries the authoritative DB name (e.g. "beads" for
-		// bd-* beads); try it ahead of the ID prefix which only matches the
-		// DB name by convention (bt-ydjw.4).
-		if ctx.CursorSourceRepo != "" {
-			candidates = append(candidates, ctx.CursorSourceRepo)
-		}
-		if ctx.CursorPrefix != "" {
-			candidates = append(candidates, ctx.CursorPrefix)
-		}
-		if len(ctx.ActiveProjects) == 1 {
-			candidates = append(candidates, ctx.ActiveProjects[0])
-		}
-		if m.currentProjectDB != "" {
-			candidates = append(candidates, m.currentProjectDB)
-		}
-		for _, c := range candidates {
-			for _, db := range knownDBs {
-				if db == c {
-					return db, true
-				}
+	if m.data.dataSource != nil {
+		switch m.data.dataSource.Type {
+		case datasource.SourceTypeDolt:
+			// Single-repo DSN already pins a database; LoadHistoryCmd ignores
+			// the projectDB argument in this case.
+			return "", true
+		case datasource.SourceTypeDoltGlobal:
+			if db, ok := m.globalHistoryDB(ctx); ok {
+				return db, true
 			}
 		}
+	}
+	return "", correlation.HasJSONLOnDisk(repoPath)
+}
+
+// globalHistoryDB resolves the shared-server project database the History
+// view should target in SourceTypeDoltGlobal mode, trying the candidates in
+// the priority order documented on historyDispatchTarget and accepting only
+// one present in the server's live enumeration.
+func (m Model) globalHistoryDB(ctx HistoryContext) (string, bool) {
+	knownDBs := enumerateDoltDatabasesFn(m.data.dataSource.Path)
+	if len(knownDBs) == 0 {
 		return "", false
+	}
+	candidates := make([]string, 0, 4)
+	// SourceRepo carries the authoritative DB name (e.g. "beads" for bd-*
+	// beads); try it ahead of the ID prefix which only matches the DB name by
+	// convention (bt-ydjw.4).
+	if ctx.CursorSourceRepo != "" {
+		candidates = append(candidates, ctx.CursorSourceRepo)
+	}
+	if ctx.CursorPrefix != "" {
+		candidates = append(candidates, ctx.CursorPrefix)
+	}
+	if len(ctx.ActiveProjects) == 1 {
+		candidates = append(candidates, ctx.ActiveProjects[0])
+	}
+	if m.currentProjectDB != "" {
+		candidates = append(candidates, m.currentProjectDB)
+	}
+	for _, c := range candidates {
+		for _, db := range knownDBs {
+			if db == c {
+				return db, true
+			}
+		}
 	}
 	return "", false
 }

@@ -750,11 +750,16 @@ func (rc *robotCtx) runRelatedWork(beadID string, relatedMinRelevance, relatedMa
 	type RelatedWorkOutput struct {
 		RobotEnvelope
 		*correlation.RelatedWorkResult
+		// RepoStatus carries the correlator's chosen data path
+		// (events_source, bt-zxdl9) so an empty result is distinguishable
+		// from a wrong or missing data path.
+		RepoStatus correlation.RepoStatus `json:"repo_status"`
 	}
 
 	output := RelatedWorkOutput{
 		RobotEnvelope:     NewRobotEnvelope(report.DataHash),
 		RelatedWorkResult: result,
+		RepoStatus:        report.RepoStatus,
 	}
 
 	encoder := rc.newEncoder()

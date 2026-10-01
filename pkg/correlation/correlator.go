@@ -17,9 +17,9 @@ type Correlator struct {
 	extractor   *Extractor
 	coCommitter *CoCommitExtractor
 	// doltDB is an optional, already-open connection to a beads Dolt server.
-	// When non-nil and the repo has no JSONL on disk, GenerateReport dispatches
-	// to the Dolt-native DoltExtractor instead of the JSONL+git-diff Extractor
-	// (bt-08sh.4). Borrowed, not owned: the Correlator does not Close it.
+	// When non-nil, GenerateReport dispatches to the Dolt-native DoltExtractor
+	// (bt-08sh.4) regardless of any JSONL file on disk (bt-zxdl9). Borrowed,
+	// not owned: the Correlator does not Close it.
 	doltDB *sql.DB
 }
 
@@ -35,18 +35,17 @@ func NewCorrelator(repoPath string, beadsFilePath ...string) *Correlator {
 	}
 }
 
-// NewCorrelatorWithDolt creates a correlator that can also read events from a
-// Dolt server when the repo has migrated off JSONL. Callers that have an
-// already-open *datasource.DoltReader pass reader.DB() here; the underlying
-// connection is borrowed, not owned.
+// NewCorrelatorWithDolt creates a correlator that reads events from a Dolt
+// server. Callers that have an already-open *datasource.DoltReader pass
+// reader.DB() here; the underlying connection is borrowed, not owned.
 //
-// When the repo still has .beads/*.jsonl on disk, GenerateReport ignores
-// doltDB and uses the JSONL+git-diff Extractor (unchanged behavior). When the
-// repo is Dolt-only (no JSONL on disk) and doltDB is non-nil, GenerateReport
-// dispatches to the Dolt-native DoltExtractor. When the repo is Dolt-only and
-// doltDB is nil (no caller opted in), GenerateReport returns an empty events
-// list rather than failing — consumers inspect RepoStatus.JSONLTracked to
-// distinguish that case from "no events recorded".
+// A non-nil doltDB always selects the Dolt-native DoltExtractor, even when a
+// .beads/*.jsonl file is still on disk: Dolt is canonical since beads v1.0,
+// and a leftover export (often untracked or gitignored) carries stale or no
+// history (bt-zxdl9). With a nil doltDB, GenerateReport falls back to the
+// JSONL+git-diff Extractor when a JSONL file exists, and otherwise returns an
+// empty events list rather than failing. RepoStatus.EventsSource tells the
+// consumer which path ran.
 func NewCorrelatorWithDolt(repoPath string, doltDB *sql.DB, beadsFilePath ...string) *Correlator {
 	c := NewCorrelator(repoPath, beadsFilePath...)
 	c.doltDB = doltDB
@@ -75,8 +74,13 @@ func (c *Correlator) GenerateReport(beads []BeadInfo, opts CorrelatorOptions) (*
 	if !insideRepo {
 		return c.emptyReport(beads, opts), nil
 	}
-	jsonlTracked := HasJSONLOnDisk(c.repoPath)
-	repoStatus := RepoStatus{RepoPath: c.repoPath, InsideWorkTree: true, JSONLTracked: jsonlTracked}
+	source := c.eventsSource()
+	repoStatus := RepoStatus{
+		RepoPath:       c.repoPath,
+		InsideWorkTree: true,
+		JSONLTracked:   source == EventsSourceJSONL,
+		EventsSource:   source,
+	}
 
 	// Build extract options
 	extractOpts := ExtractOptions{
@@ -86,19 +90,17 @@ func (c *Correlator) GenerateReport(beads []BeadInfo, opts CorrelatorOptions) (*
 		BeadID: opts.BeadID,
 	}
 
-	// bt-08sh.4 (Option C of bt-592c): dispatch on whether JSONL is still on
-	// disk. JSONL-tracked repos keep the historical extractor (git log over
-	// .beads/*.jsonl plus diff witness). Dolt-only repos read events from the
-	// upstream events / wisp_events tables via DoltExtractor, but only when a
-	// caller opted in by handing us a *sql.DB (NewCorrelatorWithDolt). Callers
-	// that constructed the plain NewCorrelator on a Dolt-only repo get back an
-	// empty events list rather than a synthetic error — RepoStatus.JSONLTracked
-	// tells the consumer which case it is.
-	events, err := c.extractEvents(jsonlTracked, extractOpts)
+	// bt-08sh.4 / bt-zxdl9: dispatch on the configured backend. A wired Dolt
+	// connection (NewCorrelatorWithDolt) reads the upstream events /
+	// wisp_events tables via DoltExtractor. Only without one does the legacy
+	// extractor (git log over .beads/*.jsonl plus diff witness) run, and only
+	// when a JSONL file exists. Otherwise the events list is empty rather
+	// than a synthetic error; RepoStatus.EventsSource says which case it is.
+	events, err := c.extractEvents(source, extractOpts)
 	if err != nil {
 		return nil, fmt.Errorf("extracting events: %w", err)
 	}
-	if !jsonlTracked && c.doltDB != nil {
+	if source == EventsSourceDolt {
 		repoStatus.EventsScope = EventsScopeLocalMachine
 	}
 
@@ -108,19 +110,21 @@ func (c *Correlator) GenerateReport(beads []BeadInfo, opts CorrelatorOptions) (*
 		return nil, fmt.Errorf("extracting co-commits: %w", err)
 	}
 
-	// bt-ydjw.5: on the Dolt path, co-commit correlation is structurally
-	// impossible (events have no CommitSHA per 592c), so commits would be
-	// empty and the History view's COMMITS pane stays blank. Run the
-	// explicit-ID matcher against host git history to recover developer-
-	// declared bead-to-commit links from commit message subjects. This
-	// signal class is intent-based (commit message text), not heuristic
+	// bt-ydjw.5 / bt-zxdl9: run the explicit-ID matcher against host git
+	// history on every path to recover developer-declared bead-to-commit
+	// links from commit message subjects. On the Dolt path co-commit
+	// correlation is structurally impossible (events have no CommitSHA per
+	// 592c), so this is the only commit signal. On the JSONL path co-commit
+	// only sees commits that touched the JSONL file; commits that cite a bead
+	// without touching it were invisible before bt-zxdl9. Overlap with
+	// co-commit is resolved by dedupCommits in buildHistories (first entry
+	// per SHA wins, so a co_committed match keeps its method). This signal
+	// class is intent-based (commit message text), not heuristic
 	// (author/temporal proximity), so 592c's rejection of git correlation on
 	// the Dolt path -- which targeted MethodTemporalAuthor specifically --
 	// does not apply. Errors are non-fatal: the report still renders with
 	// events but no commits.
-	if !jsonlTracked {
-		commits = append(commits, c.explicitCommits(extractOpts, beads)...)
-	}
+	commits = append(commits, c.explicitCommits(extractOpts, beads)...)
 
 	// Build bead histories
 	histories := c.buildHistories(beads, events, commits)
@@ -186,16 +190,36 @@ func (c *Correlator) emptyReport(beads []BeadInfo, opts CorrelatorOptions) *Hist
 		RepoStatus: RepoStatus{
 			RepoPath:       c.repoPath,
 			InsideWorkTree: false,
-			JSONLTracked:   HasJSONLOnDisk(c.repoPath),
+			EventsSource:   EventsSourceNone,
 		},
 	}
 }
 
+// eventsSource picks the data path GenerateReport reads lifecycle events
+// from (bt-zxdl9). The configured backend decides, not the files on disk: a
+// wired Dolt connection always wins, because Dolt is canonical since beads
+// v1.0 and a leftover .beads/issues.jsonl export (often untracked or
+// gitignored) holds stale or no history. The JSONL+git-diff extractor is
+// the fallback only when no Dolt connection was provided (JSONL-in-git
+// projects, BT_TEST_MODE fixtures, legacy callers of NewCorrelator).
+func (c *Correlator) eventsSource() string {
+	if c.doltDB != nil {
+		return EventsSourceDolt
+	}
+	if HasJSONLOnDisk(c.repoPath) {
+		return EventsSourceJSONL
+	}
+	return EventsSourceNone
+}
+
 // explicitCommits runs a single git log scan via ExplicitMatcher and returns
 // CorrelatedCommit entries for any commit message that references a bead ID
-// in the provided beads list. Used by GenerateReport on the Dolt path
-// (bt-ydjw.5); the JSONL path already covers explicit-ID via co-commit's
-// containsBeadID confidence bump plus its own MethodExplicitID flow.
+// in the provided beads list. GenerateReport runs it on every events path
+// (bt-ydjw.5, widened to the JSONL path by bt-zxdl9). On the JSONL path,
+// co-commit's containsBeadID only bumps the confidence of commits that
+// touched the JSONL file; it never discovers commits that cite a bead
+// without touching it, so this scan is the only explicit-ID discovery on
+// either path.
 //
 // Errors from ScanCommits are swallowed deliberately: a malformed git output
 // or a repo with no commits is not fatal to the report -- the consumer sees
@@ -237,20 +261,19 @@ func (c *Correlator) explicitCommits(opts ExtractOptions, beads []BeadInfo) []Co
 	return commits
 }
 
-// extractEvents routes between the JSONL+git-diff extractor (legacy repos that
-// still have .beads/*.jsonl on disk) and the Dolt-native DoltExtractor
-// (Dolt-only repos, when the caller opted in by providing a *sql.DB). When the
-// repo is Dolt-only and no DB was provided, returns an empty slice — consumers
-// distinguish "Dolt-only, no extractor wired" from "JSONL-tracked, no events"
-// via RepoStatus.JSONLTracked.
-func (c *Correlator) extractEvents(jsonlTracked bool, opts ExtractOptions) ([]BeadEvent, error) {
-	if jsonlTracked {
+// extractEvents routes to the extractor eventsSource selected: the Dolt-native
+// DoltExtractor when a *sql.DB was provided, the JSONL+git-diff extractor when
+// there is no DB but a JSONL file exists, and an empty slice otherwise.
+// Consumers tell those cases apart via RepoStatus.EventsSource.
+func (c *Correlator) extractEvents(source string, opts ExtractOptions) ([]BeadEvent, error) {
+	switch source {
+	case EventsSourceDolt:
+		return NewDoltExtractor(c.doltDB).Extract(opts)
+	case EventsSourceJSONL:
 		return c.extractor.Extract(opts)
-	}
-	if c.doltDB == nil {
+	default:
 		return nil, nil
 	}
-	return NewDoltExtractor(c.doltDB).Extract(opts)
 }
 
 // findLatestCommitSHA finds the most recent commit SHA from events and commits
