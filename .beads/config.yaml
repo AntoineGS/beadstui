@@ -12,4 +12,4 @@ validation.on-close: "warn"
 
 export.auto: false
 
-sync.remote: "git+ssh://git@github.com/seanmartinsmith/beadstui.git"
+sync.remote: "git+ssh://git@github.com/seanmartinsmith/beadstui-beads.git"
