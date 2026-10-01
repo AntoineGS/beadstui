@@ -411,7 +411,7 @@ func (m Model) alertsPanelHeight() int {
 // dimmed backdrop (OverlayCenterDimBackdrop) to handle bleed-through occlusion
 // rather than spanning the terminal itself (bt-v8he). The 100-cell cap fits
 // both content shapes:
-//   - Notifications row: "15:04 closed bt-46p6.1 • <title>" reads naturally
+//   - Notifications row: "15:04:05 closed bt-46p6.1 • <title>" reads naturally
 //     in 70-100 cells; tighter feels cramped, wider feels under-filled.
 //   - Alerts row: "▲ [type] message" is shorter still; 100 keeps both tabs at
 //     the same outer width so tab cycling doesn't reflow the panel.
@@ -798,12 +798,12 @@ func trimEndForDaySeparators(active []events.Event, start, end, pageSize int) in
 }
 
 // formatNotificationRow renders a single ring-buffer event as a one-line
-// notification. Format: "15:04 closed bt-46p6.1 • Fix: modal expands…"
+// notification. Format: "15:04:05 closed bt-46p6.1 • Fix: modal expands…"
 // Single space between time/kind/id; " • " separates id from title.
 // Columns are unaligned (intentional — tighter spacing over grid alignment).
 // Title is sanitized (newlines → spaces) and truncated at runtime width.
 func formatNotificationRow(e events.Event, width int) string {
-	timeStr := e.At.Format("15:04")
+	timeStr := e.At.Format("15:04:05")
 	kindStr := e.Kind.String()
 	idStr := e.BeadID
 	// Dismissed prefix only renders when the dismissed-filter is on (v2,
@@ -814,11 +814,11 @@ func formatNotificationRow(e events.Event, width int) string {
 		prefix = activeGlyphs.Cross + " "
 	}
 	title := strings.ReplaceAll(e.Title, "\n", " ")
-	// System events (bt-9u39) carry no BeadID — render as "15:04 system • Title"
+	// System events (bt-9u39) carry no BeadID — render as "15:04:05 system • Title"
 	// without the empty id slot to avoid a double-space gap. NewSystemEvent
 	// (setFailure/setDegraded) stores its message in Summary and leaves Title
 	// empty, so fall back to Summary as the row headline; without this those
-	// notices render as a blank "15:04 system •" row (the text was visible only
+	// notices render as a blank "15:04:05 system •" row (the text was visible only
 	// on the selected-row summary-expand line).
 	if e.Kind == events.EventSystem || idStr == "" {
 		headline := title
@@ -832,7 +832,7 @@ func formatNotificationRow(e events.Event, width int) string {
 		}
 		return prefix + timeStr + " " + kindStr + " • " + truncate(headline, titleWidth)
 	}
-	// timeStr(5) + " " + kindStr + " " + idStr + " • " (3) + optional prefix
+	// timeStr(8) + " " + kindStr + " " + idStr + " • " (3) + optional prefix
 	consumed := len(prefix) + len(timeStr) + 1 + len(kindStr) + 1 + len(idStr) + 3
 	titleWidth := width - consumed
 	if titleWidth < 10 {

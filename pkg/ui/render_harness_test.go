@@ -585,6 +585,21 @@ func TestRenderDump(t *testing.T) {
 			m.notifFilterKind = "created"
 		}},
 
+		// Seconds timestamps (bt-hzmuv) and page-key footers (bt-p4p8.1) at the
+		// user's scrunched sizes.
+		{"modal_notifications_80x24", 80, 24, func(m *Model) {
+			seedHarnessNotifications(m)
+			m.activeTab = TabNotifications
+			m.openModal(ModalAlerts)
+		}},
+		{"modal_notifications_60x16", 60, 16, func(m *Model) {
+			seedHarnessNotifications(m)
+			m.activeTab = TabNotifications
+			m.openModal(ModalAlerts)
+		}},
+		{"modal_alerts_status_80x24", 80, 24, statusHeaderScenario},
+		{"modal_alerts_status_60x16", 60, 16, statusHeaderScenario},
+
 		// Footer Phase 4 notification states: the bell badge only — the toast
 		// itself moved to a floating bubble overlay (bt-kuvzj, see the
 		// toast_bubble_* scenarios below). These dumps now double as proof the

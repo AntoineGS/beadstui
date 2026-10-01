@@ -228,6 +228,23 @@ func TestFormatNotificationRow_SystemEventUsesSummaryWhenTitleEmpty(t *testing.T
 	}
 }
 
+// TestFormatNotificationRow_ShowsSecondsAndKeepsKindAndID pins bt-hzmuv: the
+// row time is HH:MM:SS, and at narrow widths the title gives way before the
+// kind or bead ID do.
+func TestFormatNotificationRow_ShowsSecondsAndKeepsKindAndID(t *testing.T) {
+	at := time.Date(2026, 10, 1, 12, 34, 56, 0, time.Local)
+	e := events.Event{ID: "n1", Kind: events.EventCommented, BeadID: "bt-46p6.16", Title: strings.Repeat("long title ", 10), At: at}
+	for _, w := range []int{47, 60, 100} {
+		row := formatNotificationRow(e, w)
+		if !strings.HasPrefix(row, "12:34:56 ") {
+			t.Errorf("width %d: row must start with HH:MM:SS, got %q", w, row)
+		}
+		if !strings.Contains(row, "commented bt-46p6.16 •") {
+			t.Errorf("width %d: kind + bead ID must stay fully visible, got %q", w, row)
+		}
+	}
+}
+
 // TestRenderNotificationsTab_SystemEventShowsSummaryUnselected verifies the
 // message text of a NewSystemEvent is visible even when the row is NOT the
 // selected (cursor) row. Before the fix the text only appeared on the
