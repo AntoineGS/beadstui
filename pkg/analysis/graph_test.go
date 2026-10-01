@@ -927,4 +927,93 @@ func TestGetBlockerChain(t *testing.T) {
 			t.Errorf("Expected C to block 2 issues, got %d", cEntry.BlocksCount)
 		}
 	})
+
+	t.Run("diamond is not a cycle", func(t *testing.T) {
+		// A blocked by B and C; both blocked only by D (bt-nanrl).
+		issues := []model.Issue{
+			{ID: "A", Status: model.StatusOpen, Title: "Issue A", Dependencies: []*model.Dependency{
+				{DependsOnID: "B", Type: model.DepBlocks},
+				{DependsOnID: "C", Type: model.DepBlocks},
+			}},
+			{ID: "B", Status: model.StatusOpen, Title: "Issue B", Dependencies: []*model.Dependency{
+				{DependsOnID: "D", Type: model.DepBlocks},
+			}},
+			{ID: "C", Status: model.StatusOpen, Title: "Issue C", Dependencies: []*model.Dependency{
+				{DependsOnID: "D", Type: model.DepBlocks},
+			}},
+			{ID: "D", Status: model.StatusOpen, Title: "Issue D"},
+		}
+		result := analysis.NewAnalyzer(issues).GetBlockerChain("A")
+
+		if result == nil {
+			t.Fatal("Expected non-nil result")
+		}
+		if result.HasCycle {
+			t.Errorf("diamond reported HasCycle=true, CycleIDs=%v", result.CycleIDs)
+		}
+		if len(result.CycleIDs) != 0 {
+			t.Errorf("Expected no CycleIDs, got %v", result.CycleIDs)
+		}
+		dCount := 0
+		for _, e := range result.Chain {
+			if e.ID == "D" {
+				dCount++
+			}
+		}
+		if dCount != 1 {
+			t.Errorf("Expected shared blocker D listed once, got %d", dCount)
+		}
+		if result.ChainLength != 3 {
+			t.Errorf("Expected chain length 3 (B, C, D), got %d", result.ChainLength)
+		}
+		if len(result.RootBlockers) != 1 || result.RootBlockers[0].ID != "D" {
+			t.Errorf("Expected single root blocker D, got %+v", result.RootBlockers)
+		}
+	})
+
+	t.Run("real cycle still detected", func(t *testing.T) {
+		// A blocked by B, B blocked by A.
+		issues := []model.Issue{
+			{ID: "A", Status: model.StatusOpen, Title: "Issue A", Dependencies: []*model.Dependency{
+				{DependsOnID: "B", Type: model.DepBlocks},
+			}},
+			{ID: "B", Status: model.StatusOpen, Title: "Issue B", Dependencies: []*model.Dependency{
+				{DependsOnID: "A", Type: model.DepBlocks},
+			}},
+		}
+		result := analysis.NewAnalyzer(issues).GetBlockerChain("A")
+
+		if result == nil {
+			t.Fatal("Expected non-nil result")
+		}
+		if !result.HasCycle {
+			t.Error("Expected HasCycle=true for A to B to A")
+		}
+		if len(result.CycleIDs) == 0 {
+			t.Error("Expected CycleIDs to be populated")
+		}
+	})
+
+	t.Run("cycle reachable through a diamond", func(t *testing.T) {
+		// A blocked by X and Y; X and Y block on each other. Per-path-only
+		// ancestry would miss this because Y is already visited when X's
+		// edge to it is examined.
+		issues := []model.Issue{
+			{ID: "A", Status: model.StatusOpen, Title: "Issue A", Dependencies: []*model.Dependency{
+				{DependsOnID: "X", Type: model.DepBlocks},
+				{DependsOnID: "Y", Type: model.DepBlocks},
+			}},
+			{ID: "X", Status: model.StatusOpen, Title: "Issue X", Dependencies: []*model.Dependency{
+				{DependsOnID: "Y", Type: model.DepBlocks},
+			}},
+			{ID: "Y", Status: model.StatusOpen, Title: "Issue Y", Dependencies: []*model.Dependency{
+				{DependsOnID: "X", Type: model.DepBlocks},
+			}},
+		}
+		result := analysis.NewAnalyzer(issues).GetBlockerChain("A")
+
+		if result == nil || !result.HasCycle {
+			t.Fatalf("Expected HasCycle=true for X and Y blocking each other, got %+v", result)
+		}
+	})
 }
