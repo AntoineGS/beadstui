@@ -656,6 +656,8 @@ bt robot graph --graph-format dot | dot -Tpng > graph.png
 
 **Note**: Requires beads data accessible to bt. When using worktrees or non-workspace directories, pass `--global`. When run outside a beads project (no local `.beads/`), the error message will suggest `--global` to query the global Dolt server.
 
+The envelope carries the correlator's `repo_status` (same fields as `bt robot history`). Read `repo_status.events_source` before treating `total_related: 0` as "nothing related": `none` means no data path was available.
+
 **Examples**:
 ```bash
 bt robot related bt-53du
@@ -837,7 +839,7 @@ bt robot orphans --history-limit 100
 
 ### bt robot history
 
-**Purpose**: Bead-to-commit correlation output - which commits are linked to which beads. Requires JSONL beads data (not Dolt-only installs) or global mode.
+**Purpose**: Bead-to-commit correlation output - which commits are linked to which beads. Lifecycle events come from the Dolt `events` tables whenever a Dolt source is available; the legacy JSONL git-history path is used only when there is none. Commits come from explicit bead-ID references in commit subjects on every path, plus co-commit correlation on the JSONL path.
 
 **Note**: Requires accessible beads data. Will error if `.beads/` is not available in the local directory. When run outside a beads project (no local `.beads/`), the error message will suggest `--global` to query the global Dolt server.
 
@@ -846,7 +848,8 @@ bt robot orphans --history-limit 100
 |---|---|---|
 | `repo_path` | string | Path probed for `git log` |
 | `inside_work_tree` | bool | False means git-derived data (commits, files) is empty |
-| `jsonl_tracked` | bool | True: events from JSONL git history. False: events from the Dolt `events` / `wisp_events` tables |
+| `events_source` | string | Data path the events were read from: `dolt`, `jsonl`, or `none` (no Dolt source and no JSONL, or not a git work tree). A Dolt source always wins over a `.beads/*.jsonl` file on disk, so a stale leftover export cannot hijack the path (bt-zxdl9). Check this before reading an empty result as "no history" |
+| `jsonl_tracked` | bool | True when `events_source` is `jsonl` (events from JSONL git history); false otherwise |
 | `events_scope` | string | `local_machine` when events come from the Dolt tables. Since beads migration 0062 (bd v1.3.0) `events` is dolt_ignored and no longer replicates, so events written on another machine after the crossing are absent. Omitted for JSONL history (replicated through git) or when no events source was read (bt-nb9h) |
 
 **Examples**:

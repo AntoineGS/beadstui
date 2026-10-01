@@ -153,24 +153,35 @@ type RepoStatus struct {
 	// InsideWorkTree reports whether RepoPath is inside a git work tree.
 	// false means git-derived data (commits, file changes) will be empty.
 	InsideWorkTree bool `json:"inside_work_tree"`
-	// JSONLTracked reports whether one of the standard beads JSONL files
-	// (.beads/issues.jsonl, .beads/beads.jsonl, .beads/beads.base.jsonl)
-	// exists on disk at RepoPath. true means the JSONL+git-diff extractor
-	// can produce current-era events; false means the repo has migrated to
-	// Dolt-only and history is sourced from the events tables via the
-	// Dolt-native extractor (bt-08sh.4).
-	//
-	// Detection uses on-disk existence, not git-log history: a JSONL that
-	// was deleted from HEAD still shows up in `git log -- <file>` and would
-	// produce a false positive on bt's own repo (deletion commit 90d8432d).
-	// See bt-ydjw phase 1 notes for the empirical verification.
+	// JSONLTracked reports whether the report's lifecycle events came from
+	// the legacy JSONL+git-diff extractor (EventsSource == EventsSourceJSONL).
+	// It does NOT mean a JSONL file merely exists on disk: since bt-zxdl9 a
+	// stale, untracked .beads/issues.jsonl next to a Dolt source no longer
+	// selects the JSONL path. Kept alongside EventsSource because the
+	// History view's badge logic and the tier-2 robot shape read it.
 	JSONLTracked bool `json:"jsonl_tracked"`
+	// EventsSource names the data path the correlator read lifecycle events
+	// from: EventsSourceDolt, EventsSourceJSONL, or EventsSourceNone. Lets a
+	// consumer tell an empty result apart from a wrong or missing data path
+	// (bt-zxdl9).
+	EventsSource string `json:"events_source"`
 	// EventsScope names how far the report's lifecycle events reach.
 	// EventsScopeLocalMachine when they come from the Dolt events tables;
 	// empty when they come from JSONL git history (replicated through git)
 	// or when no events source was read.
 	EventsScope string `json:"events_scope,omitempty"`
 }
+
+// RepoStatus.EventsSource values (bt-zxdl9). The correlator picks the path
+// from the configured backend, not from files on disk: a wired Dolt
+// connection always wins, the JSONL+git-diff extractor runs only when there
+// is no Dolt connection and a beads JSONL file exists, and EventsSourceNone
+// means neither was available (or the path is not a git work tree).
+const (
+	EventsSourceDolt  = "dolt"
+	EventsSourceJSONL = "jsonl"
+	EventsSourceNone  = "none"
+)
 
 // EventsScopeLocalMachine marks events read from the Dolt `events` /
 // `wisp_events` tables. Beads migration 0062 (bd v1.3.0) put `events` on the

@@ -10,7 +10,9 @@ package correlation
 // to wrong-bead captures. These tests lock the fix in place.
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 )
 
@@ -321,41 +323,86 @@ func TestCorrelator_Dispatch_DoltPath_ExplicitMerge(t *testing.T) {
 	}
 }
 
-// TestCorrelator_Dispatch_JSONLPath_NoExplicitOnDoltPath covers the
-// negative case: on the JSONL-tracked path, bt-ydjw.5's explicit-ID merge
-// must NOT run. The JSONL path already had its own MethodExplicitID flow
-// (via co-commit's containsBeadID confidence bump); running the matcher
-// again would double-count.
+// TestCorrelator_Dispatch_JSONLPath_RunsExplicitID covers bt-zxdl9's
+// widening of the explicit-ID scan to the JSONL path. Co-commit only sees
+// commits that touched the JSONL file (and its containsBeadID check merely
+// bumps their confidence), so a commit that cites a bead without touching
+// the JSONL was invisible on this path before the fix.
 //
-// We make the assertion mutation-resistant by giving the JSONL path no
-// JSONL events (empty file) and seeding the host git history with a
-// commit referencing the seeded bead. If bt-ydjw.5 incorrectly ran on the
-// JSONL branch too, we'd see >= 1 commit on the report. The expected
-// result is 0 commits because the JSONL extractor has nothing to do and
-// explicit-ID merging is gated behind !jsonlTracked.
-func TestCorrelator_Dispatch_JSONLPath_NoExplicitOnDoltPath(t *testing.T) {
+// History: commit A files the bead (created event, no co-commit), commit B
+// claims it in the JSONL alongside a code file and cites it (co_committed
+// AND an explicit-ID match on the same SHA), commit C cites it without
+// touching the JSONL (explicit-ID only). Expect exactly B and C: B proves
+// dedupCommits collapses the overlap and keeps the co_committed entry, C
+// proves the explicit scan ran.
+func TestCorrelator_Dispatch_JSONLPath_RunsExplicitID(t *testing.T) {
 	repo := initBareGitRepo(t)
-	seedJSONLOnDisk(t, repo) // empty file, JSONLTracked=true
-	seedExplicitCommits(t, repo, []string{
-		"feat: touch bead bt-1 via parens (bt-1)",
+	commitFiles := func(msg string, files map[string]string) string {
+		t.Helper()
+		for rel, content := range files {
+			path := filepath.Join(repo, filepath.FromSlash(rel))
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatalf("mkdir for %s: %v", rel, err)
+			}
+			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+				t.Fatalf("write %s: %v", rel, err)
+			}
+			add := exec.Command("git", "add", rel)
+			add.Dir = repo
+			if out, err := add.CombinedOutput(); err != nil {
+				t.Fatalf("git add %s: %v: %s", rel, err, out)
+			}
+		}
+		commit := exec.Command("git", "commit", "-q", "-m", msg)
+		commit.Dir = repo
+		if out, err := commit.CombinedOutput(); err != nil {
+			t.Fatalf("git commit %q: %v: %s", msg, err, out)
+		}
+		rev := exec.Command("git", "rev-parse", "HEAD")
+		rev.Dir = repo
+		out, err := rev.Output()
+		if err != nil {
+			t.Fatalf("git rev-parse HEAD: %v", err)
+		}
+		return string(trimSpace(out))
+	}
+
+	commitFiles("chore: file a new bead", map[string]string{
+		".beads/issues.jsonl": `{"id":"bt-1","title":"Bead 1","status":"open"}` + "\n",
+	})
+	shaClaim := commitFiles("feat: start the work (bt-1)", map[string]string{
+		".beads/issues.jsonl": `{"id":"bt-1","title":"Bead 1","status":"in_progress"}` + "\n",
+		"main.go":             "package main\n",
+	})
+	shaFollowUp := commitFiles("fix: follow-up without touching beads (bt-1)", map[string]string{
+		"other.go": "package main\n\nfunc other() {}\n",
 	})
 
-	c := NewCorrelatorWithDolt(repo, newDoltEventsFixture(t))
-	beads := []BeadInfo{{ID: "bt-1", Title: "Bead 1", Status: "open"}}
-
+	c := NewCorrelator(repo)
+	beads := []BeadInfo{{ID: "bt-1", Title: "Bead 1", Status: "in_progress"}}
 	report, err := c.GenerateReport(beads, CorrelatorOptions{})
 	if err != nil {
 		t.Fatalf("GenerateReport: %v", err)
 	}
-	if !report.RepoStatus.JSONLTracked {
-		t.Fatalf("JSONLTracked = false, want true (JSONL file is on disk)")
+	if report.RepoStatus.EventsSource != EventsSourceJSONL {
+		t.Fatalf("EventsSource = %q, want %q", report.RepoStatus.EventsSource, EventsSourceJSONL)
 	}
 
 	h, ok := report.Histories["bt-1"]
 	if !ok {
 		t.Fatalf("Histories missing bt-1")
 	}
-	if len(h.Commits) != 0 {
-		t.Errorf("Histories[bt-1].Commits = %d, want 0 (JSONL path should not run bt-ydjw.5 explicit-ID merge)", len(h.Commits))
+	got := make(map[string]CorrelationMethod, len(h.Commits))
+	for _, cm := range h.Commits {
+		got[cm.SHA] = cm.Method
+	}
+	if len(h.Commits) != 2 || len(got) != 2 {
+		t.Fatalf("Commits = %d (unique %d), want 2: claim commit once (deduped) + follow-up; got %v", len(h.Commits), len(got), got)
+	}
+	if m := got[shaClaim]; m != MethodCoCommitted {
+		t.Errorf("claim commit method = %q, want %q (co-commit entry must win the dedup)", m, MethodCoCommitted)
+	}
+	if m := got[shaFollowUp]; m != MethodExplicitID {
+		t.Errorf("follow-up commit method = %q, want %q (explicit-ID scan must run on the JSONL path)", m, MethodExplicitID)
 	}
 }

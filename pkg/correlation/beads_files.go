@@ -62,14 +62,14 @@ func pickBeadsFiles(repoPath string, candidates []string) []string {
 // HasJSONLOnDisk reports whether any of the standard beads JSONL files
 // (.beads/issues.jsonl, .beads/beads.jsonl, .beads/beads.base.jsonl) exists
 // on disk at repoPath. Mirrors the existence test that ValidateRepository
-// (correlator.go:344) already uses to decide whether the JSONL+git-diff
-// witness path can run.
+// already uses to decide whether the JSONL+git-diff witness path can run.
 //
-// Used as the cheap gate that bt-ydjw phase 1 needs before bt-08sh.4 lands
-// the canonical RepoStatus.JSONLTracked field. Returning false means the
-// JSONL extractor cannot produce current data on this repo (either the
-// project never used JSONL, or it migrated to Dolt-only and the file was
-// removed - bt itself, post commit 90d8432d, is the latter case).
+// Existence says nothing about whether the file is current, git-tracked, or
+// the project's data source: Dolt-canonical repos often keep a stale,
+// untracked or gitignored export. So this is only the fallback gate for when
+// no Dolt source is available; it must never outrank a configured Dolt
+// source when choosing the history path (bt-zxdl9). Returning false means
+// the JSONL extractor cannot produce data on this repo at all.
 //
 // Returns false when repoPath is empty. Errors from os.Stat are silently
 // treated as absent.

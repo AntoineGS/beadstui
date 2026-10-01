@@ -1,14 +1,11 @@
 package correlation
 
 import (
-	"database/sql"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
-
-	_ "modernc.org/sqlite"
 )
 
 func TestBuildHistories_Empty(t *testing.T) {
@@ -481,55 +478,121 @@ func seedJSONLOnDisk(t *testing.T, repoPath string) {
 	}
 }
 
-// newPoisonDoltDB returns a *sql.DB that has been Close()'d -- any query
-// against it errors. Used as a sentinel in TestCorrelator_Dispatch_JSONLPath:
-// if the JSONL branch in extractEvents is removed, control falls through to
-// the Dolt branch which would query this DB and surface the error. A green
-// test proves the JSONL branch was taken.
-func newPoisonDoltDB(t *testing.T) *sql.DB {
-	t.Helper()
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatalf("close sqlite: %v", err)
-	}
-	return db
-}
-
-// TestCorrelator_Dispatch_JSONLPath covers branch 1 of extractEvents:
-// jsonlTracked=true should route to the JSONL+git-diff extractor, never
-// touching the Dolt DB even when one was wired in via NewCorrelatorWithDolt.
-//
-// Mutation protection: the doltDB is closed before GenerateReport runs. If
-// dispatch removes the JSONLTracked check, control falls into the Dolt
-// branch which queries the closed DB and produces a non-nil error. This
-// test passes only when the JSONL branch fires first.
+// TestCorrelator_Dispatch_JSONLPath covers the JSONL fallback of
+// eventsSource: JSONL on disk and no Dolt connection (JSONL-in-git projects,
+// BT_TEST_MODE fixtures, legacy NewCorrelator callers) should route to the
+// JSONL+git-diff extractor and report it as such.
 func TestCorrelator_Dispatch_JSONLPath(t *testing.T) {
 	repo := initBareGitRepo(t)
 	seedJSONLOnDisk(t, repo)
 
-	c := NewCorrelatorWithDolt(repo, newPoisonDoltDB(t))
+	c := NewCorrelator(repo)
 	report, err := c.GenerateReport(nil, CorrelatorOptions{})
 	if err != nil {
-		t.Fatalf("GenerateReport returned error (would happen if Dolt branch ran instead of JSONL): %v", err)
+		t.Fatalf("GenerateReport: %v", err)
 	}
 	if !report.RepoStatus.InsideWorkTree {
 		t.Errorf("InsideWorkTree = false, want true")
 	}
+	if report.RepoStatus.EventsSource != EventsSourceJSONL {
+		t.Errorf("EventsSource = %q, want %q (JSONL on disk, no Dolt source)", report.RepoStatus.EventsSource, EventsSourceJSONL)
+	}
 	if !report.RepoStatus.JSONLTracked {
-		t.Errorf("JSONLTracked = false, want true (JSONL is on disk)")
+		t.Errorf("JSONLTracked = false, want true (events came from the JSONL extractor)")
 	}
 	if report.RepoStatus.EventsScope != "" {
 		t.Errorf("EventsScope = %q, want empty (JSONL history replicates through git)", report.RepoStatus.EventsScope)
 	}
 }
 
-// TestCorrelator_Dispatch_DoltOnlyPath covers branch 2 of extractEvents:
-// jsonlTracked=false + non-nil doltDB should route to the Dolt-native
-// extractor. The seeded events should appear in the report's histories with
-// empty CommitSHA (the Dolt extractor's signature per 592c).
+// TestCorrelator_Dispatch_StaleJSONLWithDolt is the bt-zxdl9 regression: a
+// Dolt-canonical repo that still carries an old .beads/issues.jsonl export
+// (untracked, or gitignored) must dispatch to the Dolt extractor and still
+// recover explicit-ID commits. Before the fix the file's mere existence
+// selected the legacy JSONL path, which read no events from the uncommitted
+// file and skipped the explicit-ID scan, so history/related/orphans came
+// back silently empty with exit 0.
+//
+// Mutation protection: reverting eventsSource to an on-disk check first
+// makes EventsSource "jsonl" and leaves Events empty (the JSONL file is not
+// in git history); gating explicitCommits on the Dolt path again still
+// passes here, which is why TestCorrelator_Dispatch_JSONLPath_RunsExplicitID
+// covers the JSONL side.
+func TestCorrelator_Dispatch_StaleJSONLWithDolt(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		ignored bool
+	}{
+		{name: "untracked", ignored: false},
+		{name: "gitignored", ignored: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := initBareGitRepo(t)
+			if tc.ignored {
+				if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte(".beads/issues.jsonl\n"), 0o644); err != nil {
+					t.Fatalf("write .gitignore: %v", err)
+				}
+			}
+			if err := os.MkdirAll(filepath.Join(repo, ".beads"), 0o755); err != nil {
+				t.Fatalf("mkdir .beads: %v", err)
+			}
+			stale := `{"id":"bt-1","title":"Bead 1","status":"open"}` + "\n"
+			if err := os.WriteFile(filepath.Join(repo, ".beads", "issues.jsonl"), []byte(stale), 0o644); err != nil {
+				t.Fatalf("write issues.jsonl: %v", err)
+			}
+			if !HasJSONLOnDisk(repo) {
+				t.Fatalf("test precondition: stale issues.jsonl should be on disk")
+			}
+			seedExplicitCommits(t, repo, []string{
+				"feat(scope): first slice (bt-1)",
+				"fix(scope): follow-up (bt-1)",
+			})
+
+			db := newDoltEventsFixture(t)
+			t0 := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
+			insertEvent(t, db, "events", "bt-1", "created", "sms", "", "", "", t0)
+			insertEvent(t, db, "events", "bt-1", "status_changed", "sms", "open", "in_progress", "", t0.Add(time.Hour))
+
+			c := NewCorrelatorWithDolt(repo, db)
+			beads := []BeadInfo{{ID: "bt-1", Title: "Bead 1", Status: "in_progress"}}
+			report, err := c.GenerateReport(beads, CorrelatorOptions{})
+			if err != nil {
+				t.Fatalf("GenerateReport: %v", err)
+			}
+
+			if report.RepoStatus.EventsSource != EventsSourceDolt {
+				t.Errorf("EventsSource = %q, want %q (a Dolt source must outrank a stale JSONL file)", report.RepoStatus.EventsSource, EventsSourceDolt)
+			}
+			if report.RepoStatus.JSONLTracked {
+				t.Errorf("JSONLTracked = true, want false (events came from Dolt)")
+			}
+			if report.RepoStatus.EventsScope != EventsScopeLocalMachine {
+				t.Errorf("EventsScope = %q, want %q", report.RepoStatus.EventsScope, EventsScopeLocalMachine)
+			}
+
+			h, ok := report.Histories["bt-1"]
+			if !ok {
+				t.Fatalf("Histories missing bt-1")
+			}
+			if len(h.Events) != 2 {
+				t.Errorf("len(Events) = %d, want 2 (Dolt extractor should populate)", len(h.Events))
+			}
+			if len(h.Commits) != 2 {
+				t.Fatalf("len(Commits) = %d, want 2 (explicit-ID scan should find both commits)", len(h.Commits))
+			}
+			for i, cm := range h.Commits {
+				if cm.Method != MethodExplicitID {
+					t.Errorf("Commits[%d].Method = %q, want %q", i, cm.Method, MethodExplicitID)
+				}
+			}
+		})
+	}
+}
+
+// TestCorrelator_Dispatch_DoltOnlyPath covers the Dolt branch of
+// extractEvents: no JSONL on disk + non-nil doltDB should route to the
+// Dolt-native extractor. The seeded events should appear in the report's
+// histories with empty CommitSHA (the Dolt extractor's signature per 592c).
 //
 // Mutation protection: removing the Dolt branch would return nil events;
 // the assertion on Histories["bt-1"].Events being non-empty fails. Replacing
@@ -558,6 +621,9 @@ func TestCorrelator_Dispatch_DoltOnlyPath(t *testing.T) {
 	if report.RepoStatus.JSONLTracked {
 		t.Errorf("JSONLTracked = true, want false (no JSONL on disk -> Dolt-only)")
 	}
+	if report.RepoStatus.EventsSource != EventsSourceDolt {
+		t.Errorf("EventsSource = %q, want %q", report.RepoStatus.EventsSource, EventsSourceDolt)
+	}
 	// bt-nb9h: Dolt events are dolt_ignored since beads 0062, so the report
 	// must say its events are local to this machine.
 	if report.RepoStatus.EventsScope != EventsScopeLocalMachine {
@@ -578,10 +644,11 @@ func TestCorrelator_Dispatch_DoltOnlyPath(t *testing.T) {
 	}
 }
 
-// TestCorrelator_Dispatch_DoltOnly_NoDB covers branch 3 of extractEvents:
-// jsonlTracked=false + nil doltDB (caller used plain NewCorrelator on a
-// Dolt-only repo) should return cleanly with an empty events list -- never
-// error, never construct a nil-DB DoltExtractor.
+// TestCorrelator_Dispatch_DoltOnly_NoDB covers the no-source branch of
+// extractEvents: no JSONL on disk + nil doltDB (caller used plain
+// NewCorrelator on a Dolt-only repo) should return cleanly with an empty
+// events list and EventsSource "none" -- never error, never construct a
+// nil-DB DoltExtractor.
 //
 // Mutation protection: removing the c.doltDB == nil guard would fall
 // through to NewDoltExtractor(nil).Extract(...) which the bt-08sh.1
@@ -603,6 +670,9 @@ func TestCorrelator_Dispatch_DoltOnly_NoDB(t *testing.T) {
 	}
 	if report.RepoStatus.JSONLTracked {
 		t.Errorf("JSONLTracked = true, want false")
+	}
+	if report.RepoStatus.EventsSource != EventsSourceNone {
+		t.Errorf("EventsSource = %q, want %q (no Dolt source, no JSONL)", report.RepoStatus.EventsSource, EventsSourceNone)
 	}
 	if report.RepoStatus.EventsScope != "" {
 		t.Errorf("EventsScope = %q, want empty (no events source was read)", report.RepoStatus.EventsScope)
