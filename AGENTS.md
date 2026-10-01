@@ -51,8 +51,15 @@ go build ./...          # Build all
 go test ./...           # All tests
 go test ./... -race     # Race detector
 go vet ./...            # Static analysis
-go install ./cmd/bt/    # Install binary (run after every build; bt is invoked from PATH)
+go install ./cmd/bt/    # Install binary (after a change lands; bt is invoked from PATH)
 ```
+
+`go install` is a full rebuild that pegs every core (plus Defender scanning the
+output) on a machine that usually has several sessions running. Before
+installing, compare `go version -m ~/go/bin/bt.exe | grep vcs.revision` with
+`git rev-parse HEAD` and skip it if the binary is already current. With other
+sessions active, ask sms or wait for a quiet window. Subagents never run
+`go install`; the dispatcher installs once, after integrating their work.
 
 ## Scratch Conventions
 

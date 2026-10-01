@@ -6,6 +6,27 @@ For architectural decisions, see `docs/adr/`. For issue tracking, use `bd list`.
 
 ---
 
+## 2026-10-01 — Robot commands verified as /beads-audit evidence; notification/alert dogfood filed
+
+**bt-d4kcd (filed by the marketplace backlog triage, pc:marketplace:f2e36bc6) asked whether the bt robot commands /beads-audit wants as evidence are trustworthy. This session (pc:bt:04ad42d0) checked ten of them against ground truth (bd, git log) on bt, marketplace, flash-2026 and the 26-DB fleet. Five are usable now with a stated invocation; the rest have their defects filed. No code changed; the per-command list lives in bt-d4kcd's notes and gates marketplace bead mkt-ckv1.**
+
+### Verdicts
+
+- **Usable now:** `portfolio --global` (fields match bd exactly), `triage --source <p>`, `insights --source <p>` (cycle check only), `blocker-chain` (ignore `has_cycle`), `pairs --global` (v2: every reported pair real, ~35% recall). For text prior-art, `robot bql` with `~` on title/description/notes, not `robot search`.
+- **All three spot-check rough edges were real.** Portfolio's single "local" row is a flag-gated grouping that ignores auto-global (bt-vdn2m). Search missing a fresh bead is ranking, not freshness: hash vectors gate retrieval, so literal title matches miss the top 50 (bt-k43gt). `related mkt-hebu` was empty because a stale, untracked `.beads/issues.jsonl` routes marketplace and ~11 other repos to the dead JSONL correlator (bt-zxdl9, P1; also why history found 5/51 commits there). `related` has no text signal at all; merge candidates belong to bt-aur2a.2.
+- **Cost:** every robot call loads all 26 DBs. Quiet-machine timing: triage 1.3 s, `insights --source bt` 44 s CPU-bound outside its own timers (bt-ob3t0), `history --bead` 24 s in git spawns (bt-hlm1k).
+
+### Bead bookkeeping
+
+- Closed: **bt-d4kcd**.
+- Filed from the verification (all discovered-from bt-d4kcd): correlation **bt-zxdl9**, **bt-6ys0i**, **bt-fsym9**, **bt-rq40n**, **bt-hlm1k**, **bt-1gy3m**, **bt-h2295**, **bt-dl1ez**; ID grammar **bt-hrjf8**; scope **bt-vdn2m**, **bt-x1klb**; search **bt-k43gt**; analysis **bt-nanrl**, **bt-5di3x**, **bt-ob3t0**; refs/pairs **bt-63esn**, **bt-g2u0l**, **bt-81idz**, **bt-3f3ey**, **bt-zo34c**, **bt-6hhox**. Marketplace: **mkt-43fx** (mkt-gkyn's re-file trigger met: 31 of ~89 intentional pairs carry the dep edge).
+- **bt-xgba** (remove refs v1) now blocked on bt-g2u0l: v1 is the only full-recall refs mode today.
+- Dogfood from sms: **bt-p4p8.1** widened to paging keys on both modal tabs and raised to P2; filed **bt-hzmuv** (seconds in timestamps), **bt-0e679** (two-stage Enter replaces hover snippet), **bt-2k61v** (fresh open lands mid-list), **bt-31kis** (1,433 of 1,743 alerts "critical": stale severity calibrated per bead, not per backlog), **bt-zg1mx** (alerts modal review pass with sms). **bt-ocxka** gained the evidence that 2026-09-30 is entirely missing from the notification log, plus sms's framing that the activity stream should be complete whether or not the TUI was open.
+
+### Notes
+
+- AGENTS.md now says `go install` needs a staleness check and a quiet window, and subagents never run it. This session's redundant reinstall (the PATH binary was already at HEAD) pegged every core while other sessions were running.
+
 ## 2026-09-30 — Post-beads-1.3.0 review: history scope label, BQL types, one blocked predicate, robot bql scoping
 
 **Acted on the read-only bt review from the beads fleet's crossing to bd v1.3.0 / schema 66 (bt-5ehhg; kickoff and review by pc:beads:684d2b74, report `~/.files/atlas/plans/2026-09-30-beads-v1.3.0-post-crossing-review/rev-bt.md`). The review found no breakages, only silent degradations. This session (pc:bt:70c94799) fixed the four that were code-sized, recorded one decision, and filed design beads for the rest. Every fix was verified read-only against the live PC fleet on :3308.**
