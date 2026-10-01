@@ -23,7 +23,7 @@ import (
 func (rc *robotCtx) runSaveBaseline(description string, forceFullAnalysis bool) {
 	_ = forceFullAnalysis
 
-	projects := drift.SnapshotProjects(rc.analysisIssues(), flagGlobal, rc.repoName)
+	projects := drift.SnapshotProjects(rc.analysisIssues(), isCrossProjectScope(), rc.repoName)
 	if len(projects) == 0 {
 		fmt.Fprintln(os.Stderr, "Error: no issues to snapshot")
 		os.Exit(1)
@@ -76,7 +76,7 @@ func (rc *robotCtx) runCheckDrift(robotDriftCheck, forceFullAnalysis bool) {
 
 	alerts := drift.ProjectAlerts(
 		rc.analysisIssues(),
-		flagGlobal,
+		isCrossProjectScope(),
 		rc.repoName,
 		driftConfig,
 		bl.Project,

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"testing"
 
+	"github.com/seanmartinsmith/beadstui/internal/datasource"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
 
@@ -202,4 +203,50 @@ func stripGeneratedAt(t *testing.T, raw []byte) []byte {
 		t.Fatalf("remarshal: %v", err)
 	}
 	return out
+}
+
+// TestPortfolioGrouping_AutoGlobalResolvedScope guards bt-vdn2m: a no-flag run
+// that auto-resolves to the shared Dolt server (selectedSource =
+// SourceTypeDoltGlobal, flagGlobal=false) must group per database exactly like
+// --global, with no collapsed "local" record. A single-project source must
+// still collapse to one record.
+func TestPortfolioGrouping_AutoGlobalResolvedScope(t *testing.T) {
+	prevFlag, prevSrc := flagGlobal, appCtx.selectedSource
+	t.Cleanup(func() { flagGlobal, appCtx.selectedSource = prevFlag, prevSrc })
+
+	issues := []model.Issue{
+		{ID: "bd-1", SourceRepo: "beads"},
+		{ID: "mkt-1", SourceRepo: "marketplace"},
+		{ID: "bt-1", SourceRepo: "beadstui"},
+	}
+
+	flagGlobal = false
+	appCtx.selectedSource = &datasource.DataSource{Type: datasource.SourceTypeDoltGlobal}
+	if !isCrossProjectScope() {
+		t.Fatal("isCrossProjectScope() = false for DoltGlobal source, want true")
+	}
+	groups := groupIssuesByProject(issues, isCrossProjectScope(), "")
+	if len(groups) != 3 {
+		t.Errorf("auto-global groups = %d, want 3: %+v", len(groups), groups)
+	}
+	if _, ok := groups["local"]; ok {
+		t.Errorf("auto-global produced a collapsed 'local' group")
+	}
+
+	// Literal --global with a non-global source is still cross-project.
+	flagGlobal = true
+	appCtx.selectedSource = nil
+	if !isCrossProjectScope() {
+		t.Error("isCrossProjectScope() = false with --global, want true")
+	}
+
+	// Single-project source: one group, not cross-project.
+	flagGlobal = false
+	appCtx.selectedSource = &datasource.DataSource{Type: datasource.SourceTypeJSONLFallback}
+	if isCrossProjectScope() {
+		t.Error("isCrossProjectScope() = true for JSONL source, want false")
+	}
+	if got := groupIssuesByProject(issues[:1], isCrossProjectScope(), ""); len(got) != 1 {
+		t.Errorf("single-project groups = %d, want 1", len(got))
+	}
 }

@@ -1076,25 +1076,25 @@ bt robot capacity --agents 3 --capacity-label area:tui
 
 ### bt robot portfolio
 
-**Purpose**: Per-project health aggregates when using `--global`. Returns one health snapshot per project prefix.
+**Purpose**: Per-project health aggregates. Cross-project by default: returns one health snapshot per Dolt database on the shared server (the beads_global/atlas namespace is excluded). `--source a,b` narrows it; a single-project source (e.g. the JSONL fallback) returns one record.
 
 **Top-level fields**:
 | Field | Type | Description |
 |---|---|---|
 | `schema` | string | `portfolio.v1` |
 | `projects` | array | Per-project health objects |
-| `projects[].project` | string | Project prefix (`local`, `bt`, etc.) |
+| `projects[].project` | string | Dolt database name (`beads`, `marketplace`, `world`, `trd`), not the issue-ID prefix (`bd`, `mkt`, `lil_sto`, `trade`); `local` only for a single-project source |
 | `projects[].counts` | object | `open`, `blocked`, `in_progress`, `closed_30d` |
 | `projects[].priority` | object | `p0`, `p1` counts |
 | `projects[].velocity` | object | `closures_7d`, `closures_30d`, `trend` |
 | `projects[].health_score` | float | 0-1 health score |
-| `projects[].top_blocker` | object | Highest-PageRank open issue |
+| `projects[].top_blocker` | object | Highest-PageRank open issue that blocks something |
 | `projects[].stalest` | object | Longest-inactive open issue |
 
 **Examples**:
 ```bash
-bt robot portfolio --global
 bt robot portfolio
+bt robot portfolio --source mkt,bt
 ```
 
 ---

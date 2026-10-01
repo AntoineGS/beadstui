@@ -2495,6 +2495,45 @@ type BlockerChainResult struct {
 	CycleIDs     []string            `json:"cycle_ids,omitempty"`
 }
 
+// detectBlockerCycles walks the open-blocker graph reachable from start with a
+// white/gray/black DFS and returns the IDs reached by a back edge (a node that
+// is still on the current path), in discovery order and de-duplicated. A node
+// reached a second time via a different, finished path (a diamond) is not a
+// cycle. Returns nil when the reachable subgraph is acyclic. (bt-nanrl)
+func (a *Analyzer) detectBlockerCycles(start string) []string {
+	const (
+		gray  = 1
+		black = 2
+	)
+	state := make(map[string]int)
+	var cycleIDs []string
+	seenCycle := make(map[string]bool)
+
+	var visit func(id string)
+	visit = func(id string) {
+		state[id] = gray
+		for _, next := range a.GetOpenBlockers(id) {
+			if _, exists := a.issueMap[next]; !exists {
+				continue
+			}
+			switch state[next] {
+			case gray:
+				if !seenCycle[next] {
+					seenCycle[next] = true
+					cycleIDs = append(cycleIDs, next)
+				}
+			case black:
+				// already fully explored via another path (diamond)
+			default:
+				visit(next)
+			}
+		}
+		state[id] = black
+	}
+	visit(start)
+	return cycleIDs
+}
+
 // GetBlockerChain returns the full dependency chain explaining why an issue is blocked.
 // It traverses the blocker graph to find all root blockers (issues with no open blockers).
 // Handles cycles gracefully by detecting and reporting them.
@@ -2556,9 +2595,9 @@ func (a *Analyzer) GetBlockerChain(issueID string) *BlockerChainResult {
 		queue = queue[1:]
 
 		if visited[item.id] {
-			// Cycle detected
-			result.HasCycle = true
-			result.CycleIDs = append(result.CycleIDs, item.id)
+			// Second arrival via a different path (diamond) or a back edge.
+			// Either way the entry is already listed; whether it is a real
+			// cycle is decided by detectBlockerCycles below, not by revisit.
 			continue
 		}
 		visited[item.id] = true
@@ -2592,6 +2631,9 @@ func (a *Analyzer) GetBlockerChain(issueID string) *BlockerChainResult {
 			}
 		}
 	}
+
+	result.CycleIDs = a.detectBlockerCycles(issueID)
+	result.HasCycle = len(result.CycleIDs) > 0
 
 	result.ChainLength = len(result.Chain) - 1 // Exclude target itself
 

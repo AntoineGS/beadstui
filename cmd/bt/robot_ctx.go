@@ -53,7 +53,7 @@ func (rc *robotCtx) newEncoder() robotEncoder {
 // composes INSIDE this function — it wraps the existing chain, it does not
 // add a sibling rc.Xissues() helper. One pipeline, not N helpers.
 func (rc *robotCtx) analysisIssues() []model.Issue {
-	if !flagGlobal {
+	if !isCrossProjectScope() {
 		return rc.issues
 	}
 	return analysis.ResolveExternalDeps(rc.issues)
