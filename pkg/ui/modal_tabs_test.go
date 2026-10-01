@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/seanmartinsmith/beadstui/pkg/drift"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/ui/events"
@@ -40,6 +42,161 @@ func seedModel() Model {
 		IssueID:  "bt-fix",
 	}}
 	return m
+}
+
+func pressKey(m Model, code rune) Model {
+	got, _ := m.handleKeyPress(tea.KeyPressMsg{Code: code})
+	return got
+}
+
+// TestPageJumpCursor pins the shared paging math (bt-p4p8.1): jumps land at
+// the TOP of the target page and clamp at both ends, including short lists.
+func TestPageJumpCursor(t *testing.T) {
+	cases := []struct {
+		name                          string
+		cursor, total, size, delta, w int
+	}{
+		{"next from first page", 2, 25, 10, 1, 10},
+		{"next from mid page lands at top", 14, 25, 10, 1, 20},
+		{"next clamps at last page top", 22, 25, 10, 1, 20},
+		{"prev from page 2 lands at top of page 1", 14, 25, 10, -1, 0},
+		{"prev clamps at first page", 3, 25, 10, -1, 0},
+		{"short list next stays put", 1, 4, 10, 1, 0},
+		{"short list prev stays put", 3, 4, 10, -1, 0},
+		{"exact multiple last page", 19, 20, 10, 1, 10},
+		{"empty list", 0, 0, 10, 1, 0},
+		{"page size 1", 3, 10, 1, 1, 4},
+	}
+	for _, c := range cases {
+		if got := pageJumpCursor(c.cursor, c.total, c.size, c.delta); got != c.w {
+			t.Errorf("%s: pageJumpCursor(%d,%d,%d,%d)=%d want %d", c.name, c.cursor, c.total, c.size, c.delta, got, c.w)
+		}
+	}
+	if got, ok := modalPageKeyCursor("end", 0, 25, 10); !ok || got != 24 {
+		t.Errorf("end: got %d,%v want 24,true", got, ok)
+	}
+	if got, ok := modalPageKeyCursor("G", 3, 0, 10); !ok || got != 0 {
+		t.Errorf("G on empty: got %d,%v want 0,true", got, ok)
+	}
+	if _, ok := modalPageKeyCursor("x", 0, 25, 10); ok {
+		t.Errorf("non-paging key must report ok=false")
+	}
+}
+
+func seedManyNotifications(m *Model, n int) {
+	base := time.Now().Add(-time.Duration(n) * time.Minute)
+	evs := make([]events.Event, 0, n)
+	for i := 0; i < n; i++ {
+		evs = append(evs, events.Event{ID: fmt.Sprintf("n%d", i), Kind: events.EventCreated, BeadID: fmt.Sprintf("bt-%d", i), Repo: "bt", Title: "t", At: base.Add(time.Duration(i) * time.Minute)})
+	}
+	m.events.AppendMany(evs)
+}
+
+func TestNotificationsModal_PageKeys(t *testing.T) {
+	m := seedModel()
+	seedManyNotifications(&m, 60)
+	m = pressRune(m, '1')
+	if m.activeTab != TabNotifications {
+		t.Fatalf("expected notifications tab")
+	}
+	size := m.notifPageSize()
+	if size < 2 {
+		t.Fatalf("page size %d", size)
+	}
+	m = pressKey(m, tea.KeyRight)
+	if m.notificationsCursor != size {
+		t.Errorf("right: cursor %d want %d", m.notificationsCursor, size)
+	}
+	m = pressKey(m, tea.KeyPgDown)
+	if m.notificationsCursor != 2*size {
+		t.Errorf("pgdown: cursor %d want %d", m.notificationsCursor, 2*size)
+	}
+	m = pressKey(m, tea.KeyLeft)
+	if m.notificationsCursor != size {
+		t.Errorf("left: cursor %d want %d", m.notificationsCursor, size)
+	}
+	m = pressKey(m, tea.KeyEnd)
+	if m.notificationsCursor != 59 {
+		t.Errorf("end: cursor %d want 59", m.notificationsCursor)
+	}
+	m = pressKey(m, tea.KeyPgDown)
+	if m.notificationsCursor != (59/size)*size {
+		t.Errorf("pgdown at end must clamp to last page top, got %d", m.notificationsCursor)
+	}
+	m = pressKey(m, tea.KeyHome)
+	if m.notificationsCursor != 0 {
+		t.Errorf("home: cursor %d want 0", m.notificationsCursor)
+	}
+	m = pressKey(m, tea.KeyPgUp)
+	if m.notificationsCursor != 0 {
+		t.Errorf("pgup at start must stay 0, got %d", m.notificationsCursor)
+	}
+	m = pressRune(m, 'G')
+	if m.notificationsCursor != 59 {
+		t.Errorf("G: cursor %d want 59", m.notificationsCursor)
+	}
+	m = pressRune(m, 'g')
+	if m.notificationsCursor != 0 {
+		t.Errorf("g: cursor %d want 0", m.notificationsCursor)
+	}
+}
+
+func TestAlertsModal_PageKeysLandAtTopOfPage(t *testing.T) {
+	m := seedModel()
+	m.alerts = nil
+	for i := 0; i < 60; i++ {
+		m.alerts = append(m.alerts, drift.Alert{Type: drift.AlertStale, Severity: drift.SeverityWarning, Message: "m", IssueID: fmt.Sprintf("bt-%d", i)})
+	}
+	m = pressRune(m, '!')
+	if m.activeTab != TabAlerts {
+		t.Fatalf("expected alerts tab")
+	}
+	size := m.alertsPageSize()
+	m = pressKey(m, tea.KeyRight)
+	if m.alertsCursor != size {
+		t.Errorf("right must land at top of next page: cursor %d want %d", m.alertsCursor, size)
+	}
+	m = pressKey(m, tea.KeyPgDown)
+	if m.alertsCursor != 2*size {
+		t.Errorf("pgdown: cursor %d want %d", m.alertsCursor, 2*size)
+	}
+	m = pressKey(m, tea.KeyLeft)
+	if m.alertsCursor != size {
+		t.Errorf("left must land at top of previous page: cursor %d want %d", m.alertsCursor, size)
+	}
+	m = pressKey(m, tea.KeyEnd)
+	if m.alertsCursor != 59 {
+		t.Errorf("end: cursor %d want 59", m.alertsCursor)
+	}
+	m = pressKey(m, tea.KeyHome)
+	if m.alertsCursor != 0 {
+		t.Errorf("home: cursor %d want 0", m.alertsCursor)
+	}
+}
+
+// TestModalFooters_AdvertisePageKeysWithoutOverflow checks both tabs' footers
+// name the page keys and no rendered line outgrows the panel at the user's
+// scrunched sizes (bt-p4p8.1).
+func TestModalFooters_AdvertisePageKeysWithoutOverflow(t *testing.T) {
+	sizes := [][2]int{{60, 16}, {80, 24}, {100, 30}, {120, 40}}
+	for _, sz := range sizes {
+		for _, tab := range []ModalTab{TabNotifications, TabAlerts} {
+			m := seedModel()
+			m.width, m.height = sz[0], sz[1]
+			seedManyNotifications(&m, 30)
+			m.activeTab = tab
+			m.openModal(ModalAlerts)
+			out := m.renderAlertsPanel()
+			if !strings.Contains(out, "page") {
+				t.Errorf("%dx%d tab %v: footer must advertise paging:\n%s", sz[0], sz[1], tab, out)
+			}
+			for _, line := range strings.Split(out, "\n") {
+				if w := lipgloss.Width(line); w > m.alertsPanelWidth() {
+					t.Errorf("%dx%d tab %v: line width %d exceeds panel %d: %q", sz[0], sz[1], tab, w, m.alertsPanelWidth(), line)
+				}
+			}
+		}
+	}
 }
 
 func TestNotificationModal_BangOpensAlertsTab(t *testing.T) {

@@ -23,9 +23,18 @@ For architectural decisions, see `docs/adr/`. For issue tracking, use `bd list`.
 - **bt-xgba** (remove refs v1) now blocked on bt-g2u0l: v1 is the only full-recall refs mode today.
 - Dogfood from sms: **bt-p4p8.1** widened to paging keys on both modal tabs and raised to P2; filed **bt-hzmuv** (seconds in timestamps), **bt-0e679** (two-stage Enter replaces hover snippet), **bt-2k61v** (fresh open lands mid-list), **bt-31kis** (1,433 of 1,743 alerts "critical": stale severity calibrated per bead, not per backlog), **bt-zg1mx** (alerts modal review pass with sms). **bt-ocxka** gained the evidence that 2026-09-30 is entirely missing from the notification log, plus sms's framing that the activity stream should be complete whether or not the TUI was open.
 
+### Ships (same session, after the verification)
+
+- **fix(correlation): Dolt wins over a stale on-disk JSONL (bt-zxdl9, PR #57)**. History, related, orphans and the TUI History view now pick the events path from the configured backend; a leftover `.beads/issues.jsonl` no longer hijacks dispatch, and the explicit-ID scan runs on both paths. `repo_status.events_source` says which path ran. Marketplace: history 13 -> 127 beads with commits; mkt-lvpn/y4gu/jwof 0/0/0 -> 11/4/3; `related mkt-hebu` 0 -> 10. Leftover consumers (triage staleness, export_history) filed as **bt-fci2l**.
+- **fix(cli): robot consumers use the resolved cross-project scope (bt-vdn2m, PR #58)**. One predicate, `isCrossProjectScope()`, for the envelope and every consumer: no-flag `robot portfolio` gives 25 per-project records instead of one "local"; pairs/refs no longer demand a literal `--global`; drift grouping drops atlas like portfolio.
+- **fix(analysis): blocker-chain `has_cycle` no longer fires on diamonds (bt-nanrl, PR #58)**. Cycles come from a white/gray/black DFS; the BFS only de-duplicates. bt-oiaj: true -> false, root blockers unchanged.
+- **feat(tui): notifications show seconds; page keys on both modal tabs (bt-hzmuv, bt-p4p8.1, PR #59)**. Rows read `15:04:05`. Left/Right, PgUp/PgDn, Home/End (g/G) page both tabs and land at the top of the target page (alerts Right used to land at the bottom). Renderer, key handler and click hit-test share one page-size helper; footers pick the longest legend that fits.
+
 ### Notes
 
-- AGENTS.md now says `go install` needs a staleness check and a quiet window, and subagents never run it. This session's redundant reinstall (the PATH binary was already at HEAD) pegged every core while other sessions were running.
+- AGENTS.md now says `go install` needs a staleness check and a quiet window, and subagents never run it. This session's redundant reinstall (the PATH binary was already at HEAD) pegged every core while other sessions were running. sym and cnvs carry the same rule as beads (sym-hzpd, cnvs-q5e).
+- Parallel fix agents could not run from this session: subagents inherit the parent's worktree pin, and the isolation guard refuses git in sibling worktrees even after EnterWorktree. The fixes ran one at a time in the parent's worktree instead.
+- The 9 parkway/pkwy same-suffix "duplicates" are deliberate relocations (`Moved to pkwy-<id> ... Not done - relocated`); noted on bt-zo34c so pairs can classify them.
 
 ## 2026-09-30 — Post-beads-1.3.0 review: history scope label, BQL types, one blocked predicate, robot bql scoping
 

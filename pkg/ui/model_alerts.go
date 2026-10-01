@@ -411,7 +411,7 @@ func (m Model) alertsPanelHeight() int {
 // dimmed backdrop (OverlayCenterDimBackdrop) to handle bleed-through occlusion
 // rather than spanning the terminal itself (bt-v8he). The 100-cell cap fits
 // both content shapes:
-//   - Notifications row: "15:04 closed bt-46p6.1 • <title>" reads naturally
+//   - Notifications row: "15:04:05 closed bt-46p6.1 • <title>" reads naturally
 //     in 70-100 cells; tighter feels cramped, wider feels under-filled.
 //   - Alerts row: "▲ [type] message" is shorter still; 100 keeps both tabs at
 //     the same outer width so tab cycling doesn't reflow the panel.
@@ -453,6 +453,79 @@ func (m Model) alertsVisibleLines() int {
 		lines = 3
 	}
 	return lines
+}
+
+// alertsPageSize is the number of alert rows per page on the alerts tab: the
+// modal's visible-line budget minus the status-header block (bt-2nepr). Single
+// source of truth for the renderer, the click hit-test, and the page keys.
+func (m Model) alertsPageSize() int {
+	n := m.alertsVisibleLines() - m.alertsHeaderRows()
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
+
+// notifPageSize is the number of notification rows per page: the visible-line
+// budget minus one row reserved for the cursor-summary expand line.
+func (m Model) notifPageSize() int {
+	n := m.alertsVisibleLines() - 1
+	if n < 2 {
+		n = 2
+	}
+	return n
+}
+
+// pageJumpCursor returns the cursor index at the TOP of the page `delta`
+// pages away from the page containing cursor, clamped to the first and last
+// page. total is the list length, pageSize the rows per page. An empty list
+// yields 0.
+func pageJumpCursor(cursor, total, pageSize, delta int) int {
+	if total <= 0 || pageSize < 1 {
+		return 0
+	}
+	lastPage := (total - 1) / pageSize
+	page := cursor/pageSize + delta
+	if page < 0 {
+		page = 0
+	}
+	if page > lastPage {
+		page = lastPage
+	}
+	return page * pageSize
+}
+
+// modalPageKeyCursor maps a paging key to the new cursor, or ok=false when
+// the key is not a paging key. Shared by the alerts and notifications tabs so
+// both land at the top of the target page (bt-p4p8.1). Home/End (and g/G)
+// jump to the first/last item.
+func modalPageKeyCursor(key string, cursor, total, pageSize int) (int, bool) {
+	switch key {
+	case "right", "pgdown":
+		return pageJumpCursor(cursor, total, pageSize, 1), true
+	case "left", "pgup":
+		return pageJumpCursor(cursor, total, pageSize, -1), true
+	case "home", "g":
+		return 0, true
+	case "end", "G":
+		if total <= 0 {
+			return 0, true
+		}
+		return total - 1, true
+	}
+	return 0, false
+}
+
+// fitModalHint returns the first candidate footer hint that fits width,
+// falling back to the last (most compact) one. Candidates run longest to
+// shortest so wide terminals get the full legend and 60-col ones a terse one.
+func fitModalHint(width int, candidates ...string) string {
+	for _, c := range candidates {
+		if lipgloss.Width(c) <= width {
+			return c
+		}
+	}
+	return candidates[len(candidates)-1]
 }
 
 // renderAlertsTab renders the alerts-tab inner content (no panel frame, no
@@ -551,10 +624,7 @@ func (m Model) renderAlertsTab() string {
 		// Page-aligned visible window (cursor position determines page). The
 		// status header consumes headerRows from the page budget so the body
 		// still fits the fixed panel height (bt-2nepr).
-		pageSize := m.alertsVisibleLines() - headerRows
-		if pageSize < 1 {
-			pageSize = 1
-		}
+		pageSize := m.alertsPageSize()
 		start := (m.alertsCursor / pageSize) * pageSize
 		end := start + pageSize
 		if end > len(visibleAlerts) {
@@ -708,7 +778,15 @@ func (m Model) renderAlertsTab() string {
 
 	// Footer: centered help text (with breathing room above)
 	helpStyle := lipgloss.NewStyle().Foreground(t.Muted).Italic(true)
-	helpText := helpStyle.Render("filter: s/t/p/o/a (\u21e7:prev) reset: r • open: enter clear: c (\u21e7:all)")
+	// Longest to shortest; fitModalHint picks the first that fits the inner
+	// width so the page keys (bt-p4p8.1) never overflow at 60-80 cols.
+	helpText := helpStyle.Render(fitModalHint(innerWidth,
+		"←/→/PgUp/PgDn: page  Home/End: ends  s/t/p/o/a: filter (⇧:prev)  r: reset  enter: open  c: clear (⇧:all)",
+		"←/→/PgUp/PgDn: page  Home/End: ends  s/t/p/o/a: filter  r: reset  enter: open  c: clear",
+		"←/→: page  g/G: ends  s/t/p/o/a: filter  r: reset  enter: open  c: clear",
+		"←/→: page  s/t/p/o/a: filter  r: reset  enter  c: clear",
+		"←/→: page  s/t/p/o/a  enter  c",
+	))
 	helpW := lipgloss.Width(helpText)
 	helpPad := (innerWidth - helpW) / 2
 	if helpPad < 0 {
@@ -798,12 +876,12 @@ func trimEndForDaySeparators(active []events.Event, start, end, pageSize int) in
 }
 
 // formatNotificationRow renders a single ring-buffer event as a one-line
-// notification. Format: "15:04 closed bt-46p6.1 • Fix: modal expands…"
+// notification. Format: "15:04:05 closed bt-46p6.1 • Fix: modal expands…"
 // Single space between time/kind/id; " • " separates id from title.
 // Columns are unaligned (intentional — tighter spacing over grid alignment).
 // Title is sanitized (newlines → spaces) and truncated at runtime width.
 func formatNotificationRow(e events.Event, width int) string {
-	timeStr := e.At.Format("15:04")
+	timeStr := e.At.Format("15:04:05")
 	kindStr := e.Kind.String()
 	idStr := e.BeadID
 	// Dismissed prefix only renders when the dismissed-filter is on (v2,
@@ -814,11 +892,11 @@ func formatNotificationRow(e events.Event, width int) string {
 		prefix = activeGlyphs.Cross + " "
 	}
 	title := strings.ReplaceAll(e.Title, "\n", " ")
-	// System events (bt-9u39) carry no BeadID — render as "15:04 system • Title"
+	// System events (bt-9u39) carry no BeadID — render as "15:04:05 system • Title"
 	// without the empty id slot to avoid a double-space gap. NewSystemEvent
 	// (setFailure/setDegraded) stores its message in Summary and leaves Title
 	// empty, so fall back to Summary as the row headline; without this those
-	// notices render as a blank "15:04 system •" row (the text was visible only
+	// notices render as a blank "15:04:05 system •" row (the text was visible only
 	// on the selected-row summary-expand line).
 	if e.Kind == events.EventSystem || idStr == "" {
 		headline := title
@@ -832,7 +910,7 @@ func formatNotificationRow(e events.Event, width int) string {
 		}
 		return prefix + timeStr + " " + kindStr + " • " + truncate(headline, titleWidth)
 	}
-	// timeStr(5) + " " + kindStr + " " + idStr + " • " (3) + optional prefix
+	// timeStr(8) + " " + kindStr + " " + idStr + " • " (3) + optional prefix
 	consumed := len(prefix) + len(timeStr) + 1 + len(kindStr) + 1 + len(idStr) + 3
 	titleWidth := width - consumed
 	if titleWidth < 10 {
@@ -906,10 +984,7 @@ func (m Model) renderNotificationsTab() string {
 	// Leave one row of the page for the cursor-expand line (hover-expand
 	// shows Event.Summary beneath the selected row). Matches the tradeoff
 	// used by the alerts tab's selected-detail line.
-	pageSize := m.alertsVisibleLines() - 1
-	if pageSize < 2 {
-		pageSize = 2
-	}
+	pageSize := m.notifPageSize()
 	start := (m.notificationsCursor / pageSize) * pageSize
 	end := start + pageSize
 	if end > len(active) {
@@ -1031,7 +1106,16 @@ func (m Model) renderNotificationsTab() string {
 	// r (reset) is intentionally undocumented here: the hint must fit the
 	// 96-col inner width, and unfiltering is already discoverable (cycle t
 	// to "all", or click the active chip).
-	hintText := hintStyle.Render(fmt.Sprintf("j/k: nav  enter: open  t: filter  c: dismiss  C: dismiss all  %s  esc: close", dismissToggleLabel))
+	// Longest to shortest; fitModalHint picks the first that fits so the page
+	// keys (bt-p4p8.1) never overflow at 60-80 cols.
+	hintText := hintStyle.Render(fitModalHint(innerWidth,
+		fmt.Sprintf("j/k: nav  ←/→/PgUp/PgDn: page  Home/End: ends  enter: open  t: filter  c: dismiss  C: all  %s  esc: close", dismissToggleLabel),
+		fmt.Sprintf("j/k: nav  ←/→: page  g/G: ends  enter: open  t: filter  c: dismiss  C: all  %s  esc: close", dismissToggleLabel),
+		fmt.Sprintf("j/k: nav  ←/→: page  enter: open  t: filter  c/C: dismiss  %s  esc: close", dismissToggleLabel),
+		"j/k  ←/→/PgUp/PgDn: page  enter: open  t: filter  c/C: dismiss  d  esc",
+		"j/k  ←/→/PgUp/PgDn: page  enter  t: filter  c/C  d  esc",
+		"j/k  ←/→: page  enter  t  c/C  d  esc",
+	))
 	hintW := lipgloss.Width(hintText)
 	hintPad := (innerWidth - hintW) / 2
 	if hintPad < 0 {

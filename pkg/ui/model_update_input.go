@@ -296,25 +296,16 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				m.alertsCursor--
 			}
 			return m, nil
-		case "right", "l":
-			// Page down
-			pageSize := m.alertsVisibleLines()
-			currentPageStart := (m.alertsCursor / pageSize) * pageSize
-			target := currentPageStart + pageSize + pageSize - 1 // bottom of next page
-			if target >= len(activeAlerts) {
-				target = len(activeAlerts) - 1
-			}
-			m.alertsCursor = target
+		case "l":
+			m.alertsCursor, _ = modalPageKeyCursor("right", m.alertsCursor, len(activeAlerts), m.alertsPageSize())
 			return m, nil
-		case "left", "h":
-			// Page up
-			pageSize := m.alertsVisibleLines()
-			currentPageStart := (m.alertsCursor / pageSize) * pageSize
-			target := currentPageStart - pageSize // top of previous page
-			if target < 0 {
-				target = 0
-			}
-			m.alertsCursor = target
+		case "h":
+			m.alertsCursor, _ = modalPageKeyCursor("left", m.alertsCursor, len(activeAlerts), m.alertsPageSize())
+			return m, nil
+		case "right", "left", "pgdown", "pgup", "home", "end", "g", "G":
+			// Page keys land at the top of the target page (bt-p4p8.1);
+			// home/end (g/G) jump to the first/last alert.
+			m.alertsCursor, _ = modalPageKeyCursor(s, m.alertsCursor, len(activeAlerts), m.alertsPageSize())
 			return m, nil
 		case "enter":
 			// Jump to the issue referenced by the selected alert and focus
@@ -2359,6 +2350,11 @@ func (m Model) handleNotificationsKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.notificationsCursor--
 		}
 		return m, nil
+	case "right", "left", "pgdown", "pgup", "home", "end", "g", "G":
+		// Page keys (bt-p4p8.1): page size is the visible-row budget, landing
+		// at the top of the target page; home/end (g/G) jump to the ends.
+		m.notificationsCursor, _ = modalPageKeyCursor(msg.String(), m.notificationsCursor, len(activeNotifs), m.notifPageSize())
+		return m, nil
 	case "enter":
 		// Both keyboard enter and double-click on a notification share
 		// activateCurrentModalItem so the deep-link semantics (workspace
@@ -2677,10 +2673,7 @@ func (m Model) alertsModalItemAtY(my int) (int, bool) {
 		if len(active) == 0 {
 			return -1, false
 		}
-		pageSize := m.alertsVisibleLines() - m.alertsHeaderRows()
-		if pageSize < 1 {
-			pageSize = 1
-		}
+		pageSize := m.alertsPageSize()
 		start := (m.alertsCursor / pageSize) * pageSize
 		end := start + pageSize
 		if end > len(active) {
@@ -2720,10 +2713,7 @@ func (m Model) alertsModalItemAtY(my int) (int, bool) {
 	if len(active) == 0 {
 		return -1, false
 	}
-	pageSize := m.alertsVisibleLines() - 1
-	if pageSize < 2 {
-		pageSize = 2
-	}
+	pageSize := m.notifPageSize()
 	start := (m.notificationsCursor / pageSize) * pageSize
 	end := start + pageSize
 	if end > len(active) {
