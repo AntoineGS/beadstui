@@ -101,15 +101,16 @@ func refsValidate(flagSchema, flagSigils string) (schema, sigils string, err err
 // (strict|verb|permissive) and retains v1's cross-project-only filter as a
 // load-bearing FP guard.
 //
-// Scope: strictly a --global subcommand. Without --global the issue set is
-// single-project and cross-project detection is definitionally empty; we
-// error cleanly rather than silently emit `[]`.
+// Scope: cross-project only (isCrossProjectScope: --global or the resolved
+// shared Dolt server, which is the no-flag default). In a single-project
+// scope cross-project detection is definitionally empty; we error cleanly
+// rather than silently emit `[]`.
 //
 // Flag validation runs in cobra's RunE (refsValidate) before robotPreRun,
 // so this handler receives already-resolved schema and sigils values.
 func (rc *robotCtx) runRefs(schema, sigils string) {
-	if !flagGlobal {
-		fmt.Fprintln(os.Stderr, "Error: bt robot refs requires --global (cross-project ref validation needs cross-project data)")
+	if !isCrossProjectScope() {
+		fmt.Fprintln(os.Stderr, "Error: bt robot refs requires --global or the shared-server scope (cross-project ref validation needs cross-project data)")
 		os.Exit(1)
 	}
 

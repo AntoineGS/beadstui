@@ -157,8 +157,9 @@ func snapshotSection(issues []model.Issue) *baseline.ProjectSection {
 
 // groupByProject partitions issues by project key for scoped alert computation.
 //
-// Global mode: group by SourceRepo. Empty SourceRepo maps to "unknown" so no
-// issue is silently dropped.
+// Cross-project mode: group by SourceRepo. Empty SourceRepo maps to "unknown"
+// so no issue is silently dropped. The beads_global (atlas) namespace is
+// excluded (it is not a project), matching bt robot portfolio. (bt-vdn2m)
 //
 // Single-project mode: everything is one group keyed by fallbackProject,
 // falling back to a uniform SourceRepo if fallbackProject is empty, then
@@ -180,6 +181,11 @@ func groupByProject(issues []model.Issue, global bool, fallback string) map[stri
 	out := make(map[string][]model.Issue)
 	for i := range issues {
 		p := issues[i].SourceRepo
+		if model.IsAtlasNamespace(p) {
+			// beads_global is a cross-cutting namespace, not a project;
+			// same exclusion as bt robot portfolio.
+			continue
+		}
 		if p == "" {
 			p = "unknown"
 		}

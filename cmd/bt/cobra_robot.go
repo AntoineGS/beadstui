@@ -971,7 +971,7 @@ var robotPortfolioCmd = &cobra.Command{
 	Use:   "portfolio",
 	Short: "Output per-project health aggregates as JSON",
 	Long: "Returns one PortfolioRecord per project with counts, priority breakdown (P0/P1 open), velocity with trend, composite health score, top blocker, and stalest issue. " +
-		"Use --global to aggregate across every project on the shared Dolt server. " +
+		"Cross-project by default (one record per Dolt database on the shared server); --source narrows it. " +
 		"Output is already compact-by-construction; --shape is accepted but no-op (envelope.schema is always portfolio.v1).",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		rc, err := robotPreRun()
@@ -989,7 +989,7 @@ var robotPairsCmd = &cobra.Command{
 	Short: "Detect cross-project paired beads (same ID suffix, different prefixes)",
 	Long: "Returns one PairRecord per paired set — canonical bead (first-created) plus mirrors, " +
 		"with drift flags for status, priority, and closed/open mismatches. " +
-		"Requires --global because pair detection is inherently cross-project. " +
+		"Needs cross-project data (the default shared-server scope, or --global); errors under a single-project source. " +
 		"--schema=v1 is the Phase 1 default; v2 flips the intent signal from suffix match to dep edge.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		schema, err := pairsValidate(robotFlagSchema, robotFlagOrphaned)
@@ -1014,7 +1014,7 @@ var robotRefsCmd = &cobra.Command{
 		"and validates each against the global set. Flags: broken (target missing), " +
 		"stale (target closed), orphaned_child (target's parent closed but target still open), " +
 		"cross_project (always present; v1 surfaces cross-project refs only). " +
-		"Requires --global. --schema=v1 is the Phase 1 default; --sigils is v2-only.",
+		"Needs cross-project data (the default shared-server scope, or --global). --schema=v1 is the Phase 1 default; --sigils is v2-only.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		schema, sigils, err := refsValidate(robotFlagSchema, robotFlagSigils)
 		if err != nil {

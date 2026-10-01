@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/seanmartinsmith/beadstui/internal/datasource"
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
@@ -96,5 +97,21 @@ func TestAnalysisIssues_GlobalResolvesExternals(t *testing.T) {
 	// Guard against input mutation leaking out of the helper.
 	if issues[0].Dependencies[0].DependsOnID != "external:cass:x" {
 		t.Errorf("resolver mutated rc.issues caller data: got %q", issues[0].Dependencies[0].DependsOnID)
+	}
+}
+
+// TestAnalysisIssues_AutoGlobalResolvesExternals guards bt-vdn2m: the no-flag
+// default resolves to the shared Dolt server (flagGlobal stays false) and must
+// still resolve external deps like --global does.
+func TestAnalysisIssues_AutoGlobalResolvesExternals(t *testing.T) {
+	prevFlag, prevSrc := flagGlobal, appCtx.selectedSource
+	flagGlobal = false
+	appCtx.selectedSource = &datasource.DataSource{Type: datasource.SourceTypeDoltGlobal}
+	t.Cleanup(func() { flagGlobal, appCtx.selectedSource = prevFlag, prevSrc })
+
+	rc := &robotCtx{issues: buildCrossProjectIssues()}
+	got := rc.analysisIssues()
+	if got[0].Dependencies[0].DependsOnID != "cass-x" {
+		t.Errorf("auto-global mode did not rewrite external dep: got %q", got[0].Dependencies[0].DependsOnID)
 	}
 }

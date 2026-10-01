@@ -23,7 +23,7 @@ func (rc *robotCtx) runAlerts(alertSeverity, alertType, alertLabel string) {
 
 	alerts := drift.ProjectAlerts(
 		rc.analysisIssues(),
-		flagGlobal,
+		isCrossProjectScope(),
 		rc.repoName,
 		driftConfig,
 		rc.baselineLoader(),

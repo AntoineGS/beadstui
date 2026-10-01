@@ -16,8 +16,10 @@ import (
 // health aggregates answering "which project needs attention?" at the org
 // level.
 //
-// Scope: under --global, one record per SourceRepo. Without --global, a
-// single record for the current project.
+// Scope: when the run is cross-project (isCrossProjectScope: --global or the
+// resolved shared Dolt server, i.e. the no-flag default), one record per
+// SourceRepo (the Dolt database name). Otherwise a single record for the
+// current project.
 //
 // The --shape flag is inherited but effectively a no-op: PortfolioRecord is
 // compact-by-construction (no body fields to strip). The envelope's `schema`
@@ -30,7 +32,7 @@ func (rc *robotCtx) runPortfolio() {
 	pagerank := stats.PageRank()
 	now := time.Now().UTC()
 
-	groups := groupIssuesByProject(issues, flagGlobal, rc.repoName)
+	groups := groupIssuesByProject(issues, isCrossProjectScope(), rc.repoName)
 	records := make([]view.PortfolioRecord, 0, len(groups))
 	for project, projectIssues := range groups {
 		records = append(records, view.ComputePortfolioRecord(project, projectIssues, issues, pagerank, now))
@@ -60,15 +62,17 @@ func (rc *robotCtx) runPortfolio() {
 
 // groupIssuesByProject partitions issues by project key.
 //
-// Global mode: group by SourceRepo. Empty SourceRepo maps to "unknown" —
+// Cross-project mode (global=true): group by SourceRepo, which is the Dolt
+// database name (e.g. "beads", "marketplace"), not the issue-ID prefix. Empty SourceRepo maps to "unknown" —
 // logged at debug so noisy environments can investigate; never dropped.
 // The beads_global namespace (upstream `bd --global`, bt-z1pzj) is excluded
 // entirely: it is a cross-cutting namespace, not a project, so its
 // open/blocked/velocity counts would produce a bogus per-project health
 // score. This is a soft contract change for `bt robot portfolio --global`:
 // a beads_global record, if ever populated, no longer appears in `projects`.
+// Applies to the default (auto-global) run as well as --global.
 //
-// Single-project mode: everything is one group keyed by rc.repoName; falling
+// Single-project mode (global=false): everything is one group keyed by rc.repoName; falling
 // back to the uniform SourceRepo if repoName is empty; "local" as a final
 // fallback so every record has a non-empty project field.
 func groupIssuesByProject(issues []model.Issue, global bool, repoName string) map[string][]model.Issue {

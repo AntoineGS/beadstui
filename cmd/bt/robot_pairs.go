@@ -188,9 +188,10 @@ func suggestDepAdd(members []string) string {
 // first-created bead; mirrors are the rest. Drift flags surface
 // divergence of mirrors from canonical.
 //
-// Scope: strictly a --global subcommand. Without --global the issue
-// set is single-project and pair detection is definitionally empty;
-// we error cleanly rather than silently emit `[]`.
+// Scope: cross-project only (isCrossProjectScope: --global or the resolved
+// shared Dolt server, which is the no-flag default). In a single-project
+// scope pair detection is definitionally empty; we error cleanly rather than
+// silently emit `[]`.
 //
 // --schema dispatch: v1 (default in Phase 1/2) routes to pairsOutput. v2
 // routes to pairsOutputV2 (intent-based, ships in Phase 2 of bt-gkyn).
@@ -201,8 +202,8 @@ func suggestDepAdd(members []string) string {
 // (bt-vxu9 ref.v2) ships — flipping earlier breaks `bt robot refs --global`
 // default invocations while the v2 ref reader is still a stub.
 func (rc *robotCtx) runPairs(schema string) {
-	if !flagGlobal {
-		fmt.Fprintln(os.Stderr, "Error: bt robot pairs requires --global (pair detection needs cross-project data)")
+	if !isCrossProjectScope() {
+		fmt.Fprintln(os.Stderr, "Error: bt robot pairs requires --global or the shared-server scope (pair detection needs cross-project data)")
 		os.Exit(1)
 	}
 

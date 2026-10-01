@@ -71,6 +71,23 @@ func NewRobotEnvelope(dataHash string) RobotEnvelope {
 	}
 }
 
+// isCrossProjectScope is the single predicate for "this run operates over the
+// shared multi-project corpus". True when --global was passed OR the resolved
+// data source is the shared Dolt server (auto-global, bt-mxz9, leaves
+// flagGlobal=false). Robot consumers that group by project, resolve external
+// deps, or require cross-project data must use this, never the literal flag,
+// so payload and envelope scope.mode agree. (bt-vdn2m)
+//
+// Workspace mode (--workspace) is deliberately NOT included: it is a
+// separate, explicitly configured multi-repo scope that conflicts with
+// --global, and its consumers keep their existing single-group behavior.
+func isCrossProjectScope() bool {
+	if flagGlobal {
+		return true
+	}
+	return appCtx.selectedSource != nil && appCtx.selectedSource.Type == datasource.SourceTypeDoltGlobal
+}
+
 // currentRobotScope inspects the resolved data source and active flag set to
 // produce the envelope scope block. Returns nil only when the data source
 // hasn't been resolved yet (commands that emit envelopes pre-load are rare;
@@ -82,7 +99,7 @@ func currentRobotScope() *RobotScope {
 	case flagWorkspace != "":
 		scope.Mode = "workspace"
 		scope.Workspace = flagWorkspace
-	case appCtx.selectedSource != nil && appCtx.selectedSource.Type == datasource.SourceTypeDoltGlobal:
+	case isCrossProjectScope():
 		scope.Mode = "cross-project"
 		scope.Databases = derivePrefixesFromIssues(appCtx.issues)
 	default:
