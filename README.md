@@ -110,7 +110,7 @@ Two notes:
 
 **Board and detail views** - Navigate issues with vim-style keys. Expand any issue to see full markdown-rendered detail (via Glamour). Board view shows kanban columns grouped by status.
 
-**Filter and search** - Filter by label, status, priority, type, or assignee with modal pickers. Fuzzy-search across the full label taxonomy.
+**Filter and search** - Pick labels with the `l` modal picker, narrow by status with `o`/`c`/`r`, and filter by priority, type, assignee, or anything else with BQL (`:`). Fuzzy-search across the full label taxonomy.
 
 ![Label filter](docs/screenshots/04-label-filter.webp)
 
