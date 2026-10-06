@@ -6,6 +6,16 @@ For architectural decisions, see `docs/adr/`. For issue tracking, use `bd list`.
 
 ---
 
+## 2026-10-06 - README key tables re-synced with the keymap, plus a drift test
+
+**The README told a first-time user that `l` opens the list view and that `f`/`p`/`t` filter by status, priority and type. In the code they open the label picker, the flow matrix, priority hints and time travel (bt-aj3l.6, filed from a usage inventory by pc:bt:b745cf98). This session (pc:bt:a14d7a99) audited both README key tables against `pkg/ui/keys/*.go`, not just those four keys, and added a test so they can't drift silently again.**
+
+- **docs: README Views and Key bindings tables match the keymap.** The Views table gains `g` graph, `h` history, `a` actionable and `f` flow matrix. The list view has no key of its own; `esc` returns to it. The Key bindings table now covers `l` label picker, `p` priority hints, `t` time travel, `o`/`c`/`r` open/closed/ready, `s` sort and `ctrl+c` quit. `q` is back/quit and `Enter` opens detail. The filter sentence now says what the code does: priority, type and assignee filtering are BQL (`:`) fields, not pickers.
+- **test: `pkg/ui/keys/readme_keys_test.go`.** Every backtick key in those two tables must exist in some `key.WithKeys`. Each single-key row's description must share a word with that key's Global/ListNormal help text. Reverting the old `l`/`f`/`t` rows fails the test with a readable message. One known gap: a partly overlapping description ("Filter by priority" vs "priority hints") passes. A generator was rejected because the tables are a curated subset with merged rows.
+- **Filed:** **bt-x33ev**. The vendored btop themes (`pkg/ui/themes/btop`) ship without btop's Apache-2.0 license notice.
+
+---
+
 ## 2026-10-01 — Robot commands verified as /beads-audit evidence; notification/alert dogfood filed
 
 **bt-d4kcd (filed by the marketplace backlog triage, pc:marketplace:f2e36bc6) asked whether the bt robot commands /beads-audit wants as evidence are trustworthy. This session (pc:bt:04ad42d0) checked ten of them against ground truth (bd, git log) on bt, marketplace, flash-2026 and the 26-DB fleet. Five are usable now with a stated invocation; the rest have their defects filed. No code changed; the per-command list lives in bt-d4kcd's notes and gates marketplace bead mkt-ckv1.**
