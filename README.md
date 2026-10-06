@@ -96,9 +96,13 @@ Two notes:
 
 | Key | View | What it shows |
 |-----|------|---------------|
-| `l` | **List** | Issue list with detail panel (default) |
+| `esc` | **List** | Issue list with detail panel (default; `esc` returns here from other views) |
 | `b` | **Board** | Kanban columns by status |
+| `g` | **Graph** | Dependency graph |
 | `i` | **Insights** | PageRank, critical path, cycle detection |
+| `h` | **History** | Bead-to-commit correlation timeline |
+| `a` | **Actionable** | Execution plan grouped into parallel tracks |
+| `f` | **Flow matrix** | How labels block each other (cross-label dependency flow) |
 
 ![Board view](docs/screenshots/03-kanban.webp)
 
@@ -135,17 +139,20 @@ Supports `=`, `!=`, `<`, `>`, `~` (substring), `in`, `not in`, `and`/`or`/`not`,
 | Key | Action |
 |-----|--------|
 | `j`/`k` or arrows | Navigate |
-| `Enter` | Expand/collapse detail |
-| `b` | Board view |
-| `i` | Insights |
-| `l` | List view |
+| `Enter` | Open detail |
+| `b` / `g` / `i` / `h` | Board / Graph / Insights / History |
+| `a` | Actionable view |
+| `f` | Flow matrix |
 | `/` | Search |
 | `:` | BQL query |
-| `f` | Filter by status |
-| `p` | Filter by priority |
-| `t` | Filter by type |
+| `o` / `c` / `r` | List open / closed / ready issues |
+| `l` | Label picker |
+| `p` | Priority hints |
+| `t` | Time travel |
+| `s` | Cycle sort |
 | `?` | Help |
-| `q` | Quit |
+| `q` | Back / quit |
+| `ctrl+c` | Quit |
 
 ## Configuration
 
