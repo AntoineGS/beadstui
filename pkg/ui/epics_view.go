@@ -41,6 +41,7 @@ func (m *Model) refreshEpicsForCurrentFilter() {
 
 	m.epicsTree.Build(scoped, m.epicsStatusMode, time.Now())
 	m.epicsTree.SetTheme(m.theme)
+	m.epicsTree.SetSlots(m.slotRegistry)
 	m.epicsTree.SetContext(m.epicsScopeLabel(), m.epicsStatusMode.label())
 	m.epicsTree.SetSize(m.bodyWidth(), m.height-1)
 	m.epicsViewText = m.epicsTree.View()

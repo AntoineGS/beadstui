@@ -92,6 +92,13 @@ the dimmed-backdrop pop-up effect. Non-modal overlays use the non-dim
 `OverlayCenter`. Step-by-step for adding a new modal:
 [docs/design/tui-modal-compositing.md](docs/design/tui-modal-compositing.md).
 
+## TUI slots
+
+New row badges, detail sections and BQL fields come from providers in
+`pkg/ui/slots`; the existing gate, diff, progress and triage indicators remain
+in the renderers. See
+[docs/design/tui-slots.md](docs/design/tui-slots.md).
+
 ## Naming
 
 - Binary: `bt`, Env vars: `BT_*`, CLI references: `bd` (beads CLI)

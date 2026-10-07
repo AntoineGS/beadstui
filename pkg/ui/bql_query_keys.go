@@ -30,7 +30,7 @@ func (m Model) handleBQLQueryKeys(msg tea.KeyMsg) (Model, tea.Cmd) {
 				m.bqlQuery.SetError(err.Error())
 				return m, nil // Stay in modal
 			}
-			if err := bql.Validate(parsed); err != nil {
+			if err := bql.ValidateWithFields(parsed, m.bqlFields()); err != nil {
 				m.bqlQuery.SetError(err.Error())
 				return m, nil // Stay in modal
 			}

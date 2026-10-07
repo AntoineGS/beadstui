@@ -174,3 +174,20 @@ func TestValidate_CustomFields(t *testing.T) {
 		t.Error("expected error for status with custom fields only")
 	}
 }
+
+func TestValidateWithExtensionField(t *testing.T) {
+	q, err := Parse("agent.state in (waiting, lost) order by agent.state")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if err := Validate(q); err == nil {
+		t.Fatal("default fields accepted an unregistered field")
+	}
+	fields := map[string]FieldType{"agent.state": FieldString}
+	for k, v := range ValidFields {
+		fields[k] = v
+	}
+	if err := ValidateWithFields(q, fields); err != nil {
+		t.Fatalf("ValidateWithFields: %v", err)
+	}
+}

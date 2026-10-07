@@ -28,6 +28,7 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/search"
 	"github.com/seanmartinsmith/beadstui/pkg/ui/events"
 	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/slots"
 	"github.com/seanmartinsmith/beadstui/pkg/updater"
 	"github.com/seanmartinsmith/beadstui/pkg/version"
 	"github.com/seanmartinsmith/beadstui/pkg/watcher"
@@ -764,6 +765,7 @@ type Model struct {
 	viewport           viewport.Model
 	renderer           *MarkdownRenderer
 	board              BoardModel
+	slotRegistry       *slots.Registry // row badge, section and BQL field providers; built-ins registered in NewModel
 	labelDashboard     LabelDashboardModel
 	velocityComparison VelocityComparisonModel // bv-125
 	shortcutsSidebar   ShortcutsSidebar        // bv-3qi5
@@ -1235,7 +1237,10 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 	const defaultHeight = 40
 
 	// List setup - initialize with default dimensions so UI is immediately usable
-	delegate := IssueDelegate{Theme: theme, WorkspaceMode: false}
+	slotRegistry := slots.NewRegistry()
+	registerBuiltinSlots(slotRegistry)
+
+	delegate := IssueDelegate{Theme: theme, WorkspaceMode: false, Slots: slotRegistry}
 	l := list.New(items, delegate, defaultWidth, defaultHeight-3)
 	l.Title = ""
 	l.SetShowTitle(false)
@@ -1283,6 +1288,7 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 
 	// Initialize sub-components
 	board := NewBoardModel(issues, theme)
+	board.SetSlots(slotRegistry)
 	labelDashboard := NewLabelDashboardModel(theme)
 	labelDashboard.SetSize(defaultWidth, defaultHeight-1)
 	velocityComparison := NewVelocityComparisonModel(theme) // bv-125
@@ -1484,6 +1490,7 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 
 	// Tree view state should persist alongside the beads directory (e.g. BEADS_DIR overrides).
 	treeModel := NewTreeModel(theme)
+	treeModel.SetSlots(slotRegistry)
 	if beadsPath != "" {
 		treeModel.SetBeadsDir(filepath.Dir(beadsPath))
 	}
@@ -1545,6 +1552,7 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 		shortcutsSidebar:       shortcutsSidebar,
 		graphView:              graphView,
 		tree:                   treeModel,
+		slotRegistry:           slotRegistry,
 		epicsTree:              EpicsTreeModel{expanded: map[string]bool{}, theme: theme},
 		insightsPanel:          insightsPanel,
 		theme:                  theme,

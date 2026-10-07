@@ -36,7 +36,7 @@ func (e *MemoryExecutor) Execute(query *Query, issues []model.Issue, opts Execut
 
 	// ORDER BY
 	if len(query.OrderBy) > 0 {
-		sortIssues(result, query.OrderBy)
+		sortIssues(result, query.OrderBy, opts)
 	}
 
 	return result
@@ -104,7 +104,7 @@ func evalExpr(expr Expr, issue model.Issue, opts ExecuteOpts, depth int) bool {
 		return evalCompare(e, issue, opts)
 
 	case *InExpr:
-		return evalIn(e, issue)
+		return evalIn(e, issue, opts)
 	}
 
 	return false
@@ -122,6 +122,11 @@ func evalCompare(e *CompareExpr, issue model.Issue, opts ExecuteOpts) bool {
 	// Handle label field (array membership)
 	if e.Field == "label" {
 		return evalLabelCompare(e, issue)
+	}
+
+	// Extension fields compare as strings; a bead without a value never matches.
+	if v, ok, isExt := extensionValue(issue, e.Field, opts); isExt {
+		return ok && compareStrings(v, extensionLiteral(e.Value), e.Op)
 	}
 
 	// Get field value
@@ -204,8 +209,18 @@ func evalLabelCompare(e *CompareExpr, issue model.Issue) bool {
 	return false
 }
 
+// extensionLiteral returns the text of a literal for comparison against an
+// extension field value: the parsed string, or the source text for numbers
+// and booleans.
+func extensionLiteral(v Value) string {
+	if v.String != "" {
+		return v.String
+	}
+	return v.Raw
+}
+
 // evalIn evaluates an IN expression.
-func evalIn(e *InExpr, issue model.Issue) bool {
+func evalIn(e *InExpr, issue model.Issue, opts ExecuteOpts) bool {
 	// Label field: check if any label matches any value
 	if e.Field == "label" {
 		for _, v := range e.Values {
@@ -222,6 +237,18 @@ func evalIn(e *InExpr, issue model.Issue) bool {
 			}
 		}
 		return e.Not // NOT IN: true if no match found; IN: false if no match
+	}
+
+	if v, ok, isExt := extensionValue(issue, e.Field, opts); isExt {
+		if !ok {
+			return false // neither IN nor NOT IN matches a missing value
+		}
+		for _, val := range e.Values {
+			if strings.EqualFold(v, extensionLiteral(val)) {
+				return !e.Not
+			}
+		}
+		return e.Not
 	}
 
 	fv := fieldValue(issue, e.Field)
@@ -285,6 +312,28 @@ func fieldValue(issue model.Issue, field string) any {
 	default:
 		return ""
 	}
+}
+
+// extensionValue reports whether field is an extension field under opts
+// and, if so, the issue's value for it.
+func extensionValue(issue model.Issue, field string, opts ExecuteOpts) (value string, ok, isExt bool) {
+	if _, builtin := ValidFields[field]; builtin || opts.Fields == nil {
+		return "", false, false
+	}
+	value, ok = opts.Fields(&issue, field)
+	return value, ok, true
+}
+
+// orderValue is fieldValue extended to extension fields; a missing
+// extension value orders as "".
+func orderValue(issue model.Issue, field string, opts ExecuteOpts) any {
+	if v, ok, isExt := extensionValue(issue, field, opts); isExt {
+		if !ok {
+			return ""
+		}
+		return v
+	}
+	return fieldValue(issue, field)
 }
 
 // maxParentBlockDepth caps parent-child blocked propagation, matching
@@ -481,12 +530,12 @@ func resolveDateValue(dateStr string) (time.Time, error) {
 }
 
 // sortIssues sorts issues by ORDER BY terms.
-func sortIssues(issues []model.Issue, orderBy []OrderTerm) {
+func sortIssues(issues []model.Issue, orderBy []OrderTerm, opts ExecuteOpts) {
 	sort.SliceStable(issues, func(i, j int) bool {
 		for _, term := range orderBy {
 			cmp := compareFieldValues(
-				fieldValue(issues[i], term.Field),
-				fieldValue(issues[j], term.Field),
+				orderValue(issues[i], term.Field, opts),
+				orderValue(issues[j], term.Field, opts),
 			)
 			if cmp == 0 {
 				continue
