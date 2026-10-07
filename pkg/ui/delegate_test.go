@@ -8,6 +8,7 @@ import (
 
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/slots"
 
 	"charm.land/bubbles/v2/list"
 	"charm.land/lipgloss/v2"
@@ -339,5 +340,61 @@ func TestIssueDelegate_RenderNarrow(t *testing.T) {
 	}
 	if strings.Contains(out, "💬") {
 		t.Fatalf("narrow output should hide comments count: %q", out)
+	}
+}
+
+func renderDelegateRow(t *testing.T, d IssueDelegate, item IssueItem, width int) string {
+	t.Helper()
+	l := list.New([]list.Item{item}, d, 0, 0)
+	l.SetWidth(width)
+	var buf bytes.Buffer
+	d.Render(&buf, l, 0, item)
+	return buf.String()
+}
+
+func waitRegistry() *slots.Registry {
+	reg := slots.NewRegistry()
+	reg.AddBadges(slots.BadgeFunc(func(*model.Issue) []slots.Badge {
+		return []slots.Badge{{Text: "WAIT", Tone: slots.ToneWarn}}
+	}))
+	return reg
+}
+
+func TestIssueDelegate_RendersSlotBadges(t *testing.T) {
+	item := newTestIssueItem("api-1")
+	d := IssueDelegate{Theme: DefaultTheme(), Slots: waitRegistry()}
+
+	if out := renderDelegateRow(t, d, item, 120); !strings.Contains(out, "WAIT") {
+		t.Fatalf("width 120 row missing slot badge: %q", out)
+	}
+	if out := renderDelegateRow(t, d, item, 80); strings.Contains(out, "WAIT") {
+		t.Fatalf("width 80 row should hide slot badges: %q", out)
+	}
+}
+
+func TestIssueDelegate_SlotBadgesNeverWrapNarrowRows(t *testing.T) {
+	item := newTestIssueItem("api-1")
+	item.Issue.Title = strings.Repeat("long title words ", 10)
+	d := IssueDelegate{Theme: DefaultTheme(), Slots: waitRegistry()}
+
+	out := renderDelegateRow(t, d, item, 81)
+	if strings.Contains(out, "\n") {
+		t.Fatalf("row wrapped: %q", out)
+	}
+	if w := lipgloss.Width(out); w > 80 {
+		t.Fatalf("row width %d exceeds 80", w)
+	}
+}
+
+func TestIssueDelegate_OverdueBadgeViaRegistry(t *testing.T) {
+	item := newTestIssueItem("api-1")
+	past := time.Now().Add(-48 * time.Hour)
+	item.Issue.DueDate = &past
+	reg := slots.NewRegistry()
+	registerBuiltinSlots(reg)
+	d := IssueDelegate{Theme: DefaultTheme(), Slots: reg}
+
+	if out := renderDelegateRow(t, d, item, 120); !strings.Contains(out, "DUE") {
+		t.Fatalf("overdue row missing DUE badge: %q", out)
 	}
 }

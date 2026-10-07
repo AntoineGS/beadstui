@@ -514,22 +514,30 @@ func RenderStateDimensionBadge(dim, val string) string {
 		Render(label)
 }
 
-// RenderOverdueBadge returns a red badge for overdue issues.
-func RenderOverdueBadge() string {
+// overdueBadgeStyle is the house style of the overdue badge.
+func overdueBadgeStyle() lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(ColorOverdue).
 		Background(ColorOverdueBg).
 		Bold(true).
-		Padding(0, 0).
-		Render(activeGlyphs.Overdue + "DUE")
+		Padding(0, 0)
+}
+
+// RenderOverdueBadge returns a red badge for overdue issues.
+func RenderOverdueBadge() string {
+	return overdueBadgeStyle().Render(activeGlyphs.Overdue + "DUE")
+}
+
+// staleBadgeStyle is the house style of the stale badge.
+func staleBadgeStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(ColorStale).
+		Padding(0, 0)
 }
 
 // RenderStaleBadge returns a muted badge for stale issues.
 func RenderStaleBadge() string {
-	return lipgloss.NewStyle().
-		Foreground(ColorStale).
-		Padding(0, 0).
-		Render(activeGlyphs.Stale)
+	return staleBadgeStyle().Render(activeGlyphs.Stale)
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

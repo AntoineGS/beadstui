@@ -5,9 +5,11 @@ import (
 	"image/color"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/slots"
 
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
@@ -26,6 +28,10 @@ type IssueDelegate struct {
 	// zero-value safe: a nil map and empty frame render exactly as before.
 	PendingClaims map[string]bool
 	ClaimSpinner  string
+
+	// Slots supplies row badges (overdue/stale and any registered provider).
+	// Nil renders no slot badges.
+	Slots *slots.Registry
 }
 
 func (d IssueDelegate) Height() int {
@@ -224,16 +230,11 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 		leftFixedWidth += lipgloss.Width(epicBadge) + 1
 	}
 
-	// Overdue/stale indicator (bt-5oqf) - only at width > 80
-	var timeBadge string
+	// Slot badges (overdue/stale and registered providers) - only at width > 80.
+	// Their budget is settled after the ID and diff badge are measured, below.
+	var slotBadges []slots.Badge
 	if width > 80 {
-		if isOverdue(&i.Issue) {
-			timeBadge = RenderOverdueBadge()
-			leftFixedWidth += lipgloss.Width(timeBadge) + 1
-		} else if isStale(&i.Issue) {
-			timeBadge = RenderStaleBadge()
-			leftFixedWidth += lipgloss.Width(timeBadge) + 1
-		}
+		slotBadges = d.Slots.Badges(&i.Issue)
 	}
 
 	// ID width - use actual visual width, but cap reasonably
@@ -247,6 +248,13 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 	// Diff badge width adjustment
 	if badge := i.DiffStatus.Badge(); badge != "" {
 		leftFixedWidth += lipgloss.Width(badge) + 1
+	}
+
+	// Badges only get cells the title can spare above its protected minimum.
+	badgeStrip, badgeWidth := renderBadgeStrip(slotBadges,
+		width-leftFixedWidth-rightWidth-2-minTitleWidthWithBadges, time.Now())
+	if badgeWidth > 0 {
+		leftFixedWidth += badgeWidth + 1
 	}
 
 	// Title gets everything in between
@@ -328,9 +336,9 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 		leftSide.WriteString(" ")
 	}
 
-	// Overdue/stale indicator (bt-5oqf)
-	if timeBadge != "" {
-		leftSide.WriteString(timeBadge)
+	// Slot badges (overdue/stale and registered providers)
+	if badgeStrip != "" {
+		leftSide.WriteString(badgeStrip)
 		leftSide.WriteString(" ")
 	}
 

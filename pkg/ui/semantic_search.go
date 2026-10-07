@@ -744,6 +744,7 @@ func (m *Model) updateListDelegate() {
 		WorkspaceMode:     m.workspaceMode,
 		PendingClaims:     m.pendingWriteIDs(),
 		ClaimSpinner:      claimSpinnerFrame(m.writeSpinnerIdx),
+		Slots:             m.slotRegistry,
 	})
 }
 
