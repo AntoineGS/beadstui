@@ -24,7 +24,10 @@ func TestDetailPaneShowsSlotSectionsAfterProperties(t *testing.T) {
 	if agent < 0 {
 		t.Fatalf("detail pane missing slot section:\n%s", out)
 	}
-	if desc >= 0 && agent > desc {
+	if desc < 0 {
+		t.Fatalf("detail pane missing description:\n%s", out)
+	}
+	if agent > desc {
 		t.Fatalf("slot section should precede the description:\n%s", out)
 	}
 }

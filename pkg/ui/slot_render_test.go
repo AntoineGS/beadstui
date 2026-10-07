@@ -63,8 +63,9 @@ func TestRenderBadgeStripCapsWidth(t *testing.T) {
 		badges = append(badges, slots.Badge{Text: "ABCD"})
 	}
 	_, w := renderBadgeStrip(badges, 200, time.Now())
-	if w > maxBadgeStripWidth {
-		t.Fatalf("strip width %d exceeds cap %d", w, maxBadgeStripWidth)
+	// Four badges fit under the cap: 4 + 3×(1 separator + 4).
+	if w != 19 || w > maxBadgeStripWidth {
+		t.Fatalf("strip width = %d, want 19 (cap %d)", w, maxBadgeStripWidth)
 	}
 }
 
