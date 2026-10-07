@@ -16,6 +16,10 @@ type Executor interface {
 	Matches(query *Query, issue model.Issue, opts ExecuteOpts) bool
 }
 
+// FieldResolver answers BQL fields that are not built in, such as fields
+// registered by TUI extensions. ok is false when the issue has no value.
+type FieldResolver func(issue *model.Issue, field string) (value string, ok bool)
+
 // ExecuteOpts provides context needed by the executor beyond the issue list.
 type ExecuteOpts struct {
 	// IssueMap enables dependency lookups for blocked field and EXPAND.
@@ -23,6 +27,10 @@ type ExecuteOpts struct {
 	// loaded corpus, not a scoped subset: whether an issue is blocked
 	// depends on issues outside the result set (bt-5muh4).
 	IssueMap map[string]*model.Issue
+
+	// Fields answers fields missing from ValidFields. Built-in names always
+	// take precedence. Nil means only built-in fields have values.
+	Fields FieldResolver
 
 	// blocked is blockedIDs(IssueMap), computed once per Execute/Matches
 	// call when the query references the blocked field.

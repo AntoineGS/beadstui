@@ -1,6 +1,7 @@
 package bql
 
 import (
+	"reflect"
 	"sort"
 	"testing"
 	"time"
@@ -541,4 +542,77 @@ func equalStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func extFixture() ([]model.Issue, ExecuteOpts) {
+	issues := []model.Issue{
+		{ID: "a", Title: "a", Status: model.StatusOpen},
+		{ID: "b", Title: "b", Status: model.StatusOpen},
+		{ID: "c", Title: "c", Status: model.StatusOpen}, // no agent.state
+	}
+	states := map[string]string{"a": "waiting", "b": "running"}
+	opts := ExecuteOpts{Fields: func(issue *model.Issue, field string) (string, bool) {
+		if field != "agent.state" {
+			return "", false
+		}
+		v, ok := states[issue.ID]
+		return v, ok
+	}}
+	return issues, opts
+}
+
+func extIDs(t *testing.T, query string, issues []model.Issue, opts ExecuteOpts) []string {
+	t.Helper()
+	q, err := Parse(query)
+	if err != nil {
+		t.Fatalf("Parse(%q): %v", query, err)
+	}
+	var ids []string
+	for _, is := range NewMemoryExecutor().Execute(q, issues, opts) {
+		ids = append(ids, is.ID)
+	}
+	return ids
+}
+
+func TestExtensionFieldComparisons(t *testing.T) {
+	issues, opts := extFixture()
+	cases := []struct {
+		query string
+		want  []string
+	}{
+		{"agent.state = waiting", []string{"a"}},
+		{"agent.state = WAITING", []string{"a"}},
+		{"agent.state != waiting", []string{"b"}}, // c has no value: no match
+		{"agent.state ~ run", []string{"b"}},
+		{"agent.state in (waiting, running)", []string{"a", "b"}},
+		{"agent.state not in (waiting)", []string{"b"}}, // c excluded
+		{"agent.state = waiting or status = open", []string{"a", "b", "c"}},
+	}
+	for _, c := range cases {
+		if got := extIDs(t, c.query, issues, opts); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s = %v, want %v", c.query, got, c.want)
+		}
+	}
+}
+
+func TestExtensionFieldOrderBy(t *testing.T) {
+	issues, opts := extFixture()
+	if got, want := extIDs(t, "status = open order by agent.state desc", issues, opts), []string{"a", "b", "c"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("order by agent.state desc = %v, want %v", got, want)
+	}
+}
+
+func TestBuiltinFieldShadowsExtension(t *testing.T) {
+	issues, opts := extFixture()
+	opts.Fields = func(*model.Issue, string) (string, bool) { return "closed", true }
+	if got, want := extIDs(t, "status = open", issues, opts), []string{"a", "b", "c"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("status = open with a resolver claiming status = %v, want %v", got, want)
+	}
+}
+
+func TestExtensionFieldWithoutResolverMatchesNothing(t *testing.T) {
+	issues, _ := extFixture()
+	if got := extIDs(t, "agent.state = waiting", issues, ExecuteOpts{}); len(got) != 0 {
+		t.Fatalf("no resolver: %v, want none", got)
+	}
 }
