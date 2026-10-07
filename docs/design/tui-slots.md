@@ -28,7 +28,9 @@ reg.AddBadges(slots.BadgeFunc(func(issue *model.Issue) []slots.Badge {
 - Badges never take cells the title needs below `minTitleWidthWithBadges`
   (20), and all badges on a row share at most `maxBadgeStripWidth` (20) cells.
   Badges that do not fit are dropped from the end, so register the most
-  important provider first.
+  important provider first. This holds for list, tree and epics rows. On
+  board cards the title is on the second line, so badges use only what is left
+  of the first line between the ID and the age.
 - The list shows badges only above 80 columns, as it did for the overdue/stale
   badge they replaced. Epic rows and lane headers in the epics view show none.
 - `Badge.Since` adds a compact age ("WAIT 4m"). `Badge.Style` is for built-ins

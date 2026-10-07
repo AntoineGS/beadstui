@@ -11,7 +11,7 @@ For architectural decisions, see `docs/adr/`. For issue tracking, use `bd list`.
 **Badges on rows, sections in the detail pane and BQL fields were each hard-coded where they render, in four separate row renderers and one inline detail builder. This adds `pkg/ui/slots`, a registry that built-in features and future extensions both use, as the first step toward plugin support.**
 
 - **feat: `pkg/ui/slots` registry.** Badge, section and field providers, safe for concurrent use. Design notes in `docs/design/tui-slots.md`.
-- **feat: badges on every row renderer.** List rows, board cards, tree rows and epics child rows draw provider badges through one width-budgeted helper that never squeezes the title below 20 cells. The overdue/stale badge is now a provider, so it also appears on board cards, tree rows and epics child rows.
+- **feat: badges on every row renderer.** List rows, board cards, tree rows and epics child rows draw provider badges through one width-budgeted helper. List, tree and epics rows never squeeze the title below 20 cells; board cards use only the space left on the first line between the ID and the age. The overdue/stale badge is now a provider, so it also appears on board cards, tree rows and epics child rows.
 - **feat: detail sections.** Providers' sections render right after the property block. Capabilities is now a provider.
 - **feat: BQL extension fields.** `ExecuteOpts.Fields` resolves fields outside `ValidFields`; the TUI's BQL modal accepts registry fields. Built-in field names cannot be shadowed.
 
