@@ -126,7 +126,7 @@ func evalCompare(e *CompareExpr, issue model.Issue, opts ExecuteOpts) bool {
 
 	// Extension fields compare as strings; a bead without a value never matches.
 	if v, ok, isExt := extensionValue(issue, e.Field, opts); isExt {
-		return ok && compareStrings(v, e.Value.String, e.Op)
+		return ok && compareStrings(v, extensionLiteral(e.Value), e.Op)
 	}
 
 	// Get field value
@@ -209,6 +209,16 @@ func evalLabelCompare(e *CompareExpr, issue model.Issue) bool {
 	return false
 }
 
+// extensionLiteral returns the text of a literal for comparison against an
+// extension field value: the parsed string, or the source text for numbers
+// and booleans.
+func extensionLiteral(v Value) string {
+	if v.String != "" {
+		return v.String
+	}
+	return v.Raw
+}
+
 // evalIn evaluates an IN expression.
 func evalIn(e *InExpr, issue model.Issue, opts ExecuteOpts) bool {
 	// Label field: check if any label matches any value
@@ -234,7 +244,7 @@ func evalIn(e *InExpr, issue model.Issue, opts ExecuteOpts) bool {
 			return false // neither IN nor NOT IN matches a missing value
 		}
 		for _, val := range e.Values {
-			if strings.EqualFold(v, val.String) {
+			if strings.EqualFold(v, extensionLiteral(val)) {
 				return !e.Not
 			}
 		}

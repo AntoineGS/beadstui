@@ -595,6 +595,35 @@ func TestExtensionFieldComparisons(t *testing.T) {
 	}
 }
 
+func TestExtensionFieldNumberAndBoolLiterals(t *testing.T) {
+	issues := []model.Issue{
+		{ID: "a", Title: "a", Status: model.StatusOpen},
+		{ID: "b", Title: "b", Status: model.StatusOpen},
+	}
+	vals := map[string]string{"a": "42", "b": "7"}
+	opts := ExecuteOpts{Fields: func(issue *model.Issue, field string) (string, bool) {
+		if field != "agent.pr" {
+			return "", false
+		}
+		v, ok := vals[issue.ID]
+		return v, ok
+	}}
+	cases := []struct {
+		query string
+		want  []string
+	}{
+		{"agent.pr = 42", []string{"a"}},
+		{"agent.pr != 42", []string{"b"}},
+		{"agent.pr in (42, 7)", []string{"a", "b"}},
+		{`agent.pr = "42"`, []string{"a"}},
+	}
+	for _, c := range cases {
+		if got := extIDs(t, c.query, issues, opts); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s = %v, want %v", c.query, got, c.want)
+		}
+	}
+}
+
 func TestExtensionFieldOrderBy(t *testing.T) {
 	issues, opts := extFixture()
 	if got, want := extIDs(t, "status = open order by agent.state desc", issues, opts), []string{"a", "b", "c"}; !reflect.DeepEqual(got, want) {
