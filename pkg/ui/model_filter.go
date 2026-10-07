@@ -10,6 +10,7 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/correlation"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/recipe"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/slots"
 
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/viewport"
@@ -1083,25 +1084,10 @@ func (m *Model) updateViewportContent() {
 	// reading of those labels belongs in how the labels themselves are
 	// rendered (bt-eiec / bt-36h7 / bt-6fn2), not in a duplicate section.
 
-	// Capabilities (bt-t0z6) - cross-project capability labels in workspace mode
-	if m.workspaceMode {
-		caps := parseCapabilities(item)
-		if len(caps) > 0 {
-			var sb strings.Builder
-			sb.WriteString("### " + activeGlyphs.Link + " Capabilities\n")
-			for _, cap := range caps {
-				switch cap.Type {
-				case "export":
-					sb.WriteString(fmt.Sprintf("- **exports** `%s`\n", cap.Capability))
-				case "provides":
-					sb.WriteString(fmt.Sprintf("- **provides** `%s`\n", cap.Capability))
-				case "external":
-					sb.WriteString(fmt.Sprintf("- **needs** `%s` from `%s`\n", cap.Capability, cap.TargetProject))
-				}
-			}
-			sb.WriteString("\n")
-			addMD(sb.String())
-		}
+	// Slot sections (Capabilities and registered providers) sit right under
+	// the properties so they are visible without scrolling past comments.
+	for _, s := range m.slotRegistry.Sections(&item, slots.Context{WorkspaceMode: m.workspaceMode}) {
+		addMD(renderSlotSection(s))
 	}
 
 	// Gate status (bt-c69c) - blocking coordination
