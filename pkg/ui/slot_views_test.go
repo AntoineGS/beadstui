@@ -8,6 +8,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/slots"
 )
 
 func slotTestIssue() model.Issue {
@@ -66,5 +67,35 @@ func TestEpicsChildRowShowsSlotBadges(t *testing.T) {
 	}
 	if w := lipgloss.Width(out); w > 100 {
 		t.Fatalf("epics child row width %d exceeds 100", w)
+	}
+}
+
+func TestBoardCardHeightIsStableAcrossWidths(t *testing.T) {
+	overdue := slotTestIssue()
+	overdue.ID = "bt-x33ev"
+	past := time.Now().Add(-48 * time.Hour)
+	overdue.DueDate = &past
+	builtin := slots.NewRegistry()
+	registerBuiltinSlots(builtin)
+
+	cases := []struct {
+		name  string
+		issue model.Issue
+		reg   *slots.Registry
+	}{
+		{"wait badge", slotTestIssue(), waitRegistry()},
+		{"overdue builtin", overdue, builtin},
+	}
+	for _, c := range cases {
+		plain := NewBoardModel([]model.Issue{c.issue}, DefaultTheme())
+		withSlots := NewBoardModel([]model.Issue{c.issue}, DefaultTheme())
+		withSlots.SetSlots(c.reg)
+		for width := 16; width <= 60; width++ {
+			want := strings.Count(plain.renderCard(c.issue, width, false, 0, 0), "\n")
+			got := strings.Count(withSlots.renderCard(c.issue, width, false, 0, 0), "\n")
+			if got != want {
+				t.Errorf("%s: card width %d has %d lines with slots, %d without", c.name, width, got+1, want+1)
+			}
+		}
 	}
 }

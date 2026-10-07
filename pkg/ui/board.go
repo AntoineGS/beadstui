@@ -1437,7 +1437,7 @@ func (b BoardModel) renderCard(issue model.Issue, width int, selected bool, colI
 	line1 := fmt.Sprintf("%s %s %s %s", iconStyled, prioStyled, idStyled, ageStyled)
 
 	// Slot badges sit between the ID and the age, in whatever the card has left.
-	if strip, w := renderBadgeStrip(b.slots.Badges(&issue), width-2-lipgloss.Width(line1)-1, time.Now()); w > 0 {
+	if strip, w := renderBadgeStrip(b.slots.Badges(&issue), width-cardStyle.GetHorizontalFrameSize()-lipgloss.Width(line1)-1, time.Now()); w > 0 {
 		line1 = fmt.Sprintf("%s %s %s %s %s", iconStyled, prioStyled, idStyled, strip, ageStyled)
 	}
 
