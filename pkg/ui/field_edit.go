@@ -162,6 +162,17 @@ func (m FieldSelectModal) View() string {
 		}
 		lines = append(lines, cursor+keyStyle.Render(e.Key)+"  "+labelStyle.Render(e.Label))
 	}
+	// Equal-width rows center the menu as one block, keeping the cursor,
+	// accelerator, and label columns aligned regardless of label length.
+	rowWidth := 0
+	for _, line := range lines {
+		if w := lipgloss.Width(line); w > rowWidth {
+			rowWidth = w
+		}
+	}
+	for i, line := range lines {
+		lines[i] = line + strings.Repeat(" ", rowWidth-lipgloss.Width(line))
+	}
 	lines = append(lines, "")
 	lines = append(lines, hintStyle.Render("j/k move  enter select  esc cancel"))
 

@@ -117,6 +117,57 @@ func TestRequestFieldEdit_NoSelectionRefused(t *testing.T) {
 // Field-select hub dispatch.
 // ---------------------------------------------------------------------------
 
+func TestFieldSelectView_AlignedColumns(t *testing.T) {
+	for _, size := range []struct {
+		name  string
+		width int
+	}{
+		{"narrow", 48},
+		{"medium", 80},
+		{"wide", 120},
+	} {
+		for selected := range fieldEditEntries {
+			t.Run(size.name+"/"+fieldEditEntries[selected].Field, func(t *testing.T) {
+				modal := NewFieldSelectModal(DefaultTheme())
+				modal.SetSize(size.width, 32)
+				modal.cursor = selected
+				out := ansi.Strip(modal.View())
+				rows := strings.Split(out, "\n")
+				labelColumn := -1
+				for i, entry := range fieldEditEntries {
+					var row string
+					labelIndex := -1
+					for _, line := range rows {
+						if index := strings.Index(line, entry.Label); index >= 0 {
+							row, labelIndex = line, index
+							break
+						}
+					}
+					if labelIndex < 5 {
+						t.Fatalf("missing field row %q in view:\n%s", entry.Label, out)
+					}
+					column := ansi.StringWidth(row[:labelIndex])
+					if labelColumn < 0 {
+						labelColumn = column
+					} else if column != labelColumn {
+						t.Errorf("%s label at column %d, want %d", entry.Label, column, labelColumn)
+					}
+					if got := row[labelIndex-3 : labelIndex]; got != entry.Key+"  " {
+						t.Errorf("%s shortcut prefix = %q, want %q", entry.Label, got, entry.Key+"  ")
+					}
+					wantCursor := "  "
+					if i == selected {
+						wantCursor = "> "
+					}
+					if got := row[labelIndex-5 : labelIndex-3]; got != wantCursor {
+						t.Errorf("%s cursor prefix = %q, want %q", entry.Label, got, wantCursor)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestFieldSelectKeys_AcceleratorsOpenCorrectSubmodal(t *testing.T) {
 	cases := []struct {
 		key       string
