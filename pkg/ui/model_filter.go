@@ -312,7 +312,7 @@ func (m *Model) filteredIssuesForActiveView() []model.Issue {
 			}
 			issues = filtered
 		}
-		opts := bql.ExecuteOpts{IssueMap: m.data.issueMap}
+		opts := m.bqlExecuteOpts()
 		return m.filter.bqlEngine.Execute(m.filter.activeBQLExpr, issues, opts)
 	}
 
@@ -1850,7 +1850,7 @@ func searchScoreSummary(components map[string]float64, item model.Issue) string 
 // (ORDER BY, EXPAND) that can't work per-issue.
 func (m *Model) applyBQL(query *bql.Query, queryStr string) {
 	issues := m.workspacePrefilter(m.data.issues)
-	opts := bql.ExecuteOpts{IssueMap: m.data.issueMap}
+	opts := m.bqlExecuteOpts()
 	filtered := m.filter.bqlEngine.Execute(query, issues, opts)
 
 	var filteredItems []list.Item
