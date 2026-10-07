@@ -10,10 +10,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/viewport"
 	"charm.land/lipgloss/v2"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/slots"
 )
 
 // TreeState represents the persistent state of the tree view (bv-zv7p).
@@ -186,6 +188,7 @@ type TreeModel struct {
 	width          int                       // Available width
 	height         int                       // Available height
 	viewportOffset int                       // Index of first visible node (bv-r4ng)
+	slots          *slots.Registry           // row badge providers; nil draws none
 
 	// Build state
 	built    bool   // Has tree been built?
@@ -283,6 +286,9 @@ func (t *TreeModel) SetSize(width, height int) {
 	t.viewport.SetWidth(width)
 	t.viewport.SetHeight(height)
 }
+
+// SetSlots sets the registry whose badges tree rows show.
+func (t *TreeModel) SetSlots(r *slots.Registry) { t.slots = r }
 
 // Build constructs the tree from issues using parent-child dependencies.
 // Implementation for bv-j3ck.
@@ -596,19 +602,27 @@ func (t *TreeModel) renderNode(node *IssueTreeNode, isSelected bool) string {
 	sb.WriteString(prioStyle.Render(prioText))
 	sb.WriteString(" ")
 
+	// Title budget (computed first so badges can only take what the title spares)
+	// Use lipgloss.Width for proper display width (handles ANSI codes + Unicode)
+	maxTitleLen := t.width - lipgloss.Width(prefix) - 25 // Account for prefix, indicator, icon, priority, ID
+	if maxTitleLen < 20 {
+		maxTitleLen = 20
+	}
+
+	// Slot badges, before the ID
+	if strip, w := renderBadgeStrip(t.slots.Badges(issue), maxTitleLen-minTitleWidthWithBadges-1, time.Now()); w > 0 {
+		sb.WriteString(strip)
+		sb.WriteString(" ")
+		maxTitleLen -= w + 1
+	}
+
 	// Issue ID
 	idStyle := lipgloss.NewStyle().Foreground(t.theme.Highlight)
 	sb.WriteString(idStyle.Render(issue.ID))
 	sb.WriteString(" ")
 
 	// Title (truncated if needed)
-	title := issue.Title
-	// Use lipgloss.Width for proper display width (handles ANSI codes + Unicode)
-	maxTitleLen := t.width - lipgloss.Width(prefix) - 25 // Account for prefix, indicator, icon, priority, ID
-	if maxTitleLen < 20 {
-		maxTitleLen = 20
-	}
-	title = t.truncateTitle(title, maxTitleLen)
+	title := t.truncateTitle(issue.Title, maxTitleLen)
 
 	// Title uses base style foreground
 	sb.WriteString(title)

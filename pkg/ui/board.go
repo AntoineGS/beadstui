@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/slots"
 
 	"charm.land/bubbles/v2/viewport"
 	"charm.land/glamour/v2"
@@ -21,6 +22,7 @@ type BoardModel struct {
 	focusedCol   int    // Index into activeColIdx
 	selectedRow  [4]int // Store selection for each column
 	theme        Theme
+	slots        *slots.Registry // row badge providers; nil draws none
 
 	// Swimlane grouping mode (bv-wjs0)
 	swimLaneMode SwimLaneMode
@@ -397,6 +399,9 @@ func (b *BoardModel) getColumnHeaders() ([]string, []string) {
 			[]string{activeGlyphs.Clipboard, activeGlyphs.Refresh, activeGlyphs.NoEntry, activeGlyphs.Success}
 	}
 }
+
+// SetSlots sets the registry whose badges cards show.
+func (b *BoardModel) SetSlots(r *slots.Registry) { b.slots = r }
 
 // NewBoardModel creates a new Kanban board from the given issues
 func NewBoardModel(issues []model.Issue, theme Theme) BoardModel {
@@ -1426,12 +1431,15 @@ func (b BoardModel) renderCard(issue model.Issue, width int, selected bool, colI
 	ageColor := getAgeColor(issue.UpdatedAt)
 	ageStyled := lipgloss.NewStyle().Foreground(ageColor).Render(ageText)
 
-	line1 := fmt.Sprintf("%s %s %s %s",
-		lipgloss.NewStyle().Foreground(iconColor).Render(icon),
-		prioStyle.Render(prioText),
-		lipgloss.NewStyle().Bold(true).Foreground(t.Secondary).Render(displayID),
-		ageStyled,
-	)
+	iconStyled := lipgloss.NewStyle().Foreground(iconColor).Render(icon)
+	prioStyled := prioStyle.Render(prioText)
+	idStyled := lipgloss.NewStyle().Bold(true).Foreground(t.Secondary).Render(displayID)
+	line1 := fmt.Sprintf("%s %s %s %s", iconStyled, prioStyled, idStyled, ageStyled)
+
+	// Slot badges sit between the ID and the age, in whatever the card has left.
+	if strip, w := renderBadgeStrip(b.slots.Badges(&issue), width-2-lipgloss.Width(line1)-1, time.Now()); w > 0 {
+		line1 = fmt.Sprintf("%s %s %s %s %s", iconStyled, prioStyled, idStyled, strip, ageStyled)
+	}
 
 	// ══════════════════════════════════════════════════════════════════════════
 	// LINE 2: Title with full available width (bv-1daf)

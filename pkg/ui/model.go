@@ -1288,6 +1288,7 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 
 	// Initialize sub-components
 	board := NewBoardModel(issues, theme)
+	board.SetSlots(slotRegistry)
 	labelDashboard := NewLabelDashboardModel(theme)
 	labelDashboard.SetSize(defaultWidth, defaultHeight-1)
 	velocityComparison := NewVelocityComparisonModel(theme) // bv-125
@@ -1489,6 +1490,7 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 
 	// Tree view state should persist alongside the beads directory (e.g. BEADS_DIR overrides).
 	treeModel := NewTreeModel(theme)
+	treeModel.SetSlots(slotRegistry)
 	if beadsPath != "" {
 		treeModel.SetBeadsDir(filepath.Dir(beadsPath))
 	}
