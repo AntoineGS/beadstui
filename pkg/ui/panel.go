@@ -9,6 +9,177 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
+// PopupSize is the actual terminal budget, including the popup's border.
+type PopupSize struct{ Width, Height int }
+
+// PopupOpts supplies content and preferred outer dimensions. A nil Available
+// means not sized yet; an explicit zero budget renders nothing.
+type PopupOpts struct {
+	Title, RightLabel string
+	Theme             Theme
+	Available         *PopupSize
+	Width, Height     int
+	MinBodyRows       int
+	Accent            color.Color
+	Footer            []string // detailed to compact, unstyled hints
+}
+
+// PopupLayout is shared by rendering, widget sizing, paging and hit-testing.
+type PopupLayout struct {
+	Width, Height         int
+	BodyWidth, BodyHeight int
+	BodyX, BodyY          int
+	FooterY               int // -1 when absent
+	PadX, PadY            int
+	Footer                []string
+	Compact               bool
+}
+
+func popupAvailableSize(size *PopupSize) PopupSize {
+	if size == nil {
+		return PopupSize{80, 24}
+	}
+	return PopupSize{max(0, size.Width), max(0, size.Height)}
+}
+
+func popupBodyLines(body []string) []string {
+	var lines []string
+	for _, block := range body {
+		lines = append(lines, strings.Split(block, "\n")...)
+	}
+	return lines
+}
+
+func popupFooterLines(width int, candidates []string) []string {
+	if width <= 0 || len(candidates) == 0 {
+		return nil
+	}
+	for _, hint := range candidates {
+		if ansi.StringWidth(hint) <= width {
+			if hint == "" {
+				return nil
+			}
+			return []string{hint}
+		}
+	}
+	last := candidates[len(candidates)-1]
+	if last == "" {
+		return nil
+	}
+	return strings.Split(ansi.Wrap(last, width, ""), "\n")
+}
+
+func popupHorizontalPadding(width int) int {
+	if width < 10 {
+		return 0
+	}
+	if width < 16 {
+		return 1
+	}
+	return 2
+}
+
+// MeasurePopup reserves footer and border rows before allocating the body.
+// Callers with their own body chrome can request a minimum useful row count.
+func MeasurePopup(body []string, opts PopupOpts) PopupLayout {
+	available := popupAvailableSize(opts.Available)
+	l := PopupLayout{FooterY: -1}
+	if available.Width == 0 || available.Height == 0 {
+		return l
+	}
+	flat := popupBodyLines(body)
+	contentWidth := 0
+	for _, line := range flat {
+		contentWidth = max(contentWidth, ansi.StringWidth(line))
+	}
+	maxBodyWidth := max(1, available.Width-2-2*popupHorizontalPadding(available.Width))
+	for _, line := range popupFooterLines(maxBodyWidth, opts.Footer) {
+		contentWidth = max(contentWidth, ansi.StringWidth(line))
+	}
+	titleWidth := ansi.StringWidth(ansi.Strip(opts.Title)) + 4
+	if opts.RightLabel != "" {
+		titleWidth += ansi.StringWidth(ansi.Strip(opts.RightLabel)) + 3
+	}
+	l.Width = opts.Width
+	if l.Width <= 0 {
+		l.Width = max(8, max(contentWidth+6, titleWidth+2))
+	}
+	l.Width = min(l.Width, available.Width)
+	l.PadX = popupHorizontalPadding(l.Width)
+	l.BodyWidth = max(0, l.Width-2-2*l.PadX)
+	l.Footer = popupFooterLines(l.BodyWidth, opts.Footer)
+	separator := 0
+	if len(l.Footer) > 0 {
+		separator = 1
+	}
+	l.PadY = 1
+	bodyRows := max(max(1, opts.MinBodyRows), len(flat))
+	naturalHeight := bodyRows + 2 + 2*l.PadY + separator + len(l.Footer)
+	l.Height = opts.Height
+	if l.Height <= 0 {
+		l.Height = naturalHeight
+	}
+	l.Height = min(l.Height, available.Height)
+	if l.Height < naturalHeight {
+		l.PadY = 0
+	}
+	if l.Height < bodyRows+2+separator+len(l.Footer) {
+		separator = 0
+	}
+	l.BodyHeight = l.Height - 2 - 2*l.PadY - separator - len(l.Footer)
+	if l.Width < 8 || l.BodyHeight < max(1, opts.MinBodyRows) {
+		return PopupLayout{Width: min(l.Width, ansi.StringWidth("Terminal too small")), Height: 1, FooterY: -1, Compact: true}
+	}
+	l.BodyX = 1 + l.PadX
+	l.BodyY = 1 + l.PadY
+	if len(l.Footer) > 0 {
+		l.FooterY = l.BodyY + l.BodyHeight + separator
+	}
+	return l
+}
+
+// RenderPopup draws shared modal chrome. Its body is always left-aligned;
+// selectable menu blocks perform their own fixed-column centering.
+func RenderPopup(body []string, opts PopupOpts) string {
+	l := MeasurePopup(body, opts)
+	if l.Width == 0 || l.Height == 0 {
+		return ""
+	}
+	if l.Compact {
+		return ansi.Truncate("Terminal too small", l.Width, "")
+	}
+	flat := popupBodyLines(body)
+	inner := make([]string, l.Height-2)
+	pad := strings.Repeat(" ", l.PadX)
+	for i := 0; i < l.BodyHeight; i++ {
+		line := ""
+		if i < len(flat) {
+			line = ansi.Truncate(flat[i], l.BodyWidth, "")
+		}
+		inner[l.BodyY-1+i] = pad + line
+	}
+	hintStyle := lipgloss.NewStyle().Foreground(opts.Theme.Secondary).Italic(true)
+	for i, hint := range l.Footer {
+		inner[l.FooterY-1+i] = pad + centerLine(hintStyle.Render(hint), l.BodyWidth)
+	}
+	accent := opts.Accent
+	if accent == nil {
+		accent = opts.Theme.Primary
+	}
+	title := ansi.Strip(opts.Title)
+	right := ansi.Strip(opts.RightLabel)
+	if right != "" {
+		right = ansi.Truncate(right, max(0, l.Width-5), "")
+		title = ansi.Truncate(title, max(0, l.Width-8-ansi.StringWidth(right)), "")
+	} else {
+		title = ansi.Truncate(title, max(0, l.Width-6), "")
+	}
+	return RenderTitledPanel(strings.Join(inner, "\n"), PanelOpts{
+		Title: title, RightLabel: right, Width: l.Width, Height: l.Height,
+		Focused: true, CenterTitle: right == "", BorderColor: accent, TitleColor: accent,
+	})
+}
+
 // BorderVariant controls the weight of box-drawing characters.
 type BorderVariant int
 
