@@ -36,6 +36,11 @@ const pluginsTestConfig = `plugins:
 func runPluginsForTest(t *testing.T, asJSON bool) (string, error) {
 	t.Helper()
 	var out bytes.Buffer
+	prevJSON := pluginsJSON
+	t.Cleanup(func() {
+		pluginsJSON = prevJSON
+		pluginsCmd.SetOut(nil)
+	})
 	pluginsCmd.SetOut(&out)
 	pluginsJSON = asJSON
 	err := runPlugins(pluginsCmd, nil)
