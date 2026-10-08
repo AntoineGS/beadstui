@@ -600,9 +600,9 @@ func (m Model) splitViewHeader() string {
 // step with the delegate: it is what tells the reader what the glyphs mean.
 func issueListColumnHeader(workspaceMode bool) string {
 	if workspaceMode {
-		return "  REPO T S P ID    TITLE"
+		return "REPO T S P ID    TITLE"
 	}
-	return "  T S P ID    TITLE"
+	return "T S P ID    TITLE"
 }
 
 // renderListWithHeader renders the width-driven single-pane issues list — the

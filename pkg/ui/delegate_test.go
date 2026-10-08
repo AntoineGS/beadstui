@@ -12,6 +12,8 @@ import (
 
 	"charm.land/bubbles/v2/list"
 	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Build a minimal issue item used across delegate tests.
@@ -189,6 +191,67 @@ func TestIssueListColumnHeaderUsesCompactIDCell(t *testing.T) {
 		if workspaceMode != strings.Contains(header, "REPO") {
 			t.Fatalf("workspaceMode=%t header repo column mismatch: %q", workspaceMode, header)
 		}
+	}
+}
+
+func TestIssueDelegate_NoSelectionGutter(t *testing.T) {
+	setGlyphs(t, asciiGlyphs)
+	item := newTestIssueItem("api-123")
+	item.RepoPrefix = "api"
+	for _, workspace := range []bool{false, true} {
+		d := IssueDelegate{Theme: DefaultTheme(), WorkspaceMode: workspace}
+		l := list.New([]list.Item{item, item}, d, 80, 2)
+		for _, index := range []int{0, 1} {
+			var buf bytes.Buffer
+			d.Render(&buf, l, index, item)
+			wantPrefix := "* o 1 "
+			if workspace {
+				wantPrefix = "[API] " + wantPrefix
+			}
+			if got := ansi.Strip(buf.String()); !strings.HasPrefix(got, wantPrefix) {
+				t.Errorf("workspace=%t index=%d row has a selection gutter: %q", workspace, index, got)
+			}
+		}
+		if header := issueListColumnHeader(workspace); strings.HasPrefix(header, " ") {
+			t.Errorf("workspace=%t header still reserves a gutter: %q", workspace, header)
+		}
+	}
+}
+
+func TestIssueDelegate_SelectedRowHasUniformHighlight(t *testing.T) {
+	item := newTestIssueItem("api-123")
+	item.IsQuickWin = true
+	item.RepoPrefix = "api"
+	d := IssueDelegate{Theme: DefaultTheme(), WorkspaceMode: true, Slots: waitRegistry()}
+	for _, width := range []int{12, 50, 80, 120, 160} {
+		row := renderDelegateRow(t, d, item, width)
+		lines := uv.NewStyledString(row).Lines(ansi.GraphemeWidth)
+		if len(lines) != 1 || len(lines[0]) != width {
+			t.Fatalf("width=%d: selected row must fill exactly one row, got %q", width, row)
+		}
+		for x, cell := range lines[0] {
+			if cell.Style.Bg == nil || cell.Style.Fg == nil {
+				t.Fatalf("width=%d cell=%d: missing selection colors", width, x)
+			}
+			if !cell.Style.Equal(&uv.Style{Bg: d.Theme.Primary, Fg: ColorBgContrast}) {
+				t.Errorf("width=%d cell=%d: non-uniform selection style: %+v", width, x, cell.Style)
+			}
+		}
+	}
+}
+
+func TestIssueDelegate_PendingClaimKeepsFeedbackWithoutGutter(t *testing.T) {
+	setGlyphs(t, asciiGlyphs)
+	item := newTestIssueItem("api-123")
+	item.RepoPrefix = "api"
+	d := IssueDelegate{Theme: DefaultTheme(), PendingClaims: map[string]bool{item.Issue.ID: true}, ClaimSpinner: "|"}
+	row := ansi.Strip(renderDelegateRow(t, d, item, 50))
+	if !strings.HasPrefix(row, "* o 1 123 | ") {
+		t.Fatalf("pending feedback should sit beside the title, not in a gutter: %q", row)
+	}
+	d.ClaimSpinner = ""
+	if row := renderDelegateRow(t, d, item, 50); !strings.Contains(row, claimSpinnerFrame(0)) {
+		t.Fatalf("pending row is missing its fallback spinner: %q", row)
 	}
 }
 
@@ -381,8 +444,8 @@ func TestIssueDelegate_SlotBadgesNeverWrapNarrowRows(t *testing.T) {
 	if strings.Contains(out, "\n") {
 		t.Fatalf("row wrapped: %q", out)
 	}
-	if w := lipgloss.Width(out); w > 80 {
-		t.Fatalf("row width %d exceeds 80", w)
+	if w := lipgloss.Width(out); w > 81 {
+		t.Fatalf("row width %d exceeds 81", w)
 	}
 }
 

@@ -151,8 +151,8 @@ func TestConfirmClaim_MarksPendingAndRendersSpinner(t *testing.T) {
 	if m.activeModal != ModalNone {
 		t.Errorf("modal still open after confirm: %v", m.activeModal)
 	}
-	// The pending row swaps its selection caret for the spinner frame, so the
-	// current frame glyph must appear in the rendered list.
+	// The pending row shows the spinner beside its title, so the current frame
+	// glyph must appear in the rendered list.
 	out := ansi.Strip(m.View().Content)
 	if !strings.Contains(out, claimSpinnerFrame(m.writeSpinnerIdx)) {
 		t.Errorf("pending spinner not rendered in list; view:\n%s", out)

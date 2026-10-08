@@ -14,6 +14,7 @@ import (
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // IssueDelegate renders issue items in the list
@@ -24,7 +25,7 @@ type IssueDelegate struct {
 	WorkspaceMode     bool // When true, shows repo prefix badges
 
 	// PendingClaims marks bead IDs awaiting a write settle (bt-oiaj.10); a
-	// pending row shows ClaimSpinner in place of the selection caret. Both are
+	// pending row shows ClaimSpinner beside its title. Both are
 	// zero-value safe: a nil map and empty frame render exactly as before.
 	PendingClaims map[string]bool
 	ClaimSpinner  string
@@ -57,14 +58,11 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 	if width <= 0 {
 		width = 80
 	}
-	// Reduce width by 1 to prevent terminal wrapping on the exact edge
-	width = width - 1
-
 	isSelected := index == m.Index()
 
 	// ══════════════════════════════════════════════════════════════════════════
 	// POLISHED ROW LAYOUT - Stripe-level visual hierarchy
-	// Layout: [sel] [type] [prio-badge] [status-badge] [ID] [title...] [meta]
+	// Layout: [repo] [type status priority] [ID] [title...] [meta]
 	// ══════════════════════════════════════════════════════════════════════════
 
 	// Get all the data. Type, status and priority render as one chip
@@ -169,10 +167,20 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 	}
 
 	// Left side fixed columns.
-	// [selector 2] [repo-badge 0-6] [chip 3] [hint 1-2] [id dynamic] [space]
+	// [repo-badge 0-6] [chip measured] [hint 1-2] [id dynamic] [space]
 	// Use the measured chip width rather than a hardcoded value so 2-cell
 	// glyphs stay aligned.
-	leftFixedWidth := 2 + chipWidth + 1 // selector(2) + chip(measured) + space(1)
+	leftFixedWidth := chipWidth + 1 // chip(measured) + space(1)
+
+	// Pending writes use an inline indicator, not a permanent gutter.
+	var pendingIndicator string
+	if d.PendingClaims[i.Issue.ID] {
+		pendingIndicator = d.ClaimSpinner
+		if pendingIndicator == "" {
+			pendingIndicator = claimSpinnerFrame(0)
+		}
+		leftFixedWidth += lipgloss.Width(pendingIndicator) + 1
+	}
 
 	// Repo badge width (workspace mode)
 	var repoBadge string
@@ -274,24 +282,6 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 	// ══════════════════════════════════════════════════════════════════════════
 	var leftSide strings.Builder
 
-	// Selection indicator with accent color (using pre-computed style). A
-	// pending claim (bt-oiaj.10) borrows the same 2-cell slot for a 1-cell
-	// spinner + space, so the row layout never shifts; selection stays legible
-	// via the row background highlight below.
-	switch {
-	case d.PendingClaims[i.Issue.ID]:
-		frame := d.ClaimSpinner
-		if frame == "" {
-			frame = claimSpinnerFrame(0)
-		}
-		leftSide.WriteString(lipgloss.NewStyle().Foreground(ColorWarning).Render(frame))
-		leftSide.WriteString(" ")
-	case isSelected:
-		leftSide.WriteString(t.PrimaryBold.Render("▸ "))
-	default:
-		leftSide.WriteString("  ")
-	}
-
 	// Repo badge (workspace mode)
 	if repoBadge != "" {
 		leftSide.WriteString(repoBadge)
@@ -349,11 +339,7 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 	}
 
 	// ID with secondary styling (using pre-computed style base)
-	idStyle := t.SecondaryText
-	if isSelected {
-		idStyle = idStyle.Bold(true)
-	}
-	leftSide.WriteString(idStyle.Render(idStr))
+	leftSide.WriteString(t.SecondaryText.Render(idStr))
 	leftSide.WriteString(" ")
 
 	// Diff badge (time-travel mode)
@@ -362,13 +348,12 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 		leftSide.WriteString(" ")
 	}
 
-	// Title with emphasis when selected
-	titleStyle := lipgloss.NewStyle()
-	if isSelected {
-		titleStyle = titleStyle.Foreground(t.Primary).Bold(true)
-	} else {
-		titleStyle = titleStyle.Foreground(ColorTextSecondary)
+	if pendingIndicator != "" {
+		leftSide.WriteString(lipgloss.NewStyle().Foreground(t.Warning).Render(pendingIndicator))
+		leftSide.WriteString(" ")
 	}
+
+	titleStyle := lipgloss.NewStyle().Foreground(ColorTextSecondary)
 	// bt-9kdo: dim wisps
 	if i.Issue.Ephemeral != nil && *i.Issue.Ephemeral {
 		titleStyle = titleStyle.Foreground(ColorMuted).Italic(true)
@@ -389,10 +374,15 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 	// Construct the row string
 	row := leftSide.String() + strings.Repeat(" ", padding) + rightSide
 
-	// Apply row background for selection and clamp width
+	// Clip before styling: Width wraps overflowing content before MaxWidth can
+	// clamp it, which would turn an ultra-narrow list item into multiple rows.
+	row = ansi.Truncate(row, width, "")
+
+	// Classic full-row selection replaces inline styles so nested ANSI resets
+	// and badge backgrounds cannot punch holes in the highlight.
 	rowStyle := lipgloss.NewStyle().Width(width).MaxWidth(width)
 	if isSelected {
-		row = rowStyle.Background(t.Highlight).Render(row)
+		row = rowStyle.Background(t.Primary).Foreground(ColorBgContrast).Render(ansi.Strip(row))
 	} else {
 		row = rowStyle.Render(row)
 	}
