@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -90,8 +91,25 @@ func (m Model) openPluginMenu() (Model, tea.Cmd) {
 	return m, nil
 }
 
+// typingInView reports whether a text input outside a modal has the keys:
+// list filter, board search, history or memories search.
+func (m Model) typingInView() bool {
+	switch {
+	case m.list.FilterState() == list.Filtering:
+		return true
+	case m.mode == ViewBoard && m.board.IsSearchMode():
+		return true
+	case m.mode == ViewHistory && m.historyView.IsSearchActive():
+		return true
+	case m.mode == ViewMemories && m.memories.IsSearchActive():
+		return true
+	}
+	return false
+}
+
 // handlePluginPromptMsg shows a confirm or select prompt from a plugin. It
-// answers nil at once when another modal is open or the prompt is empty.
+// answers nil at once when another modal is open, the user is typing in a
+// view, or the prompt is empty.
 // Plugin text is sanitized here; option values go back to the plugin as is.
 func (m Model) handlePluginPromptMsg(msg plugin.PromptMsg) (Model, tea.Cmd) {
 	reply := msg.Reply
@@ -120,7 +138,7 @@ func (m Model) handlePluginPromptMsg(msg plugin.PromptMsg) (Model, tea.Cmd) {
 		reply(nil)
 		return m, nil
 	}
-	if m.activeModal != ModalNone {
+	if m.activeModal != ModalNone || m.typingInView() {
 		reply(nil)
 		return m, nil
 	}

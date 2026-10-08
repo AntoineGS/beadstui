@@ -442,6 +442,46 @@ func TestPluginPromptWhileOtherOpen(t *testing.T) {
 	}
 }
 
+func TestPluginPromptRefusedWhileTyping(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(m Model) Model
+	}{
+		{"list filter", func(m Model) Model {
+			m, _ = sendMsg(m, keyRune('/'))
+			if m.list.FilterState() != list.Filtering {
+				t.Fatalf("filter state = %v, want filtering", m.list.FilterState())
+			}
+			return m
+		}},
+		{"board search", func(m Model) Model {
+			m, _ = sendMsg(m, keyRune('b'))
+			m, _ = sendMsg(m, keyRune('/'))
+			if m.mode != ViewBoard || !m.board.IsSearchMode() {
+				t.Fatalf("mode %v search %v, want board search", m.mode, m.board.IsSearchMode())
+			}
+			return m
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := tc.setup(newPluginActionModel(t, &fakePluginActions{}))
+			var r recorder
+			m, _ = sendMsg(m, confirmPrompt(r.reply))
+			if len(r.answers) != 1 || r.answers[0] != nil {
+				t.Fatalf("answers = %v, want [nil]", r.answers)
+			}
+			if m.activeModal != ModalNone || m.pluginPrompt != nil {
+				t.Fatalf("prompt opened while typing: modal %v", m.activeModal)
+			}
+			// The typed key still reaches the input.
+			m, _ = sendMsg(m, keyRune('y'))
+			if len(r.answers) != 1 {
+				t.Fatalf("y answered the refused prompt: %v", r.answers)
+			}
+		})
+	}
+}
+
 func TestPluginPromptCtrlCQuits(t *testing.T) {
 	m := newPluginActionModel(t, &fakePluginActions{})
 	var r recorder
