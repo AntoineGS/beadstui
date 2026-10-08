@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"fmt"
 	"image/color"
 	"testing"
 	"time"
@@ -21,6 +22,155 @@ func TestDefaultTheme(t *testing.T) {
 	}
 	if theme.Open == nil {
 		t.Error("DefaultTheme Open color is nil")
+	}
+}
+
+func TestTextStylesUseOwnPalette(t *testing.T) {
+	restoreThemeGlobals(t)
+	previous := isDarkBackground
+	isDarkBackground = true
+	t.Cleanup(func() { isDarkBackground = previous })
+	a := DefaultTheme()
+	ApplyThemeToThemeStruct(&a, &ThemeFile{Colors: ThemeColors{
+		Text: &AdaptiveHex{Dark: "#123456"}, Primary: &AdaptiveHex{Dark: "#ffccdd"},
+	}})
+	ApplyThemeToGlobals(&ThemeFile{Colors: ThemeColors{Text: &AdaptiveHex{Dark: "#abcdef"}}})
+	if a.Text.Body.GetForeground() != lipgloss.Color("#123456") {
+		t.Fatal("body style borrowed the global palette")
+	}
+	if a.Base.GetForeground() != a.Text.Body.GetForeground() {
+		t.Fatal("base text stayed on fallback colors")
+	}
+	if ratio := textContrastRatio(a.Text.Title.GetForeground(), a.Text.Title.GetBackground()); ratio < 4.5 {
+		t.Fatalf("filled title contrast %.2f < 4.5", ratio)
+	}
+	if ActiveTextStyles.Body.GetForeground() != lipgloss.Color("#abcdef") {
+		t.Fatal("active body did not use applied config")
+	}
+}
+
+func TestAutoTextForeground(t *testing.T) {
+	for _, bg := range []string{"#000000", "#ffffff", "#777777", "#bd93f9", "#ffb8d1"} {
+		c := lipgloss.Color(bg)
+		if ratio := textContrastRatio(autoTextForeground(c), c); ratio < 4.5 {
+			t.Fatalf("background %s: contrast %.2f", bg, ratio)
+		}
+	}
+}
+
+func TestTextStylesNamedPalettes(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("BT_THEME", "")
+	t.Chdir(t.TempDir())
+	restoreThemeGlobals(t)
+	for _, dark := range []bool{true, false} {
+		isDarkBackground = dark
+		for _, name := range []string{"dracula", "matcha-dark-sea", "paper", "bt:greyscale"} {
+			t.Run(fmt.Sprintf("%s/dark=%t", name, dark), func(t *testing.T) {
+				theme := DefaultTheme()
+				ApplyThemeToThemeStruct(&theme, LoadThemeNamed(name))
+				for _, pair := range []struct {
+					style lipgloss.Style
+					bg    color.Color
+				}{
+					{theme.Text.Title, theme.Primary}, {theme.Text.Badge, theme.Secondary},
+					{theme.Text.Selected, theme.Highlight}, {theme.Text.Callout, theme.BgHighlight},
+				} {
+					if pair.style.GetBackground() != pair.bg {
+						t.Fatal("incorrect role background")
+					}
+					if ratio := textContrastRatio(pair.style.GetForeground(), pair.bg); ratio < 4.5 {
+						t.Fatalf("contrast %.2f < 4.5", ratio)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestTextStylesAttributesAndExplicitForeground(t *testing.T) {
+	theme := DefaultTheme()
+	no, yes := false, true
+	off := TextRoleConfig{Bold: &no, Italic: &no, Underline: &no}
+	ApplyThemeToThemeStruct(&theme, &ThemeFile{Text: TextRoleConfigs{
+		Title: off, Heading: off, Body: off, Metadata: off, Badge: off, Selected: off, Callout: off,
+	}})
+	for _, style := range []lipgloss.Style{theme.Text.Title, theme.Text.Heading, theme.Text.Body,
+		theme.Text.Metadata, theme.Text.Badge, theme.Text.Selected, theme.Text.Callout} {
+		if style.GetBold() || style.GetItalic() || style.GetUnderline() || style.GetFaint() {
+			t.Fatal("explicit false attribute not respected")
+		}
+	}
+	ApplyThemeToThemeStruct(&theme, &ThemeFile{Text: TextRoleConfigs{
+		Title: TextRoleConfig{Foreground: "secondary", Italic: &yes, Underline: &yes},
+		Body:  TextRoleConfig{Bold: &yes, Italic: &yes, Underline: &yes},
+	}})
+	if theme.Text.Title.GetForeground() != theme.Secondary {
+		t.Fatal("explicit foreground auto-corrected")
+	}
+	ApplyThemeToThemeStruct(&theme, &ThemeFile{})
+	if theme.Text.Title.GetItalic() || theme.Text.Title.GetUnderline() || !theme.Text.Title.GetBold() {
+		t.Fatal("title did not reset to default attributes")
+	}
+	if theme.Text.Body.GetBold() || theme.Text.Body.GetItalic() || theme.Text.Body.GetUnderline() {
+		t.Fatal("body retained previous attributes")
+	}
+	if _, ok := theme.Text.Body.GetBackground().(lipgloss.NoColor); !ok {
+		t.Fatal("none background not preserved")
+	}
+	ApplyThemeToThemeStruct(&theme, &ThemeFile{Text: TextRoleConfigs{Body: TextRoleConfig{Foreground: "auto"}}})
+	if textContrastRatio(theme.Text.Body.GetForeground(), theme.Bg) < 4.5 {
+		t.Fatal("auto with none ignored theme background")
+	}
+}
+
+func TestTextStylesPaletteTokens(t *testing.T) {
+	theme := DefaultTheme()
+	for token, want := range map[string]color.Color{
+		"bg": theme.Bg, "bg_dark": theme.BgDark, "bg_subtle": theme.BgSubtle,
+		"bg_highlight": theme.BgHighlight, "text": theme.TextColor, "subtext": theme.Subtext,
+		"muted": theme.Muted, "primary": theme.Primary, "secondary": theme.Secondary,
+		"info": theme.Info, "success": theme.Success, "warning": theme.Warning, "danger": theme.Danger,
+		"text_secondary": theme.TextSecondary, "bg_contrast": theme.BgContrast,
+		"border": theme.Border, "highlight": theme.Highlight,
+	} {
+		if want == nil || theme.textPaletteColor(token) != want {
+			t.Fatalf("token %s not resolved", token)
+		}
+	}
+	for _, bg := range []color.Color{nil, lipgloss.NoColor{}} {
+		partial := Theme{Bg: bg}
+		partial.rebuildTextStyles(TextRoleConfigs{})
+		if partial.Text.Body.GetForeground() == nil {
+			t.Fatal("partial theme has no foreground")
+		}
+		if _, invisible := partial.Text.Body.GetForeground().(lipgloss.NoColor); invisible {
+			t.Fatal("partial theme has invisible foreground")
+		}
+	}
+}
+
+func TestTextStylesLoadedScalarPalette(t *testing.T) {
+	previous := isDarkBackground
+	t.Cleanup(func() { isDarkBackground = previous })
+	hex := &AdaptiveHex{Light: "#135790", Dark: "#246801"}
+	for _, dark := range []bool{false, true} {
+		isDarkBackground = dark
+		theme := DefaultTheme()
+		ApplyThemeToThemeStruct(&theme, &ThemeFile{Colors: ThemeColors{
+			Bg: hex, BgDark: hex, BgSubtle: hex, BgHighlight: hex,
+			Text: hex, TextSecondary: hex, BgContrast: hex,
+		}})
+		want := resolveColor(hex.Light, hex.Dark)
+		for _, token := range []string{"bg", "bg_dark", "bg_subtle", "bg_highlight", "text", "text_secondary", "bg_contrast"} {
+			if theme.textPaletteColor(token) != want {
+				t.Fatalf("loaded %s did not resolve in dark=%t", token, dark)
+			}
+		}
+		if theme.Base.GetForeground() != want || theme.Text.Body.GetForeground() != want {
+			t.Fatal("body/base did not rebuild from loaded text")
+		}
 	}
 }
 

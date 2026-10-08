@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"testing"
@@ -13,6 +14,22 @@ import (
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
+
+func TestTextContrastRatio(t *testing.T) {
+	for _, tc := range []struct {
+		fg, bg string
+		want   float64
+	}{
+		{"#000000", "#ffffff", 21}, {"#ffffff", "#000000", 21},
+		{"#777777", "#777777", 1}, {"#777777", "#ffffff", 4.478089},
+		{"#777777", "#000000", 4.689500}, {"#ff0000", "#ffffff", 3.998477},
+	} {
+		got := textContrastRatio(lipgloss.Color(tc.fg), lipgloss.Color(tc.bg))
+		if math.Abs(got-tc.want) > .00001 {
+			t.Errorf("%s/%s: %.6f, want %.6f", tc.fg, tc.bg, got, tc.want)
+		}
+	}
+}
 
 func TestRenderPriorityBadge(t *testing.T) {
 	tests := []struct {

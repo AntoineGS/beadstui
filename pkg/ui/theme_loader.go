@@ -564,34 +564,44 @@ func ApplyThemeToGlobals(tf *ThemeFile) {
 	FocusedPanelStyle = lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(ColorPrimary)
+	local := DefaultTheme()
+	ApplyThemeToThemeStruct(&local, tf)
+	ActiveTextStyles = local.Text
 }
 
 // themeColorDefaults maps Theme struct field names to their light/dark hex defaults.
 var themeColorDefaults = map[string]colorDefaults{
-	"Primary":    {"#3e999f", "#8abeb7"},
-	"Secondary":  {"#8e908c", "#969896"},
-	"Subtext":    {"#8e908c", "#b4b7b4"},
-	"Info":       {"#4271ae", "#81a2be"},
-	"Success":    {"#718c00", "#b5bd68"},
-	"Warning":    {"#f5871f", "#de935f"},
-	"Danger":     {"#c82829", "#cc6666"},
-	"Open":       {"#718c00", "#b5bd68"},
-	"InProgress": {"#4271ae", "#81a2be"},
-	"Blocked":    {"#c82829", "#cc6666"},
-	"Deferred":   {"#f5871f", "#de935f"},
-	"Pinned":     {"#4271ae", "#7aa6da"},
-	"Hooked":     {"#3e999f", "#8abeb7"},
-	"Closed":     {"#8e908c", "#969896"},
-	"Tombstone":  {"#c5c8c6", "#373b41"},
-	"Review":     {"#8959a8", "#b294bb"},
-	"Bug":        {"#c82829", "#cc6666"},
-	"Feature":    {"#f5871f", "#de935f"},
-	"Task":       {"#eab700", "#f0c674"},
-	"Epic":       {"#8959a8", "#b294bb"},
-	"Chore":      {"#4271ae", "#81a2be"},
-	"Border":     {"#d6d6d6", "#373b41"},
-	"Highlight":  {"#d6d6d6", "#373b41"},
-	"Muted":      {"#8e908c", "#969896"},
+	"Bg":            {"#ffffff", "#1d1f21"},
+	"BgDark":        {"#f0f0f0", "#191b1d"},
+	"BgSubtle":      {"#efefef", "#282a2e"},
+	"BgHighlight":   {"#d6d6d6", "#373b41"},
+	"TextColor":     {"#4d4d4c", "#c5c8c6"},
+	"TextSecondary": {"#333333", "#e8e8e8"},
+	"BgContrast":    {"#ffffff", "#1d1f21"},
+	"Primary":       {"#3e999f", "#8abeb7"},
+	"Secondary":     {"#8e908c", "#969896"},
+	"Subtext":       {"#8e908c", "#b4b7b4"},
+	"Info":          {"#4271ae", "#81a2be"},
+	"Success":       {"#718c00", "#b5bd68"},
+	"Warning":       {"#f5871f", "#de935f"},
+	"Danger":        {"#c82829", "#cc6666"},
+	"Open":          {"#718c00", "#b5bd68"},
+	"InProgress":    {"#4271ae", "#81a2be"},
+	"Blocked":       {"#c82829", "#cc6666"},
+	"Deferred":      {"#f5871f", "#de935f"},
+	"Pinned":        {"#4271ae", "#7aa6da"},
+	"Hooked":        {"#3e999f", "#8abeb7"},
+	"Closed":        {"#8e908c", "#969896"},
+	"Tombstone":     {"#c5c8c6", "#373b41"},
+	"Review":        {"#8959a8", "#b294bb"},
+	"Bug":           {"#c82829", "#cc6666"},
+	"Feature":       {"#f5871f", "#de935f"},
+	"Task":          {"#eab700", "#f0c674"},
+	"Epic":          {"#8959a8", "#b294bb"},
+	"Chore":         {"#4271ae", "#81a2be"},
+	"Border":        {"#d6d6d6", "#373b41"},
+	"Highlight":     {"#d6d6d6", "#373b41"},
+	"Muted":         {"#8e908c", "#969896"},
 }
 
 // applyThemeField resolves an AdaptiveHex into a Theme field using its
@@ -615,13 +625,20 @@ func applyThemeMapKey(m map[string]*AdaptiveHex, key string, target *color.Color
 }
 
 // ApplyThemeToThemeStruct updates a Theme struct's color fields from the
-// loaded YAML config. Call after ApplyThemeToGlobals.
+// loaded YAML config, independently of the active globals.
 func ApplyThemeToThemeStruct(t *Theme, tf *ThemeFile) {
 	if tf == nil || t == nil {
 		return
 	}
 	c := &tf.Colors
 
+	applyThemeField(c.Bg, &t.Bg, "Bg")
+	applyThemeField(c.BgDark, &t.BgDark, "BgDark")
+	applyThemeField(c.BgSubtle, &t.BgSubtle, "BgSubtle")
+	applyThemeField(c.BgHighlight, &t.BgHighlight, "BgHighlight")
+	applyThemeField(c.Text, &t.TextColor, "TextColor")
+	applyThemeField(c.TextSecondary, &t.TextSecondary, "TextSecondary")
+	applyThemeField(c.BgContrast, &t.BgContrast, "BgContrast")
 	applyThemeField(c.Primary, &t.Primary, "Primary")
 	applyThemeField(c.Secondary, &t.Secondary, "Secondary")
 	applyThemeField(c.Subtext, &t.Subtext, "Subtext")
@@ -651,23 +668,7 @@ func ApplyThemeToThemeStruct(t *Theme, tf *ThemeFile) {
 	applyThemeField(c.Warning, &t.Warning, "Warning")
 	applyThemeField(c.Danger, &t.Danger, "Danger")
 
-	// Rebuild pre-computed styles from the fields just applied above, not from
-	// the Color* globals. Sourcing them from globals meant a Theme built from
-	// one ThemeFile could carry styles belonging to another (bt-zq6z).
-	t.MutedText = lipgloss.NewStyle().Foreground(t.Muted)
-	t.MutedTextItalic = lipgloss.NewStyle().Foreground(t.Muted).Italic(true)
-	t.InfoText = lipgloss.NewStyle().Foreground(t.Info)
-	t.InfoBold = lipgloss.NewStyle().Foreground(t.Info).Bold(true)
-	t.SecondaryText = lipgloss.NewStyle().Foreground(t.Secondary)
-	t.PrimaryBold = lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
-	t.PriorityUpArrow = lipgloss.NewStyle().Foreground(t.Danger).Bold(true)
-	t.PriorityDownArrow = lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
-	// TriageStar has no semantic Color* counterpart yet; closest is yellow
-	// (ColorPrioMedium). Kept as ThemeFg literal for now — see bt-pxbc
-	// audit follow-up #2 (promote to YAML token or alias).
-	t.TriageStar = lipgloss.NewStyle().Foreground(ThemeFg("#f0c674"))
-	t.TriageUnblocks = lipgloss.NewStyle().Foreground(t.Success)
-	t.TriageUnblocksAlt = lipgloss.NewStyle().Foreground(t.Secondary)
+	t.rebuildTextStyles(tf.Text)
 }
 
 // --- Internal helpers ---
