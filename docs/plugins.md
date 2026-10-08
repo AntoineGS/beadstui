@@ -37,7 +37,19 @@ Check the configuration without starting anything:
 $ bt plugins
 example  enabled  example plugin  (/usr/local/bin/example)  keys: dispatch=D jump=none
 $ bt plugins --json
+[
+  {
+    "name": "example",
+    "enabled": true,
+    "command": ["example", "plugin"],
+    "binary": "/usr/local/bin/example",
+    "keys": { "dispatch": "D", "jump": "none" }
+  }
+]
 ```
+
+`binary` is `""` when the command is not found on `PATH`, and `keys` is left out
+when there are no overrides.
 
 Each line shows the plugin name, `enabled` or `disabled`, the command, the binary
 it resolves to on `PATH` (or `not found`) and the key overrides. A configuration
@@ -52,15 +64,18 @@ listed.
    manifest. Until the manifest is validated, bt sends the plugin nothing else
    and refuses everything the plugin sends (requests get a `not_ready` error).
 3. bt sends `beads.sync`, then again whenever the data changes. A plugin must not
-   push `state.set` or `ui.toast` before the first `beads.sync`: they are
-   refused until the plugin is active.
+   push `state.set` or `ui.toast` until its manifest is accepted: they are
+   refused with a `not_ready` error before that. Waiting for the first
+   `beads.sync` is recommended, since that is when the plugin learns which beads
+   exist.
 4. On quit, bt sends the `shutdown` notification, closes the plugin's stdin,
    waits 2 seconds and then kills the process.
-5. If the process exits unexpectedly, bt drops everything the plugin
-   contributed, reports its in-flight actions as "result unknown" and restarts
-   it. The policy is the first start plus 3 restarts, after 1s, 5s and 25s. After
-   the third restart fails the plugin stays failed until bt restarts, and bt
-   shows a footer notice.
+5. If the process exits unexpectedly, fails to start, answers `initialize` late
+   or sends an invalid manifest, bt drops everything the plugin contributed,
+   reports its in-flight actions as "result unknown" and restarts it. The policy
+   is the first start plus 3 restarts, after 1s, 5s and 25s. After the third
+   restart fails the plugin stays failed until bt restarts, and bt shows a footer
+   notice.
 
 All plugin I/O happens in background goroutines. The UI never waits on a plugin.
 
@@ -132,7 +147,7 @@ The result is the manifest:
       { "id": "running", "label": "In progress",    "badge": "RUN",  "tone": "accent" },
       { "id": "done",    "label": "Finished",       "badge": "OK",   "tone": "ok" },
       { "id": "unknown", "label": "Unknown",        "badge": "?",    "tone": "muted" },
-      { "id": "queued",  "label": "Queued" }
+      { "id": "queued",  "label": "Queued", "lane": false }
     ]
   }],
   "sections": [{ "id": "details", "title": "Example" }],
@@ -143,7 +158,12 @@ The result is the manifest:
 }
 ```
 
-bt disables the plugin if validation fails:
+A value's optional `lane` (boolean, default true) says whether it gets a board
+swimlane. It is reserved for board swimlanes, which this version does not draw
+yet, so it has no visible effect.
+
+If validation fails, the manifest is rejected and the plugin counts as failed
+(see [Lifecycle](#lifecycle)):
 
 - `protocolVersion` equals bt's (1).
 - `name` equals the config entry's `name`.
@@ -279,9 +299,10 @@ Without the flag, `dismiss` is ignored. Plugins receive the flag as `popup` in
 
 ## Failure behaviour
 
-- A plugin that fails to start, answers `initialize` late or sends an invalid
-  manifest is marked failed and bt shows one footer notice.
-- A plugin that crashes is restarted as described in [Lifecycle](#lifecycle).
+- A plugin that fails to start, answers `initialize` late, sends an invalid
+  manifest or crashes counts as a failure and is restarted as described in
+  [Lifecycle](#lifecycle). Once the restarts are used up it is marked failed and
+  bt shows one footer notice; details are in the debug log.
 - An action in flight when the plugin goes away is reported as "result unknown".
   bt does not know whether it took effect and never repeats it.
 - A plugin never blocks rendering or input.
