@@ -1,6 +1,6 @@
 # Shared popup rendering
 
-Status: approved design; implementation in progress, pending whole-branch review.
+Status: implemented and reviewed; live-Dolt verification remains environment-blocked.
 
 ## Purpose
 
@@ -12,7 +12,7 @@ frame without losing their content layout or keyboard behavior.
 The owner approved this scope on 2026-10-07. This document records the design
 for review before an implementation plan is written.
 
-## Current problem
+## Original problem
 
 `pkg/ui/field_edit.go` shares `renderFieldModalLines` between the edit hub,
 status/priority pickers, and single-line inputs. That helper centers every
@@ -235,3 +235,28 @@ before another full run and disclose any remaining failures.
 These are verification constraints, not additions to the implementation
 scope. Do not change the user's registry, repair Dolt, or alter theme loading
 to make a popup-rendering change appear green.
+
+## Implementation validation
+
+The migration is implemented in `pkg/ui/panel.go` and all active popup families
+listed above. Ordinary panels and the existing compositor remain unchanged.
+The fresh whole-branch review's correctness findings now have regressions for
+back navigation after resize, essential input/action visibility at short
+heights, and grapheme/multiline chrome geometry. Full-menu normalization also
+reuses an immutable replacer with a no-control-character fast path; the
+1,000-entry measurement regression reports zero allocations after warmup.
+
+Build, vet, focused popup tests, focused race tests, and the isolated UI suite
+with only the known live-Dolt test excluded pass. The unfiltered full suite,
+run with a disposable home/config/registry and browser suppression, fails only
+`TestMemoriesLoadCmd_DogfoodLiveProject` because the live `bt` database is
+missing. The isolated CLI registry guard and prior theme tests pass. A first
+run additionally failed five datasource discovery tests because global
+`BT_TEST_MODE=1` disables the behavior they test; rerunning without that global
+flag resolved those failures without changing production safety gates.
+
+The reviewer identified an existing notification mouse mismatch when a
+selected system headline suppresses its summary-expansion row. That predicate
+mismatch is unchanged from the base and remains separate follow-up work.
+Real clipboard, installation, and terminal/screen-reader side effects were
+not exercised. Nothing was installed or pushed.

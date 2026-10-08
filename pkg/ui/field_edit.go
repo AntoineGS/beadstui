@@ -298,7 +298,11 @@ func (m *FieldInputModal) SetSize(w, h int) {
 }
 
 func (m FieldInputModal) popupOpts() PopupOpts {
-	return PopupOpts{Title: "Edit " + m.label, Theme: m.theme, Available: m.popupSize, Width: 50, Footer: []string{"enter apply  esc back", "enter esc"}}
+	minimum := 2 // label and editable input are both essential
+	if m.err != "" {
+		minimum += len(popupBodyLines([]string{m.err}))
+	}
+	return PopupOpts{Title: "Edit " + m.label, Theme: m.theme, Available: m.popupSize, Width: 50, MinBodyRows: minimum, Footer: []string{"enter apply  esc back", "enter esc"}}
 }
 
 // Focus activates the textinput's cursor/blink.
@@ -376,6 +380,7 @@ func (m *Model) cancelFieldEdit() {
 // fieldEditTargetID intact so the user can pick a different field without
 // restarting the flow.
 func (m *Model) backToFieldSelect() {
+	m.fieldSelect.SetSize(max(0, m.width), max(0, m.height-1))
 	m.openModal(ModalFieldSelect)
 	m.focused = focusFieldSelect
 }

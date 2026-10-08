@@ -187,6 +187,7 @@ func (m UpdateModal) View() string {
 	switch m.state {
 	case UpdateStateConfirm:
 		opts.Title = "Update Available"
+		opts.MinBodyRows = 4 // version pair, question, and actionable focus row
 		opts.Footer = []string{"←/→ select  [Y] Update  [N] Cancel  [Enter] Select  Esc cancel", "←/→ Y/N Enter select Esc cancel"}
 	case UpdateStateSuccess:
 		opts.Title = "Update Complete!"
@@ -239,9 +240,9 @@ func (m UpdateModal) View() string {
 
 		b.WriteString("New version:     ")
 		b.WriteString(newVersionStyle.Render(m.newVersion))
-		b.WriteString("\n\n")
+		b.WriteString("\n")
 
-		b.WriteString("Would you like to update now?\n\n")
+		b.WriteString("Would you like to update now?\n")
 
 		// Buttons
 		var updateBtn, cancelBtn string

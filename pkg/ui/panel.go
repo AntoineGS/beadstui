@@ -56,6 +56,7 @@ func popupFooterLines(width int, candidates []string) []string {
 		return nil
 	}
 	for _, hint := range candidates {
+		hint = popupChromeLine(hint)
 		if ansi.StringWidth(hint) <= width {
 			if hint == "" {
 				return nil
@@ -63,11 +64,20 @@ func popupFooterLines(width int, candidates []string) []string {
 			return []string{hint}
 		}
 	}
-	last := candidates[len(candidates)-1]
+	last := popupChromeLine(candidates[len(candidates)-1])
 	if last == "" {
 		return nil
 	}
 	return strings.Split(ansi.Wrap(last, width, ""), "\n")
+}
+
+// Popup titles and footer hints are single-line chrome, not body blocks.
+func popupChromeLine(text string) string {
+	text = ansi.Strip(text)
+	text = strings.ReplaceAll(text, "\r\n", " ")
+	text = strings.ReplaceAll(text, "\n", " ")
+	text = strings.ReplaceAll(text, "\r", " ")
+	return strings.ReplaceAll(text, "\t", " ")
 }
 
 func popupHorizontalPadding(width int) int {
@@ -97,9 +107,9 @@ func MeasurePopup(body []string, opts PopupOpts) PopupLayout {
 	for _, line := range popupFooterLines(maxBodyWidth, opts.Footer) {
 		contentWidth = max(contentWidth, ansi.StringWidth(line))
 	}
-	titleWidth := ansi.StringWidth(ansi.Strip(opts.Title)) + 4
+	titleWidth := ansi.StringWidth(popupChromeLine(opts.Title)) + 4
 	if opts.RightLabel != "" {
-		titleWidth += ansi.StringWidth(ansi.Strip(opts.RightLabel)) + 3
+		titleWidth += ansi.StringWidth(popupChromeLine(opts.RightLabel)) + 3
 	}
 	l.Width = opts.Width
 	if l.Width <= 0 {
@@ -168,8 +178,8 @@ func RenderPopup(body []string, opts PopupOpts) string {
 	if accent == nil {
 		accent = opts.Theme.Primary
 	}
-	title := ansi.Strip(opts.Title)
-	right := ansi.Strip(opts.RightLabel)
+	title := popupChromeLine(opts.Title)
+	right := popupChromeLine(opts.RightLabel)
 	if right != "" {
 		right = ansi.Truncate(right, max(0, l.Width-5), "")
 		title = ansi.Truncate(title, max(0, l.Width-8-ansi.StringWidth(right)), "")
@@ -179,6 +189,7 @@ func RenderPopup(body []string, opts PopupOpts) string {
 	return RenderTitledPanel(strings.Join(inner, "\n"), PanelOpts{
 		Title: title, RightLabel: right, Width: l.Width, Height: l.Height,
 		Focused: true, CenterTitle: right == "", BorderColor: accent, TitleColor: accent,
+		ansiTitleWidth: true,
 	})
 }
 
@@ -224,9 +235,14 @@ func MeasurePopupMenu(entries []PopupMenuEntry, opts PopupMenuOpts) PopupMenuLay
 	return l
 }
 
+var popupRowReplacer = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ")
+
 func popupSingleRow(e PopupMenuEntry) PopupMenuEntry {
 	clean := func(s string) string {
-		return strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ").Replace(s)
+		if strings.IndexAny(s, "\r\n\t") < 0 {
+			return s
+		}
+		return popupRowReplacer.Replace(s)
 	}
 	e.Label, e.Shortcut, e.Marker, e.Detail, e.Suffix = clean(e.Label), clean(e.Shortcut), clean(e.Marker), clean(e.Detail), clean(e.Suffix)
 	return e
@@ -416,6 +432,10 @@ type PanelOpts struct {
 	// dimmed "skipped" panels).
 	BorderColor color.Color
 	TitleColor  color.Color
+
+	// Popup chrome opts into the same grapheme-aware width used by its
+	// layout. Ordinary panels retain their existing title-width behavior.
+	ansiTitleWidth bool
 }
 
 // borderChars returns the box-drawing characters for a variant.
@@ -473,6 +493,10 @@ func RenderTitledPanel(content string, opts PanelOpts) string {
 	}
 
 	innerWidth := opts.Width - 2 // subtract left and right border chars
+	measureTitle, truncateTitle := runewidth.StringWidth, runewidth.Truncate
+	if opts.ansiTitleWidth {
+		measureTitle, truncateTitle = ansi.StringWidth, ansi.Truncate
+	}
 
 	// Build top line: ┌─ Title ─────┐
 	var top strings.Builder
@@ -485,10 +509,10 @@ func RenderTitledPanel(content string, opts PanelOpts) string {
 		if maxTitle < 1 {
 			maxTitle = 1
 		}
-		titleDisplayWidth := runewidth.StringWidth(titleText)
+		titleDisplayWidth := measureTitle(titleText)
 		if titleDisplayWidth > maxTitle {
-			titleText = runewidth.Truncate(titleText, maxTitle-1, "") + "…"
-			titleDisplayWidth = runewidth.StringWidth(titleText)
+			titleText = truncateTitle(titleText, maxTitle-1, "") + "…"
+			titleDisplayWidth = measureTitle(titleText)
 		}
 
 		if opts.CenterTitle {
@@ -517,7 +541,7 @@ func RenderTitledPanel(content string, opts PanelOpts) string {
 			var rightDisplay string
 			if opts.RightLabel != "" {
 				rightDisplay = opts.RightLabel
-				rightDisplayWidth := runewidth.StringWidth(rightDisplay)
+				rightDisplayWidth := measureTitle(rightDisplay)
 				// Match " label ─" (one space on each side of label, trailing dash).
 				rightChunk = 1 + rightDisplayWidth + 2
 			}
@@ -543,7 +567,7 @@ func RenderTitledPanel(content string, opts PanelOpts) string {
 		// No left title, only a right-aligned label (bt-fxbl). Renders as
 		// ╭───────────── Label ─╮  — the panel-as-titled-strip variant.
 		rightDisplay := opts.RightLabel
-		rightDisplayWidth := runewidth.StringWidth(rightDisplay)
+		rightDisplayWidth := measureTitle(rightDisplay)
 		// " label ─" overhead (space + label + space + trailing dash)
 		rightChunk := 1 + rightDisplayWidth + 2
 		fillTotal := innerWidth - rightChunk

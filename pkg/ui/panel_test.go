@@ -139,6 +139,34 @@ func TestPopupFrame_AccentOverride(t *testing.T) {
 	}
 }
 
+func TestPopupFrame_GraphemeTitlesKeepMeasuredWidth(t *testing.T) {
+	for _, title := range []string{"✈️", "🇨🇦", "👨‍👩‍👧‍👦", "界面"} {
+		for _, right := range []string{"", "🇨🇦"} {
+			opts := PopupOpts{Title: title, RightLabel: right, Theme: DefaultTheme(), Width: 20, Available: &PopupSize{20, 8}, Footer: []string{"enter esc"}}
+			out := RenderPopup([]string{"body"}, opts)
+			assertPopupBounds(t, out, 20, 8)
+			layout := MeasurePopup([]string{"body"}, opts)
+			if ansi.StringWidth(strings.Split(out, "\n")[0]) != layout.Width {
+				t.Fatal("top border differs from measured width")
+			}
+			popupFindRow(t, out, title)
+		}
+	}
+}
+
+func TestPopupFrame_MultilineChromeIsNormalized(t *testing.T) {
+	opts := PopupOpts{Title: "one\ntwo", RightLabel: "(1)\r\n(2)", Theme: DefaultTheme(), Width: 30, Available: &PopupSize{30, 8}, Footer: []string{"enter\nesc"}}
+	out := RenderPopup([]string{"body"}, opts)
+	layout := MeasurePopup([]string{"body"}, opts)
+	assertPopupBounds(t, out, 30, 8)
+	if len(strings.Split(out, "\n")) != layout.Height {
+		t.Fatal("chrome introduced unmeasured rows")
+	}
+	popupFindRow(t, out, "one two")
+	popupFindRow(t, out, "(1) (2)")
+	popupFindRow(t, out, "enter esc")
+}
+
 func TestPopupMenu_ColumnsSurvivePageAndMarkerChanges(t *testing.T) {
 	entries := []PopupMenuEntry{{Label: "Open", Shortcut: "s", Marker: "*", Selected: true}, {Label: "In Progress"}, {Label: "界面", Shortcut: "A", Marker: "✓"}}
 	layout := MeasurePopupMenu(entries, PopupMenuOpts{Shortcuts: true, Markers: true})
@@ -230,6 +258,22 @@ func TestPopupMenu_MultilineDetailStillOccupiesOneRow(t *testing.T) {
 	}
 	if !strings.Contains(ansi.Strip(rows[1]), "first second") {
 		t.Fatal("detail text lost")
+	}
+}
+
+func TestPopupMenu_FullCollectionMeasurementAllocationBudget(t *testing.T) {
+	entries := make([]PopupMenuEntry, 1000)
+	for i := range entries {
+		entries[i] = PopupMenuEntry{Label: "project", Marker: "✓", Shortcut: "1"}
+	}
+	opts := PopupMenuOpts{Markers: true, Shortcuts: true}
+	MeasurePopupMenu(entries, opts) // warm immutable width/normalization helpers
+	allocations := testing.AllocsPerRun(3, func() { MeasurePopupMenu(entries, opts) })
+	t.Logf("measurement: %.0f allocations for %d rows", allocations, len(entries))
+	// Full-collection measurement is required, but it must not build a new
+	// normalization trie for each field of each entry on each pass.
+	if allocations > float64(len(entries)*5) {
+		t.Fatalf("measurement allocated %.0f times for %d rows", allocations, len(entries))
 	}
 }
 

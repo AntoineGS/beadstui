@@ -79,6 +79,68 @@ func TestFieldInputPopup_LeftAlignedAndBounded(t *testing.T) {
 	}
 }
 
+func TestFieldEditPopup_BackAfterResizeFitsRetainedHub(t *testing.T) {
+	for _, field := range []string{"title", "priority", "description"} {
+		t.Run(field, func(t *testing.T) {
+			m := newSizedModel(t, fieldEditTestIssues(), 120, 32)
+			mustSelectTarget(t, &m)
+			m.requestFieldEdit()
+			m.fieldSelect.MoveDown()
+			m, _ = m.openFieldPickerOrInput(field)
+			if field == "description" {
+				m.longformEdit.textarea.SetValue("dirty draft")
+			}
+			updated, _ := m.Update(tea.WindowSizeMsg{Width: 36, Height: 12})
+			m = updated.(Model)
+			updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+			m = updated.(Model)
+			if field == "description" {
+				if m.activeModal != ModalLongformEdit || !m.longformEdit.escArmed {
+					t.Fatal("first escape lost dirty guard")
+				}
+				updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+				m = updated.(Model)
+			}
+			if m.activeModal != ModalFieldSelect || m.fieldSelect.SelectedField() != "priority" || m.fieldEditTargetID != "zz-target" {
+				t.Fatal("back changed retained hub selection or target")
+			}
+			out := m.fieldSelect.View()
+			assertPopupBounds(t, out, 36, 11)
+			popupFindRow(t, out, "esc")
+		})
+	}
+}
+
+func TestFieldInputPopup_ShortBudgetShowsInputOrFallback(t *testing.T) {
+	for _, err := range []string{"", "invalid title"} {
+		for _, height := range []int{4, 5, 6} {
+			m := NewFieldInputModal("title", "Title", "typed draft", DefaultTheme())
+			m.SetError(err)
+			m.SetSize(32, height)
+			out := m.View()
+			assertPopupBounds(t, out, 32, height)
+			minimum := 5
+			if err != "" {
+				minimum = 6
+			}
+			if height < minimum {
+				if !strings.Contains(out, "Terminal too small") {
+					t.Fatalf("invisible input without fallback:\n%s", ansi.Strip(out))
+				}
+			} else {
+				popupFindRow(t, out, "typed draft")
+				popupFindRow(t, out, "esc")
+				if err != "" {
+					popupFindRow(t, out, err)
+				}
+			}
+			if m.Value() != "typed draft" {
+				t.Fatal("sizing changed draft")
+			}
+		}
+	}
+}
+
 // fieldEditTestIssues seeds a target bead with non-default values on every
 // editable field (blocked status, P2, a title, no assignee) so picker
 // cursor-placement and commit-argv tests have something to move away from.

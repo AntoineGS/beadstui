@@ -31,6 +31,32 @@ func TestUpdateModal_AllStatePopupsBounded(t *testing.T) {
 	}
 }
 
+func TestUpdatePopup_ShortConfirmationShowsFocusedAction(t *testing.T) {
+	for _, focus := range []int{0, 1} {
+		for _, height := range []int{11, 7, 6} {
+			m := NewUpdateModal("v1.0.0", "", DefaultTheme())
+			m.SetSize(42, height)
+			m.confirmFocus = focus
+			out := m.View()
+			assertPopupBounds(t, out, 42, height)
+			if height == 6 {
+				if !strings.Contains(out, "Terminal too small") {
+					t.Fatalf("essential actions hidden without fallback:\n%s", out)
+				}
+				continue
+			}
+			label := "> Update"
+			if focus == 1 {
+				label = "> Cancel"
+			}
+			popupFindRow(t, out, label)
+			popupFindRow(t, out, "Current version")
+			popupFindRow(t, out, "New version")
+			popupFindRow(t, out, "Enter")
+		}
+	}
+}
+
 // ============================================================================
 // NewUpdateModal tests
 // ============================================================================
