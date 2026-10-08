@@ -148,7 +148,7 @@ func (m FieldSelectModal) View() string {
 	for i, e := range m.entries {
 		entries[i] = PopupMenuEntry{Label: e.Label, Shortcut: e.Key, Selected: i == m.cursor}
 	}
-	return renderPopupMenuWindow(entries, PopupMenuOpts{Shortcuts: true}, m.cursor, PopupOpts{Title: "Edit field", Theme: m.theme, Available: m.popupSize, Footer: []string{"j/k move  enter select  esc cancel", "j/k enter esc"}})
+	return renderPopupMenuWindow(entries, PopupMenuOpts{Shortcuts: true}, m.cursor, PopupOpts{Title: "Edit field", Theme: m.theme, Available: m.popupSize})
 }
 
 // ---------------------------------------------------------------------------
@@ -294,7 +294,7 @@ func (m FieldPickerModal) View() string {
 		}
 		entries[i] = PopupMenuEntry{Label: o.Label, Marker: marker, Selected: i == m.cursor}
 	}
-	return renderPopupMenuWindow(entries, PopupMenuOpts{Markers: true}, m.cursor, PopupOpts{Title: m.title, Theme: m.theme, Available: m.popupSize, Footer: []string{"j/k move  enter commit  esc back  * current", "j/k enter commit esc back"}})
+	return renderPopupMenuWindow(entries, PopupMenuOpts{Markers: true}, m.cursor, PopupOpts{Title: m.title, Theme: m.theme, Available: m.popupSize, Footer: []string{"* current"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -354,7 +354,7 @@ func (m FieldInputModal) popupOpts() PopupOpts {
 	if m.err != "" {
 		minimum += len(popupBodyLines([]string{m.err}))
 	}
-	return PopupOpts{Title: m.title, Theme: m.theme, Available: m.popupSize, Width: 50, MinBodyRows: minimum, Footer: []string{"enter apply  esc back", "enter esc"}}
+	return PopupOpts{Title: m.title, Theme: m.theme, Available: m.popupSize, Width: 50, MinBodyRows: minimum}
 }
 
 // Focus activates the textinput's cursor/blink.

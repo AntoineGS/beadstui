@@ -442,10 +442,9 @@ func (m Model) alertsPopupLayout() PopupLayout { return MeasurePopup(nil, m.aler
 func (m Model) alertsPopupFooter() []string {
 	if m.activeTab == TabAlerts {
 		return []string{
-			"←/→/PgUp/PgDn: page  Home/End: ends  s/t/p/o/a: filter (⇧:prev)  r: reset  enter: open  c: clear (⇧:all)  esc: close",
-			"←/→: page  g/G: ends  s/t/p/o/a: filter  r: reset  enter: open  c: clear  esc",
-			"←/→: page  s/t/p/o/a: filter  enter  c: clear  esc",
-			"←/→ s/t/p/o/a enter c esc",
+			"←/→: page  s/t/p/o/a: filter (⇧:prev)  r: reset  c: clear (⇧:all)",
+			"←/→: page  s/t/p/o/a: filter  r: reset  c: clear",
+			"←/→ s/t/p/o/a r c",
 		}
 	}
 	dismiss := "d: show dismissed"
@@ -453,10 +452,9 @@ func (m Model) alertsPopupFooter() []string {
 		dismiss = "d: hide dismissed"
 	}
 	return []string{
-		fmt.Sprintf("j/k: nav  ←/→/PgUp/PgDn: page  Home/End: ends  enter: open  t: filter  c: dismiss  C: all  %s  esc: close", dismiss),
-		fmt.Sprintf("j/k: nav  ←/→: page  enter: open  t: filter  c/C: dismiss  %s  esc: close", dismiss),
-		"j/k  ←/→/PgUp/PgDn: page  enter  t: filter  c/C  d  esc",
-		"j/k ←/→ page enter t c/C d esc",
+		fmt.Sprintf("←/→: page  t: filter  c: dismiss  C: all  %s", dismiss),
+		fmt.Sprintf("←/→: page  t: filter  c/C: dismiss  %s", dismiss),
+		"←/→ page  t  c/C  d",
 	}
 }
 
@@ -684,30 +682,22 @@ func (m Model) renderAlertsTab() string {
 				severityIcon = "○"
 			}
 
-			// Cursor indicator (neutral color so it stands out from severity)
-			cursor := "  "
-			if selected {
-				cursor = t.Text.Selected.Render("▸ ")
-			}
+			// The blank two-column gutter keeps rows where the old cursor
+			// glyph put them, so click geometry is unchanged.
+			gutter := "  "
 
 			// Alert line (sanitize newlines to prevent panel expansion)
 			msg := strings.ReplaceAll(a.Message, "\n", " ")
 			typeTag := fmt.Sprintf("[%s]", alertTypeLabel(a.Type))
 			line := fmt.Sprintf("%s %s %s", severityIcon, typeTag, msg)
-			if lipgloss.Width(cursor)+lipgloss.Width(line) > innerWidth {
-				line = truncateRunesHelper(line, innerWidth-lipgloss.Width(cursor), "…")
-			}
-			// Severity keeps its foreground; ordinary message text uses the row role.
-			rowStyle := t.Text.Body
-			if selected {
-				rowStyle = t.Text.Selected
-				severityStyle = rowStyle.Foreground(severityStyle.GetForeground())
+			if lipgloss.Width(gutter)+lipgloss.Width(line) > innerWidth {
+				line = truncateRunesHelper(line, innerWidth-lipgloss.Width(gutter), "…")
 			}
 			semanticPrefix := severityIcon + " " + typeTag
 			prefixLen := len([]rune(semanticPrefix))
 			lineRunes := []rune(line)
 			prefixLen = min(prefixLen, len(lineRunes))
-			rendered := cursor + severityStyle.Render(string(lineRunes[:prefixLen])) + rowStyle.Render(string(lineRunes[prefixLen:]))
+			rendered := gutter + severityStyle.Render(string(lineRunes[:prefixLen])) + t.Text.Body.Render(string(lineRunes[prefixLen:]))
 
 			// Center the alert line
 			lineWidth := lipgloss.Width(rendered)
@@ -715,7 +705,10 @@ func (m Model) renderAlertsTab() string {
 			if pad < 0 {
 				pad = 0
 			}
-			sb.WriteString(strings.Repeat(" ", pad))
+			rendered = strings.Repeat(" ", pad) + rendered
+			if selected {
+				rendered = renderSelectedRow(t, rendered, innerWidth)
+			}
 			sb.WriteString(rendered)
 			sb.WriteString("\n")
 
@@ -727,7 +720,7 @@ func (m Model) renderAlertsTab() string {
 			// description more clutter than help. Type explanations now live
 			// behind the ? help modal (bt-i20z).
 			if selected {
-				detailStyle := t.Text.Selected
+				detailStyle := t.Text.Metadata
 				detailMaxWidth := innerWidth - 8
 
 				if a.IssueID != "" {
@@ -1016,15 +1009,13 @@ func (m Model) renderNotificationsTab() string {
 	}
 	sb.WriteString("\n")
 
-	cursorStyle := t.Text.Selected
-	summaryStyle := t.Text.Selected
 	separatorStyle := mutedStyle
 	// bt-0mxw: per-row foreground is derived from event kind via
-	// kindRowStyle. Cursor row keeps cursorStyle so it always pops above
-	// the kind-tinted neighbors.
+	// kindRowStyle. The cursor row takes the shared list highlight so it
+	// always pops above the kind-tinted neighbors.
 
-	// Usable width for the row content after our "▸ " / "   " prefix (3)
-	// and a right-side margin (2) to keep text from kissing the border.
+	// Usable width for the row content after the "   " gutter (3) and a
+	// right-side margin (2) to keep text from kissing the border.
 	rowWidth := innerWidth - 5
 	if rowWidth < 20 {
 		rowWidth = 20
@@ -1049,7 +1040,7 @@ func (m Model) renderNotificationsTab() string {
 		}
 		row := formatNotificationRow(active[i], rowWidth)
 		if i == m.notificationsCursor {
-			sb.WriteString(" " + cursorStyle.Render("▸ "+row))
+			sb.WriteString(renderSelectedRow(t, "   "+row, innerWidth))
 			sb.WriteString("\n")
 			rowsWritten++
 			// Sanitize Summary: strip newlines so the hover-expand stays on
@@ -1062,7 +1053,7 @@ func (m Model) renderNotificationsTab() string {
 			headlineIsSummary := active[i].Title == "" &&
 				(active[i].Kind == events.EventSystem || active[i].BeadID == "")
 			if s != "" && !headlineIsSummary {
-				sb.WriteString("    " + summaryStyle.Render(truncate(s, rowWidth-2)))
+				sb.WriteString("    " + mutedStyle.Render(truncate(s, rowWidth-2)))
 				sb.WriteString("\n")
 				rowsWritten++
 			}

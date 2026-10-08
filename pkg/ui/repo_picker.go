@@ -34,8 +34,7 @@ func NewRepoPickerModel(repos []string, theme Theme) RepoPickerModel {
 	ti.Placeholder = "type to filter..."
 	ti.CharLimit = 50
 	ti.SetWidth(30)
-	// The View renders its own styled "> " prompt, so clear the textinput's
-	// built-in one to avoid a doubled ">".
+	// No prompt glyph: the placeholder marks the search row.
 	ti.Prompt = ""
 	// Search starts blurred (bt-wnda parity): the user lands on the list.
 	ti.Blur()
@@ -361,7 +360,7 @@ func (m *RepoPickerModel) popupEntries() []PopupMenuEntry {
 }
 
 func (m *RepoPickerModel) popupOpts() PopupOpts {
-	return PopupOpts{Title: "Project Filter", Theme: m.theme, Available: m.popupSize, Footer: []string{pickerFooter, "space toggle / search ←/→ page enter apply esc back", "space / ←/→ enter esc"}}
+	return PopupOpts{Title: "Project Filter", Theme: m.theme, Available: m.popupSize, Footer: searchPickerFooter}
 }
 
 func (m *RepoPickerModel) popupLayout() PopupLayout {
@@ -403,12 +402,6 @@ func (m *RepoPickerModel) IsSearchRow(my int) bool {
 	l := m.popupLayout()
 	return !l.Compact && l.Height > 0 && my == l.BodyY
 }
-
-// footer hint text (no padding - added during render). Mirrors the label
-// picker footer convention: select-all ("a") lives in the ; sidebar / ?
-// overlay rather than the footer, keeping the line short enough to render
-// without truncation on typical terminals.
-const pickerFooter = "toggle: space search: / page: ←/→ • apply: enter esc: back"
 
 // View renders the repo picker overlay.
 func (m *RepoPickerModel) View() string {

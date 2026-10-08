@@ -36,10 +36,10 @@ func TestSettingsLauncherPopup_AlignedDetailsAndShortSelection(t *testing.T) {
 	out = m.settingsMenu.View()
 	assertPopupBounds(t, out, 36, 8)
 	_, quit := popupFindRow(t, out, "QUIT")
-	if !strings.Contains(quit, ">") {
+	if strings.Contains(quit, ">") || !popupRowSelected(out, "QUIT", m.theme) {
 		t.Fatal("short menu lost selection")
 	}
-	popupFindRow(t, out, "esc")
+	assertNoAssumedKeyHints(t, out)
 }
 
 func settingsTestModel(t *testing.T) Model {
@@ -54,14 +54,28 @@ func TestOptionsPopup_ColumnsAndFooterFit(t *testing.T) {
 	m.settingsModal.SetSize(48, 16)
 	out := m.settingsModal.View()
 	assertPopupBounds(t, out, 48, 16)
-	popupFindRow(t, out, "esc")
-	popupFindRow(t, out, "enter")
+	popupFindRow(t, out, "←/→ change")
 	_, row := popupFindRow(t, out, "Color")
 	if !strings.Contains(row, "│") || !strings.Contains(out, "Set the color") {
 		t.Fatal("two-column setting/help body missing")
 	}
 	m.settingsModal.SetSize(8, 3)
 	assertPopupBounds(t, m.settingsModal.View(), 8, 3)
+}
+
+func TestOptionsPopup_SelectedSettingUsesListHighlight(t *testing.T) {
+	m := settingsTestModel(t)
+	s := m.settingsModal
+	rows := s.renderSettings(30)
+	if s.selected != 0 || len(rows) < 2 {
+		t.Fatalf("want the first setting selected, got %d rows %q", s.selected, rows)
+	}
+	for i, row := range rows {
+		highlighted := row == renderSelectedRow(s.theme, ansi.Strip(row), 30)
+		if want := i < 2; highlighted != want {
+			t.Errorf("row %d %q highlighted=%v, want %v", i, ansi.Strip(row), highlighted, want)
+		}
+	}
 }
 
 // TestSettingsCyclesThemeLive is the contract the whole screen exists for: a

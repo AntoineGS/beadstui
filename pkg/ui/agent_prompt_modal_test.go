@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestNewAgentPromptModal(t *testing.T) {
@@ -35,28 +36,47 @@ func TestAgentPromptModalKeyNavigation(t *testing.T) {
 		t.Errorf("Expected initial selection 0, got %d", modal.selection)
 	}
 
-	// Press right
-	modal, _ = modal.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})
+	// The options are stacked, so vertical keys move between them.
+	modal, _ = modal.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	if modal.selection != 1 {
-		t.Errorf("Expected selection 1 after right, got %d", modal.selection)
+		t.Errorf("Expected selection 1 after j, got %d", modal.selection)
 	}
 
-	// Press right again
-	modal, _ = modal.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})
+	modal, _ = modal.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	if modal.selection != 2 {
-		t.Errorf("Expected selection 2 after right, got %d", modal.selection)
+		t.Errorf("Expected selection 2 after down, got %d", modal.selection)
 	}
 
-	// Press right - should wrap to 0
-	modal, _ = modal.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})
+	// Down from the last option wraps to 0
+	modal, _ = modal.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	if modal.selection != 0 {
 		t.Errorf("Expected selection to wrap to 0, got %d", modal.selection)
 	}
 
-	// Press left - should wrap to 2
-	modal, _ = modal.Update(tea.KeyPressMsg{Code: 'h', Text: "h"})
+	// Up from the first option wraps to 2
+	modal, _ = modal.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	if modal.selection != 2 {
 		t.Errorf("Expected selection to wrap to 2, got %d", modal.selection)
+	}
+
+	modal, _ = modal.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	if modal.selection != 1 {
+		t.Errorf("Expected selection 1 after k, got %d", modal.selection)
+	}
+}
+
+func TestAgentPromptModalShowsShortcutsNotHints(t *testing.T) {
+	modal := NewAgentPromptModal("/test/AGENTS.md", "AGENTS.md", DefaultTheme())
+	modal.SetSize(80, 30)
+	out := modal.View()
+	for _, row := range []string{"y  Yes, add it", "n  No thanks", "d  Don't ask again"} {
+		popupFindRow(t, out, row)
+	}
+	plain := ansi.Strip(out)
+	for _, hint := range []string{"Enter", "Esc", "←", "→"} {
+		if strings.Contains(plain, hint) {
+			t.Errorf("agent prompt shows assumed key %q:\n%s", hint, plain)
+		}
 	}
 }
 

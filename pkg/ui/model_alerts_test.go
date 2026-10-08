@@ -13,36 +13,35 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/ui/events"
 )
 
+// Alert and notification selection is the shared list highlight: no ▸
+// cursor, one Text.Selected span across the row.
 func TestAlertsTextRole(t *testing.T) {
 	m := statusHeaderModel(t)
-	m.theme.Text.Selected = lipgloss.NewStyle().Underline(true).Bold(false)
+	m.theme.Text.Selected = lipgloss.NewStyle().Background(m.theme.Primary).Bold(false)
 	m.theme.Text.Metadata = lipgloss.NewStyle().Underline(true).Italic(false)
 	out := m.renderAlertsTab()
-	if !strings.Contains(out, m.theme.Text.Selected.Render(" 1 new cycle(s) detected")) {
-		t.Fatal("specific selected alert explanation ignored role")
+	if strings.Contains(out, "▸") || !popupRowSelected(out, "1 new cycle(s) detected", m.theme) {
+		t.Fatal("selected alert is not the shared highlight")
 	}
 	m.events.Append(events.Event{ID: "role", Kind: events.EventCreated, BeadID: "bt-1", Repo: "bt", Title: "role event", At: time.Now()})
-	m.theme.Text.Selected = lipgloss.NewStyle().Underline(true).Bold(false)
 	out = m.renderNotificationsTab()
 	row := formatNotificationRow(m.filteredNotifications(false)[0], m.alertsPopupLayout().BodyWidth-5)
-	if !strings.Contains(out, m.theme.Text.Selected.Render("▸ "+row)) {
-		t.Error("notification selection ignored role")
+	if strings.Contains(out, "▸") || !popupRowSelected(out, row, m.theme) {
+		t.Error("selected notification is not the shared highlight")
 	}
 }
 
 func TestAlertsPlainSelectedTextRole(t *testing.T) {
 	m := statusHeaderModel(t)
 	m.theme.Text.Selected = lipgloss.NewStyle().Foreground(m.theme.Warning).Background(m.theme.Primary).Bold(false).Italic(false).Underline(false)
-	m.theme.Text.Metadata = lipgloss.NewStyle().Bold(false).Italic(false).Underline(false)
+	m.theme.Text.Metadata = lipgloss.NewStyle().Foreground(m.theme.Secondary).Bold(false).Italic(false).Underline(false)
 	m.alerts = []drift.Alert{{Type: drift.AlertStale, Severity: drift.SeverityCritical, IssueID: "bt-1", Message: "explanation"}}
 	out := m.renderAlertsTab()
-	for _, text := range []string{" explanation", "    one"} {
-		if !strings.Contains(out, m.theme.Text.Selected.Render(text)) {
-			t.Errorf("selected %q lost background/false attributes", text)
-		}
+	if !popupRowSelected(out, "▲ [stale] explanation", m.theme) {
+		t.Error("selected alert row is not one highlight span")
 	}
-	if !strings.Contains(out, m.theme.Text.Selected.Foreground(m.theme.Blocked).Render("▲ [stale]")) {
-		t.Error("severity lost foreground or selected attributes")
+	if !strings.Contains(out, m.theme.Text.Metadata.Render("    one")) {
+		t.Error("selected alert detail should read as metadata, like popup menu details")
 	}
 }
 

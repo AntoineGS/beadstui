@@ -86,7 +86,7 @@ func (m *RecipePickerModel) View() string {
 	} else {
 		shapeRows++
 	}
-	opts := PopupOpts{Title: "Select Recipe", Theme: m.theme, Available: m.popupSize, Width: 50, Height: max(8, popupAvailableSize(m.popupSize).Height*7/10), MinBodyRows: minimum, Footer: []string{"j/k: navigate  enter: apply  esc: cancel", "j/k enter esc"}}
+	opts := PopupOpts{Title: "Select Recipe", Theme: m.theme, Available: m.popupSize, Width: 50, Height: max(8, popupAvailableSize(m.popupSize).Height*7/10), MinBodyRows: minimum}
 	shape := make([]string, shapeRows)
 	shape[0] = strings.Repeat(" ", menu.Width)
 	l := MeasurePopup(shape, opts)

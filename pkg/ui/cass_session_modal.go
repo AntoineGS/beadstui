@@ -86,9 +86,9 @@ func (m CassSessionModal) Update(msg tea.Msg) (CassSessionModal, tea.Cmd) {
 // View renders the modal.
 func (m CassSessionModal) View() string {
 	showCopied := m.copied && time.Since(m.copiedAt) <= 2*time.Second
-	footer := []string{"[j/k] Navigate    [y] Copy search cmd    [V/Esc] Close", "[j/k] [y] copy [V/Esc] close"}
+	footer := []string{"y copy search cmd  V close", "y copy  V close"}
 	if showCopied {
-		footer = []string{"[j/k] Navigate    " + activeGlyphs.Success + " Copied!    [V/Esc] Close", "[j/k] Copied! [V/Esc] close"}
+		footer = []string{activeGlyphs.Success + " Copied!  V close", "Copied!  V close"}
 	}
 	opts := PopupOpts{Title: "Related Coding Sessions", Theme: m.theme, Available: m.popupSize, Width: 80, Height: min(28, popupAvailableSize(m.popupSize).Height), MinBodyRows: 7, Footer: footer}
 	l := MeasurePopup(nil, opts)

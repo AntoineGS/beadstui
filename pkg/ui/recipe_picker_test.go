@@ -20,10 +20,10 @@ func TestRecipePopup_SelectedRowAndFooterFit(t *testing.T) {
 	out := m.View()
 	assertPopupBounds(t, out, 40, 12)
 	_, row := popupFindRow(t, out, "Last")
-	if !strings.Contains(row, ">") {
+	if strings.Contains(row, ">") || !popupRowSelected(out, "Last", m.theme) {
 		t.Fatalf("selected row cue missing: %q", row)
 	}
-	popupFindRow(t, out, "esc")
+	assertNoAssumedKeyHints(t, out)
 	popupFindRow(t, out, "↑")
 	_, detail := popupFindRow(t, out, "three")
 	if ansi.StringWidth(row[:strings.Index(row, "Last")]) != ansi.StringWidth(detail[:strings.Index(detail, "three")]) {

@@ -82,6 +82,9 @@ type AppKeys struct {
 
 	// PluginSelect backs the plugin select prompt and the plugin action menu.
 	PluginSelect PluginSelectKeys
+
+	// Confirm backs every yes/no confirm dialog.
+	Confirm ConfirmKeys
 }
 
 // NewAppKeys returns the default keymap for every view. Wire into NewModel.
@@ -128,5 +131,7 @@ func NewAppKeys() AppKeys {
 
 		// Plugin prompt Map
 		PluginSelect: NewPluginSelectKeys(),
+
+		Confirm: NewConfirmKeys(),
 	}
 }

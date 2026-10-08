@@ -25,10 +25,10 @@ func TestRepoPopup_RenderedRowMatchesHitTest(t *testing.T) {
 	if i, ok := m.ItemAtPanelY(y); !ok || i != 2 {
 		t.Fatalf("rendered y=%d maps to %d,%v", y, i, ok)
 	}
-	if !strings.Contains(row, ">") {
+	if strings.Contains(row, ">") || !popupRowSelected(out, "last-project", m.theme) {
 		t.Fatal("shared selection cue missing")
 	}
-	y, _ = popupFindRow(t, out, "enter")
+	y, _ = popupFindRow(t, out, "space")
 	if _, ok := m.ItemAtPanelY(y); ok {
 		t.Fatal("footer is clickable")
 	}
@@ -495,7 +495,7 @@ func TestRepoPickerViewShowsChrome(t *testing.T) {
 	m := NewRepoPickerModel([]string{"bt", "sym"}, DefaultTheme())
 	m.SetSize(80, 24)
 	out := m.View()
-	if !strings.Contains(out, ">") {
+	if !strings.Contains(ansi.Strip(out), "type to filter") {
 		t.Error("view should render the search prompt")
 	}
 	if !strings.Contains(out, "2 projects") {

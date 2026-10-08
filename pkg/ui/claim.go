@@ -491,5 +491,5 @@ func (m Model) renderClaimConfirm() string {
 	if prediction := predictClaimOutcome(m.data.issueMap[m.claimTargetID]); prediction != "" {
 		lines = append(lines, warnStyle.Render(truncateRunesHelper(prediction, titleMax, "...")))
 	}
-	return RenderPopup(lines, PopupOpts{Title: "Claim?", Theme: t, Available: &PopupSize{m.width, max(0, m.height-1)}, Footer: []string{"y/enter confirm    esc cancel", "y/enter esc"}})
+	return RenderPopup(lines, PopupOpts{Title: "Claim?", Theme: t, Available: &PopupSize{m.width, max(0, m.height-1)}})
 }

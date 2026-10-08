@@ -217,7 +217,7 @@ func (s *SettingsModalModel) Selected() settingItem {
 func (s *SettingsModalModel) View() string {
 	t := s.theme
 	size := popupAvailableSize(s.popupSize)
-	opts := PopupOpts{Title: "Options", Theme: t, Available: s.popupSize, Width: min(96, max(46, size.Width*3/4)), Height: max(12, size.Height*7/10), MinBodyRows: 4, Footer: []string{"j/k: select • ←/→: change • enter: keep • esc: cancel", "j/k select ←/→ change enter keep esc cancel", "j/k ←/→ enter esc"}}
+	opts := PopupOpts{Title: "Options", Theme: t, Available: s.popupSize, Width: min(96, max(46, size.Width*3/4)), Height: max(12, size.Height*7/10), MinBodyRows: 4, Footer: []string{"←/→ change"}}
 	layout := MeasurePopup(nil, opts)
 	if layout.Compact || layout.Height == 0 {
 		return RenderPopup(nil, opts)
@@ -278,9 +278,7 @@ func (s *SettingsModalModel) renderTabs() string {
 // value beneath, the selected one highlighted.
 func (s *SettingsModalModel) renderSettings(width int) []string {
 	t := s.theme
-	nameSel := t.Text.Selected
 	nameIdle := t.Text.Heading
-	valSel := t.Text.Selected
 	valIdle := t.Text.Body
 
 	var out []string
@@ -294,7 +292,7 @@ func (s *SettingsModalModel) renderSettings(width int) []string {
 			}
 		}
 		if selected {
-			out = append(out, nameSel.Render(" "+truncateRunesHelper(label, width-2, "…")+" "))
+			out = append(out, renderSelectedRow(t, " "+truncateRunesHelper(label, width-2, "…"), width))
 		} else {
 			out = append(out, nameIdle.Render(" "+truncateRunesHelper(label, width-2, "…")))
 		}
@@ -303,7 +301,7 @@ func (s *SettingsModalModel) renderSettings(width int) []string {
 		// row gets them -- on every row they would read as decoration.
 		value := truncateRunesHelper(it.Value(), width-6, "…")
 		if selected {
-			out = append(out, valSel.Render(" ← "+value+" →"))
+			out = append(out, renderSelectedRow(t, " ← "+value+" →", width))
 		} else {
 			out = append(out, valIdle.Render("   "+value))
 		}

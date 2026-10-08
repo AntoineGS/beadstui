@@ -56,6 +56,8 @@ func allMaps() map[string]help.KeyMap {
 
 		// Plugin prompt Map
 		"PluginSelect": NewPluginSelectKeys(),
+
+		"Confirm": NewConfirmKeys(),
 	}
 }
 

@@ -1393,9 +1393,9 @@ func TestHelpOverlayScroll(t *testing.T) {
 	if !strings.Contains(out, "shortcuts") {
 		t.Fatalf("help overlay should render the global title")
 	}
-	// Should show close + cross-reference hints.
-	if !strings.Contains(out, "Esc") || !strings.Contains(out, ";") {
-		t.Fatalf("help overlay should show close hint and ; cross-reference")
+	// Should show the ; cross-reference; closing with esc is assumed.
+	if strings.Contains(out, "Esc") || !strings.Contains(out, "; per-view") {
+		t.Fatalf("help overlay should show only the ; cross-reference")
 	}
 
 	// Test Space key closes help for tutorial entry (bv-0trk)
@@ -1532,8 +1532,8 @@ func TestHelpOverlay_CrossRefFooter(t *testing.T) {
 	if !strings.Contains(out, ";") {
 		t.Errorf("? footer should cross-reference the ; sidebar")
 	}
-	if !strings.Contains(out, "Esc") {
-		t.Errorf("? footer should show a close hint")
+	if strings.Contains(out, "Esc") {
+		t.Errorf("? footer should not spell out the assumed close key")
 	}
 }
 

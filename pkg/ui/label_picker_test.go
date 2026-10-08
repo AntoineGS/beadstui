@@ -20,10 +20,10 @@ func TestLabelPopup_RenderedRowMatchesHitTest(t *testing.T) {
 	if i, ok := m.ItemAtPanelY(y); !ok || i != 2 {
 		t.Fatalf("rendered y=%d maps to %d,%v", y, i, ok)
 	}
-	if !strings.Contains(row, ">") || !strings.Contains(row, "(1)") {
+	if strings.Contains(row, ">") || !popupRowSelected(out, "last", m.theme) || !strings.Contains(row, "(1)") {
 		t.Fatal("shared selection/count cue missing")
 	}
-	y, _ = popupFindRow(t, out, "enter")
+	y, _ = popupFindRow(t, out, "space")
 	if _, ok := m.ItemAtPanelY(y); ok {
 		t.Fatal("footer is clickable")
 	}

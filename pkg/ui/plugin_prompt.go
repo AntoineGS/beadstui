@@ -207,10 +207,10 @@ func (m Model) handlePluginPromptKeys(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	}
 
 	if p.kind == pluginPromptConfirm {
-		switch msg.String() {
-		case "y", "Y", "enter":
+		switch {
+		case key.Matches(msg, m.keys.Confirm.Confirm):
 			m.answerPluginPrompt(true)
-		case "n", "N", "esc":
+		case key.Matches(msg, m.keys.Confirm.Cancel):
 			m.answerPluginPrompt(false)
 		}
 		return m, nil
@@ -267,14 +267,18 @@ func (m Model) renderPluginPrompt() string {
 				lines = append(lines, textStyle.Render(truncateRunesHelper(l, maxInner, "...")))
 			}
 		}
-		confirm, cancel := p.confirmLabel, p.cancelLabel
-		if confirm == "" {
-			confirm = "confirm"
+		// enter/y and esc/n are the shared confirm keys, so only
+		// plugin-supplied labels are worth a footer: cancel left, confirm right.
+		if p.confirmLabel != "" || p.cancelLabel != "" {
+			confirm, cancel := p.confirmLabel, p.cancelLabel
+			if confirm == "" {
+				confirm = "confirm"
+			}
+			if cancel == "" {
+				cancel = "cancel"
+			}
+			opts.Footer = []string{fmt.Sprintf("n %s  y %s", cancel, confirm), "n  y"}
 		}
-		if cancel == "" {
-			cancel = "cancel"
-		}
-		opts.Footer = []string{fmt.Sprintf("y/enter %s  n/esc %s", confirm, cancel), "y/enter n/esc"}
 		return RenderPopup(lines, opts)
 	}
 
@@ -296,6 +300,5 @@ func (m Model) renderPluginPrompt() string {
 			entries[i].Suffix = "  " + desc
 		}
 	}
-	opts.Footer = []string{"j/k move  enter select  esc cancel", "j/k enter esc"}
 	return renderPopupMenuWindow(entries, PopupMenuOpts{}, p.cursor, opts)
 }

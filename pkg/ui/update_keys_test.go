@@ -7,10 +7,113 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/seanmartinsmith/beadstui/internal/bdexec"
 	"github.com/seanmartinsmith/beadstui/internal/datasource"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/version"
 )
+
+// Every confirm dialog shares one contract: enter/y confirm, esc/n cancel
+// (either case), and any other key leaves the dialog open untouched.
+func TestConfirmDialogs_StandardKeys(t *testing.T) {
+	type outcome int
+	const (
+		open outcome = iota
+		confirmed
+		cancelled
+	)
+	dialogs := []struct {
+		name  string
+		setup func(t *testing.T) (Model, func(Model, tea.Cmd) outcome)
+	}{
+		{"quit", func(t *testing.T) (Model, func(Model, tea.Cmd) outcome) {
+			m := newSizedModel(t, claimTestIssues(), 120, 32)
+			m.openModal(ModalQuitConfirm)
+			return m, func(m Model, cmd tea.Cmd) outcome {
+				if cmd != nil {
+					if _, ok := cmd().(tea.QuitMsg); ok {
+						return confirmed
+					}
+				}
+				if m.activeModal == ModalNone {
+					return cancelled
+				}
+				return open
+			}
+		}},
+		{"claim", func(t *testing.T) (Model, func(Model, tea.Cmd) outcome) {
+			stubClaimRunner(t, bdexec.Result{ExitCode: 0})
+			m := newSizedModel(t, claimTestIssues(), 120, 32)
+			m.requestClaim()
+			return m, func(m Model, _ tea.Cmd) outcome {
+				if _, ok := m.pendingWrites["zz-target"]; ok {
+					return confirmed
+				}
+				if m.activeModal == ModalNone {
+					return cancelled
+				}
+				return open
+			}
+		}},
+		{"plugin", func(t *testing.T) (Model, func(Model, tea.Cmd) outcome) {
+			m := newPluginActionModel(t, &fakePluginActions{})
+			r := &recorder{}
+			m, _ = sendMsg(m, confirmPrompt(r.reply))
+			return m, func(m Model, _ tea.Cmd) outcome {
+				switch {
+				case len(r.answers) == 1 && r.answers[0] == true:
+					return confirmed
+				case len(r.answers) == 1 && r.answers[0] == false && m.activeModal == ModalNone:
+					return cancelled
+				case len(r.answers) == 0 && m.activeModal == ModalPluginPrompt:
+					return open
+				}
+				return -1
+			}
+		}},
+		{"update", func(t *testing.T) (Model, func(Model, tea.Cmd) outcome) {
+			m := newSizedModel(t, claimTestIssues(), 120, 32)
+			m.updateAvailable = true
+			m.updateTag = "v1.0.0"
+			m.showSelfUpdateModal()
+			return m, func(m Model, _ tea.Cmd) outcome {
+				switch {
+				case m.activeModal == ModalUpdate && m.updateModal.IsInProgress():
+					return confirmed
+				case m.activeModal == ModalNone:
+					return cancelled
+				case m.activeModal == ModalUpdate && m.updateModal.IsConfirming():
+					return open
+				}
+				return -1
+			}
+		}},
+	}
+	keys := []struct {
+		name string
+		msg  tea.KeyPressMsg
+		want outcome
+	}{
+		{"enter", tea.KeyPressMsg{Code: tea.KeyEnter}, confirmed},
+		{"y", keyRune('y'), confirmed},
+		{"Y", keyRune('Y'), confirmed},
+		{"esc", tea.KeyPressMsg{Code: tea.KeyEsc}, cancelled},
+		{"n", keyRune('n'), cancelled},
+		{"N", keyRune('N'), cancelled},
+		{"other", keyRune('x'), open},
+	}
+	for _, d := range dialogs {
+		for _, k := range keys {
+			t.Run(d.name+"/"+k.name, func(t *testing.T) {
+				m, result := d.setup(t)
+				m, cmd := sendMsg(m, k.msg)
+				if got := result(m, cmd); got != k.want {
+					t.Fatalf("outcome = %d, want %d (modal %v)", got, k.want, m.activeModal)
+				}
+			})
+		}
+	}
+}
 
 // Cover additional branches in Model.Update for quit/help/tab handling and update notices.
 func TestUpdateHelpQuitAndTabFocus(t *testing.T) {

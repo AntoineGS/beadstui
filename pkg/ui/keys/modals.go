@@ -2,6 +2,38 @@ package keys
 
 import "charm.land/bubbles/v2/key"
 
+// ConfirmKeys are shared by every yes/no confirm dialog (quit, claim, update,
+// plugin confirm). Uppercase variants keep caps lock harmless; help text only
+// names the lowercase keys. Any other key leaves the dialog open.
+type ConfirmKeys struct {
+	Confirm key.Binding
+	Cancel  key.Binding
+}
+
+// NewConfirmKeys returns the default confirm dialog keymap.
+func NewConfirmKeys() ConfirmKeys {
+	return ConfirmKeys{
+		Confirm: key.NewBinding(
+			key.WithKeys("enter", "y", "Y"),
+			key.WithHelp("⏎/y", "confirm"),
+		),
+		Cancel: key.NewBinding(
+			key.WithKeys("esc", "n", "N"),
+			key.WithHelp("esc/n", "cancel"),
+		),
+	}
+}
+
+// ShortHelp returns the bindings shown in the status-bar L1 hint slot.
+func (k ConfirmKeys) ShortHelp() []key.Binding {
+	return []key.Binding{k.Confirm, k.Cancel}
+}
+
+// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+func (k ConfirmKeys) FullHelp() [][]key.Binding {
+	return [][]key.Binding{{k.Confirm, k.Cancel}}
+}
+
 // LabelPickerNavKeys are the bindings for label picker nav sub-state --
 // when the search input is NOT focused. handleLabelPickerNavKeys dispatches
 // against these via key.Matches.

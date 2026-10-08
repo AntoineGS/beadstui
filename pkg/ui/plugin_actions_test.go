@@ -370,7 +370,7 @@ func TestPluginConfirmPrompt(t *testing.T) {
 	if m.activeModal != ModalPluginPrompt || m.focused != focusPluginPrompt {
 		t.Fatalf("confirm prompt: modal %v focus %v", m.activeModal, m.focused)
 	}
-	if out := m.renderPluginPrompt(); !strings.Contains(out, "Start a session?") || !strings.Contains(out, "y/enter") {
+	if out := m.renderPluginPrompt(); !strings.Contains(out, "Start a session?") {
 		t.Fatalf("confirm render:\n%s", out)
 	}
 	if !strings.Contains(ansi.Strip(m.View().Content), "Start a session?") {

@@ -26,6 +26,24 @@ keep reading the underlying view through the overlay.
 This matches the alerts/notifications modal shape and keeps a single
 canonical compositor for modal pop-ups.
 
+## Selection, footers and confirm keys
+
+Selected rows use `renderSelectedRow` (in `pkg/ui/panel.go`), the same
+helper the issue list uses: the plain row, full width, under `Text.Selected`.
+No `>` or `▸` cursor. `RenderPopupMenu` already applies it; custom row
+renderers call it directly (bt-wvy).
+
+Footers list only keys a user could not guess. Leave out movement (`j/k`,
+arrows, PgUp/PgDn, Home/End), `enter` that selects, applies, opens or
+confirms, and `esc`/`q` that closes, backs out or cancels. Keep everything
+else (`space toggle`, `/ search`, `ctrl+s commit`, `* current`). A popup with
+nothing left has no footer.
+
+Yes/no confirm dialogs match `keys.ConfirmKeys`: `enter`/`y` confirm and
+`esc`/`n` cancel (either case); any other key leaves the dialog open. They
+show no key hints. If a dialog does show both actions, cancel goes on the
+left and confirm on the right, as plugin confirms do with custom labels.
+
 ## Shared layout
 
 `PopupOpts.Width`/`Height` are preferred **outer** dimensions, including

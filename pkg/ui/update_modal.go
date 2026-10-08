@@ -5,9 +5,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 	"github.com/seanmartinsmith/beadstui/pkg/updater"
 	"github.com/seanmartinsmith/beadstui/pkg/version"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -61,7 +63,8 @@ type UpdateModal struct {
 	height         int
 	popupSize      *PopupSize
 	startTime      time.Time
-	confirmFocus   int // 0 = Update, 1 = Cancel
+	keys           keys.ConfirmKeys
+	dismissed      bool
 }
 
 // NewUpdateModal creates a new update modal.
@@ -74,7 +77,7 @@ func NewUpdateModal(newVersion, releaseURL string, theme Theme) UpdateModal {
 		theme:          theme,
 		width:          60,
 		height:         20,
-		confirmFocus:   0, // Default to "Update" button
+		keys:           keys.NewConfirmKeys(),
 	}
 }
 
@@ -121,38 +124,18 @@ func (m UpdateModal) Update(msg tea.Msg) (UpdateModal, tea.Cmd) {
 	case tea.KeyPressMsg:
 		switch m.state {
 		case UpdateStateConfirm:
-			switch msg.String() {
-			case "left", "h":
-				m.confirmFocus = 0
-			case "right", "l":
-				m.confirmFocus = 1
-			case "tab":
-				m.confirmFocus = (m.confirmFocus + 1) % 2
-			case "enter":
-				if m.confirmFocus == 0 {
-					// User confirmed update
-					m.state = UpdateStateDownloading
-					m.startTime = time.Now()
-					return m, PerformUpdateCmd()
-				}
-				// Cancel - will be handled by parent
-				return m, nil
-			case "y", "Y":
-				// Quick confirm
+			switch {
+			case key.Matches(msg, m.keys.Confirm):
 				m.state = UpdateStateDownloading
 				m.startTime = time.Now()
 				return m, PerformUpdateCmd()
-			case "n", "N":
-				// Quick cancel - will be handled by parent
-				return m, nil
+			case key.Matches(msg, m.keys.Cancel):
+				m.dismissed = true
 			}
 
 		case UpdateStateSuccess, UpdateStateError:
-			// Any key to dismiss
-			switch msg.String() {
-			case "enter", "esc", "q":
-				// Will be handled by parent to close modal
-				return m, nil
+			if key.Matches(msg, m.keys.Confirm, m.keys.Cancel) || msg.String() == "q" {
+				m.dismissed = true
 			}
 		}
 
@@ -187,27 +170,19 @@ func (m UpdateModal) View() string {
 	switch m.state {
 	case UpdateStateConfirm:
 		opts.Title = "Update Available"
-		opts.MinBodyRows = 4 // version pair, question, and actionable focus row
-		opts.Footer = []string{"←/→ select  [Y] Update  [N] Cancel  [Enter] Select  Esc cancel", "←/→ Y/N Enter select Esc cancel"}
+		opts.MinBodyRows = 3 // version pair and question
 	case UpdateStateSuccess:
 		opts.Title = "Update Complete!"
 		opts.Accent = ColorStatusOpen
-		opts.Footer = []string{"[Enter] Close  Esc/q close", "Enter Esc/q close"}
 	case UpdateStateError:
 		opts.Title = "Update Failed"
 		opts.Accent = ColorStatusBlocked
-		opts.Footer = []string{"[Enter] Close  Esc/q close", "Enter Esc/q close"}
 	}
 
 	// Version styles
 	currentVersionStyle := m.theme.Text.Body
 
 	newVersionStyle := m.theme.Text.Body
-
-	// Button styles
-	buttonStyle := m.theme.Text.Body.Padding(0, 1)
-
-	selectedButtonStyle := m.theme.Text.Selected.Padding(0, 1)
 
 	successStyle := lipgloss.NewStyle().
 		Foreground(ColorStatusOpen).
@@ -232,19 +207,6 @@ func (m UpdateModal) View() string {
 		b.WriteString("\n")
 
 		b.WriteString("Would you like to update now?\n")
-
-		// Buttons
-		var updateBtn, cancelBtn string
-		if m.confirmFocus == 0 {
-			updateBtn = selectedButtonStyle.Render("> Update")
-			cancelBtn = buttonStyle.Render(" Cancel ")
-		} else {
-			updateBtn = buttonStyle.Render(" Update ")
-			cancelBtn = selectedButtonStyle.Render("> Cancel")
-		}
-		b.WriteString(updateBtn)
-		b.WriteString("  ")
-		b.WriteString(cancelBtn)
 
 	case UpdateStateDownloading:
 		b.WriteString(m.renderSpinner())
@@ -321,9 +283,9 @@ func (m UpdateModal) IsConfirming() bool {
 	return m.state == UpdateStateConfirm
 }
 
-// IsCancelled returns true if user selected Cancel
-func (m UpdateModal) IsCancelled() bool {
-	return m.state == UpdateStateConfirm && m.confirmFocus == 1
+// Dismissed reports that the user cancelled the confirm or closed a result.
+func (m UpdateModal) Dismissed() bool {
+	return m.dismissed
 }
 
 // IsComplete returns true if the update is done (success or error)

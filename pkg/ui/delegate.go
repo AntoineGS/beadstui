@@ -113,13 +113,10 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 	row = ansi.Truncate(row, bodyWidth, "")
 	row += strings.Repeat(" ", bodyWidth-lipgloss.Width(row)) + quickWinMarker
 
-	// Classic full-row selection replaces inline styles so nested ANSI resets
-	// and badge backgrounds cannot punch holes in the highlight.
-	rowStyle := lipgloss.NewStyle().Width(width).MaxWidth(width)
 	if isSelected {
-		row = t.Text.Selected.Width(width).MaxWidth(width).Render(ansi.Strip(row))
+		row = renderSelectedRow(t, row, width)
 	} else {
-		row = rowStyle.Render(row)
+		row = lipgloss.NewStyle().Width(width).MaxWidth(width).Render(row)
 	}
 
 	fmt.Fprint(w, row)
