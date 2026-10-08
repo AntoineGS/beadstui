@@ -1,6 +1,6 @@
 # Shared popup rendering
 
-Status: proposed design; implementation has not started.
+Status: approved design; implementation in progress, pending whole-branch review.
 
 ## Purpose
 

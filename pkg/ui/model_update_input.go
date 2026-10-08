@@ -2240,8 +2240,10 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (Model, tea.Cmd) {
 	m.applyListDetailSizing(bodyW, bodyHeight)
 	m.updateListDelegate()
 	m.labelDashboard.SetSize(bodyW, bodyHeight)
-	m.labelPicker.SetSize(m.width, bodyHeight)
-	m.repoPicker.SetSize(m.width, bodyHeight)
+	popupWidth, popupHeight := max(0, m.width), max(0, m.height-1)
+	m.labelPicker.SetSize(popupWidth, popupHeight)
+	m.repoPicker.SetSize(popupWidth, popupHeight)
+	m.resizeActivePopup(popupWidth, popupHeight)
 
 	// Bump the generation counter and schedule phase 2 after the settle delay.
 	// Any prior pending resizeSettledMsg with an older gen is ignored by
@@ -2252,6 +2254,39 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (Model, tea.Cmd) {
 		return resizeSettledMsg{gen: gen}
 	})
 	return m, cmd
+}
+
+// resizeActivePopup forwards only layout budgets; buffers, commands, and
+// interaction state belong to the existing modal models.
+func (m *Model) resizeActivePopup(width, height int) {
+	switch m.activeModal {
+	case ModalFieldSelect:
+		m.fieldSelect.SetSize(width, height)
+	case ModalFieldPicker:
+		m.fieldPicker.SetSize(width, height)
+	case ModalFieldInput:
+		m.fieldInput.SetSize(width, height)
+	case ModalLongformEdit:
+		m.longformEdit.SetSize(width, height)
+	case ModalRecipePicker:
+		m.recipePicker.SetSize(width, height)
+	case ModalSettings:
+		m.settingsModal.SetSize(width, height)
+	case ModalSettingsMenu:
+		m.settingsMenu.SetSize(width, height)
+	case ModalRepoPicker:
+		m.repoPicker.SetSize(width, height)
+	case ModalLabelPicker:
+		m.labelPicker.SetSize(width, height)
+	case ModalAgentPrompt:
+		m.agentPromptModal.SetSize(width, height)
+	case ModalCassSession:
+		m.cassModal.SetSize(width, height)
+	case ModalUpdate:
+		m.updateModal.SetSize(width, height)
+	case ModalBQLQuery:
+		m.bqlQuery.SetSize(width, height)
+	}
 }
 
 // applyWindowSizeHeavy runs the expensive phase of resize: rebuilds the Glamour
@@ -2698,7 +2733,7 @@ func (m Model) alertsModalItemAtY(my int) (int, bool) {
 	}
 	// Day-separator trim must mirror renderNotificationsTab (bt-l5zk) so
 	// click-to-row math stays aligned with the visible layout.
-	end = trimEndForDaySeparators(active, start, end, pageSize)
+	end = trimEndForDaySeparators(active, start, end, 2*pageSize)
 	row := 0
 	var prevDate string
 	for i := start; i < end; i++ {

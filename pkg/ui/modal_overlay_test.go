@@ -123,6 +123,109 @@ func TestBQLPopup_BoundedQueryErrorAndHistory(t *testing.T) {
 	}
 }
 
+func TestEditPopupResize_PreservesCursorAndFits(t *testing.T) {
+	m := newSizedModel(t, fieldEditTestIssues(), 120, 32)
+	mustSelectTarget(t, &m)
+	m.requestFieldEdit()
+	m.fieldSelect.MoveDown()
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 36, Height: 12})
+	got := updated.(Model)
+	if got.fieldSelect.SelectedField() != "priority" || got.activeModal != ModalFieldSelect {
+		t.Fatal("resize changed edit selection or modal")
+	}
+	assertPopupBounds(t, got.fieldSelect.View(), 36, 11)
+	popupFindRow(t, got.fieldSelect.View(), "esc")
+}
+
+func TestPopupResize_AllWidgetModalsKeepStateAndFit(t *testing.T) {
+	for _, modal := range []ModalType{ModalFieldPicker, ModalFieldInput, ModalLongformEdit, ModalRecipePicker, ModalSettings, ModalSettingsMenu, ModalRepoPicker, ModalLabelPicker, ModalAgentPrompt, ModalCassSession, ModalUpdate, ModalBQLQuery} {
+		t.Run(fmt.Sprint(modal), func(t *testing.T) {
+			m := newSizedModel(t, fieldEditTestIssues(), 120, 32)
+			m.fieldPicker = NewStatusPickerModal("open", m.theme)
+			m.fieldPicker.MoveDown()
+			m.fieldInput = NewFieldInputModal("title", "Title", "typed draft", m.theme)
+			m.longformEdit = NewLongformEditModal("description", "Description", "original", m.theme)
+			m.longformEdit.textarea.SetValue("dirty draft")
+			m.longformEdit.escArmed = true
+			m.agentPromptModal = NewAgentPromptModal("/test/AGENTS.md", "AGENTS.md", m.theme)
+			m.cassModal = NewCassSessionModal("bead", cass.CorrelationResult{}, m.theme)
+			m.updateModal = NewUpdateModal("v1.0.0", "", m.theme)
+			m.bqlQuery = NewBQLQueryModal(m.theme)
+			m.bqlQuery.input.SetValue("status:open")
+			m.openModal(modal)
+			view := func(m Model) string {
+				switch modal {
+				case ModalFieldPicker:
+					return m.fieldPicker.View()
+				case ModalFieldInput:
+					return m.fieldInput.View()
+				case ModalLongformEdit:
+					return m.longformEdit.View()
+				case ModalRecipePicker:
+					return m.recipePicker.View()
+				case ModalSettings:
+					return m.settingsModal.View()
+				case ModalSettingsMenu:
+					return m.settingsMenu.View()
+				case ModalRepoPicker:
+					return m.repoPicker.View()
+				case ModalLabelPicker:
+					return m.labelPicker.View()
+				case ModalAgentPrompt:
+					return m.agentPromptModal.View()
+				case ModalCassSession:
+					return m.cassModal.View()
+				case ModalUpdate:
+					return m.updateModal.View()
+				case ModalBQLQuery:
+					return m.bqlQuery.View()
+				}
+				return ""
+			}
+			for _, size := range []PopupSize{{36, 12}, {8, 3}, {0, 0}, {80, 24}} {
+				updated, _ := m.Update(tea.WindowSizeMsg{Width: size.Width, Height: size.Height})
+				m = updated.(Model)
+				out := view(m)
+				assertPopupBounds(t, strings.TrimLeft(out, "\n"), size.Width, max(0, size.Height-1))
+				if size.Width == 0 && out != "" {
+					t.Fatal("zero-size message left popup visible")
+				}
+				if m.activeModal != modal || m.fieldPicker.cursor != 1 || m.fieldInput.Value() != "typed draft" || m.longformEdit.textarea.Value() != "dirty draft" || m.longformEdit.original != "original" || !m.longformEdit.escArmed || m.bqlQuery.Value() != "status:open" {
+					t.Fatal("resize changed interaction or draft state")
+				}
+			}
+		})
+	}
+}
+
+func TestPopupOpen_UsesBodyBudget(t *testing.T) {
+	m := newSizedModel(t, fieldEditTestIssues(), 36, 12)
+	m = m.handleAgentFileCheck(AgentFileCheckMsg{ShouldPrompt: true, FilePath: "/test/AGENTS.md", FileType: "AGENTS.md"})
+	assertPopupBounds(t, m.agentPromptModal.View(), 36, 11)
+	m.updateAvailable = true
+	m.updateTag = "v1.0.0"
+	m.showSelfUpdateModal()
+	assertPopupBounds(t, m.updateModal.View(), 36, 11)
+}
+
+func TestNotificationsPopup_ShortWindowShowsSelectedEvent(t *testing.T) {
+	for _, height := range []int{16, 24, 40} {
+		m := seedModel()
+		m.width = 60
+		m.height = height
+		seedManyNotifications(&m, 30)
+		m.activeTab = TabNotifications
+		m.openModal(ModalAlerts)
+		for cursor := 0; cursor < 30; cursor++ {
+			m.notificationsCursor = cursor
+			out := m.renderAlertsPanel()
+			if !strings.Contains(ansi.Strip(out), "▸") {
+				t.Fatalf("selected notification %d disappeared at height %d:\n%s", cursor, height, ansi.Strip(out))
+			}
+		}
+	}
+}
+
 // TestAlertsModalOccludesDetailPane is a regression guard for bt-l5xu and
 // bt-v8he: the shared alerts/notifications modal must occlude the underlying
 // detail pane (bt-l5xu, no bleed-through of body text) AND render at a

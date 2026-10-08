@@ -431,7 +431,7 @@ func (m Model) alertsPopupOpts() PopupOpts {
 		opts.Title = "Notifications"
 		opts.RightLabel = fmt.Sprintf("(%d)", len(m.visibleNotifications()))
 		opts.Accent = m.theme.Primary
-		opts.MinBodyRows = 6
+		opts.MinBodyRows = 8
 	}
 	opts.Footer = m.alertsPopupFooter()
 	return opts
@@ -456,7 +456,7 @@ func (m Model) alertsPopupFooter() []string {
 		fmt.Sprintf("j/k: nav  ←/→/PgUp/PgDn: page  Home/End: ends  enter: open  t: filter  c: dismiss  C: all  %s  esc: close", dismiss),
 		fmt.Sprintf("j/k: nav  ←/→: page  enter: open  t: filter  c/C: dismiss  %s  esc: close", dismiss),
 		"j/k  ←/→/PgUp/PgDn: page  enter  t: filter  c/C  d  esc",
-		"j/k ←/→ enter t c/C d esc",
+		"j/k ←/→ page enter t c/C d esc",
 	}
 }
 
@@ -485,14 +485,11 @@ func (m Model) alertsPageSize() int {
 	return n
 }
 
-// notifPageSize is the number of notification rows per page: the visible-line
-// budget minus one row reserved for the cursor-summary expand line.
+// notifPageSize is the number of events per page, reserving day separators.
 func (m Model) notifPageSize() int {
-	n := m.alertsVisibleLines() - 1
-	if n < 1 {
-		n = 1
-	}
-	return n
+	// Each event may need a day separator. Reserve one additional row for
+	// selected-summary expansion and four for summary/above/below chrome.
+	return max(1, (m.alertsPopupLayout().BodyHeight-5)/2)
 }
 
 // pageJumpCursor returns the cursor index at the TOP of the page `delta`
@@ -1030,7 +1027,7 @@ func (m Model) renderNotificationsTab() string {
 	// before the very first row of the page so users always know which day
 	// they are anchored on. Each separator consumes a row from the page
 	// budget; trim `end` so events + separators still fit within pageSize.
-	end = trimEndForDaySeparators(active, start, end, pageSize)
+	end = trimEndForDaySeparators(active, start, end, 2*pageSize)
 
 	rowsWritten := 0
 	var prevDate string
@@ -1071,7 +1068,7 @@ func (m Model) renderNotificationsTab() string {
 	// Pad item rows to pageSize for visual stability — the page indicator
 	// below lands at the same row regardless of how many items are on this
 	// page (matches alerts tab's padding at renderAlertsTab).
-	for i := rowsWritten; i < pageSize; i++ {
+	for i := rowsWritten; i < 2*pageSize+1; i++ {
 		sb.WriteString("\n")
 	}
 
