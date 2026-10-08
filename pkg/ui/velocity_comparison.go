@@ -188,16 +188,12 @@ func (m *VelocityComparisonModel) View() string {
 	var sb strings.Builder
 
 	// Title
-	titleStyle := lipgloss.NewStyle().
-		Foreground(t.Primary).
-		Bold(true)
+	titleStyle := t.Text.Title
 	sb.WriteString(titleStyle.Render("Velocity Comparison"))
 	sb.WriteString("\n\n")
 
 	// Table header
-	headerStyle := lipgloss.NewStyle().
-		Foreground(t.Secondary).
-		Bold(true)
+	headerStyle := t.Text.Heading
 
 	// Column widths
 	labelWidth := 20
@@ -226,16 +222,14 @@ func (m *VelocityComparisonModel) View() string {
 	sb.WriteString("\n")
 
 	// Separator
-	sepStyle := lipgloss.NewStyle().Foreground(t.Secondary)
+	sepStyle := lipgloss.NewStyle().Foreground(t.Border)
 	separator := strings.Repeat("─", min(len(header)+2, m.width-2))
 	sb.WriteString(sepStyle.Render(separator))
 	sb.WriteString("\n")
 
 	// Data rows
 	if len(m.data) == 0 {
-		dimStyle := lipgloss.NewStyle().
-			Foreground(t.Secondary).
-			Italic(true)
+		dimStyle := t.Text.Metadata
 		sb.WriteString(dimStyle.Render("  No velocity data available"))
 		sb.WriteString("\n")
 	} else {
@@ -250,12 +244,9 @@ func (m *VelocityComparisonModel) View() string {
 			isSelected := i == m.cursor
 
 			// Row style
-			rowStyle := lipgloss.NewStyle()
+			rowStyle := t.Text.Body
 			if isSelected {
-				rowStyle = rowStyle.
-					Foreground(t.Primary).
-					Bold(true).
-					Background(ThemeBg("#333"))
+				rowStyle = t.Text.Selected
 			}
 
 			// Truncate label if needed
@@ -265,16 +256,16 @@ func (m *VelocityComparisonModel) View() string {
 			}
 
 			// Format trend with color (bt-pxbc: track semantic theme tokens)
-			trendStyle := lipgloss.NewStyle()
+			trendStyle := rowStyle // Trend colors retain meaning, selection retains attributes/background.
 			switch row.Trend {
 			case "accelerating":
-				trendStyle = trendStyle.Foreground(ColorSuccess)
+				trendStyle = trendStyle.Foreground(t.Success)
 			case "decelerating":
-				trendStyle = trendStyle.Foreground(ColorDanger)
+				trendStyle = trendStyle.Foreground(t.Danger)
 			case "stable":
 				trendStyle = trendStyle.Foreground(t.Secondary)
 			case "erratic":
-				trendStyle = trendStyle.Foreground(ColorWarning)
+				trendStyle = trendStyle.Foreground(t.Warning)
 			default:
 				trendStyle = trendStyle.Foreground(t.Secondary)
 			}
@@ -285,7 +276,7 @@ func (m *VelocityComparisonModel) View() string {
 			}
 
 			// Format sparkline
-			sparkStyle := lipgloss.NewStyle().Foreground(ColorInfo)
+			sparkStyle := rowStyle.Foreground(t.Info)
 
 			// Build row string
 			rowText := fmt.Sprintf("%-*s %*d %*d %*d %*d %*.1f ",
@@ -304,7 +295,7 @@ func (m *VelocityComparisonModel) View() string {
 
 			sb.WriteString(rowStyle.Render(prefix + rowText))
 			sb.WriteString(trendStyle.Render(trendText))
-			sb.WriteString(" ")
+			sb.WriteString(rowStyle.Render(" "))
 			sb.WriteString(sparkStyle.Render(row.SparklineBar))
 			sb.WriteString("\n")
 		}
@@ -312,18 +303,14 @@ func (m *VelocityComparisonModel) View() string {
 		// Show scroll indicator if needed
 		if len(m.data) > visibleRows {
 			scrollInfo := fmt.Sprintf("  [%d-%d of %d]", m.scrollOffset+1, endIdx, len(m.data))
-			dimStyle := lipgloss.NewStyle().
-				Foreground(t.Secondary).
-				Italic(true)
+			dimStyle := t.Text.Metadata
 			sb.WriteString(dimStyle.Render(scrollInfo))
 			sb.WriteString("\n")
 		}
 	}
 
 	// Footer hints
-	footerStyle := lipgloss.NewStyle().
-		Foreground(t.Secondary).
-		Italic(true)
+	footerStyle := t.Text.Metadata
 	sb.WriteString("\n")
 	sb.WriteString(footerStyle.Render("j/k: navigate | enter: filter by label | esc: back"))
 

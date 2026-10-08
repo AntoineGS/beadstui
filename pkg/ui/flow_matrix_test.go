@@ -4,9 +4,55 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/lipgloss/v2"
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
+	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/ui"
 )
+
+func TestFlowTextRole(t *testing.T) {
+	theme := ui.DefaultTheme()
+	theme.Text.Title = lipgloss.NewStyle().Underline(true).Bold(false)
+	theme.Text.Metadata = lipgloss.NewStyle().Underline(true).Italic(false)
+	m := ui.NewFlowMatrixModel(theme)
+	m.SetData(&analysis.CrossLabelFlow{Labels: []string{"api", "web"}, FlowMatrix: [][]int{{0, 2}, {0, 0}}, TotalCrossLabelDeps: 2}, nil)
+	m.SetSize(120, 30)
+	out := m.View()
+	if !strings.Contains(out, theme.Text.Title.PaddingRight(2).Render("DEPENDENCY FLOW")) {
+		t.Error("flow title ignored role")
+	}
+	if !strings.Contains(out, theme.Text.Metadata.Render("Press Enter to see issues")) {
+		t.Error("flow hint ignored role")
+	}
+}
+
+func TestFlowPlainSelectedTextRole(t *testing.T) {
+	theme := ui.DefaultTheme()
+	theme.Text.Selected = lipgloss.NewStyle().Foreground(theme.Warning).Background(theme.Primary).Bold(false).Italic(false).Underline(false)
+	theme.Text.Heading = lipgloss.NewStyle().Underline(true).Bold(false)
+	theme.Text.Metadata = lipgloss.NewStyle().Italic(false).Bold(false)
+	m := ui.NewFlowMatrixModel(theme)
+	m.SetData(&analysis.CrossLabelFlow{Labels: []string{"api", "web"}, FlowMatrix: [][]int{{0, 2}, {0, 0}}, TotalCrossLabelDeps: 2, BottleneckLabels: []string{"api"}}, nil)
+	m.SetSize(120, 30)
+	out := m.View()
+	if !strings.Contains(out, theme.Text.Selected.Foreground(theme.Blocked).Width(12).Render("api         ")) {
+		t.Error("bottleneck label lost semantic color/selected attributes")
+	}
+	if !strings.Contains(out, theme.Text.Heading.Render("IMPACT SUMMARY")) {
+		t.Error("flow heading ignored role")
+	}
+	if !strings.Contains(out, "Press Enter to see issues") {
+		t.Error("plain hint forced attributes")
+	}
+	m.SetData(&analysis.CrossLabelFlow{Labels: []string{"api", "web"}, FlowMatrix: [][]int{{0, 2}, {0, 0}}, TotalCrossLabelDeps: 2}, []model.Issue{{ID: "ordinary-id", Title: "ordinary title", Labels: []string{"api"}, Status: model.StatusOpen}})
+	m.OpenDrilldown()
+	out = m.View()
+	for _, text := range []string{"ordinary-id", "ordinary title"} {
+		if !strings.Contains(out, theme.Text.Selected.Render(text)) {
+			t.Errorf("selected drilldown %q lost background/false attributes", text)
+		}
+	}
+}
 
 // =============================================================================
 // FlowMatrixModel Tests (Interactive Dashboard) - bv-w4l0

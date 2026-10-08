@@ -5,12 +5,62 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/ui"
 )
+
+func TestInsightsTextRole(t *testing.T) {
+	theme := ui.DefaultTheme()
+	theme.Text.Selected = lipgloss.NewStyle().Underline(true).Bold(false)
+	theme.Text.Metadata = lipgloss.NewStyle().Underline(true).Italic(false)
+	insights := createTestInsights()
+	insights.Stats = nil // All fixture metrics are available; no async analysis required.
+	m := ui.NewInsightsModel(insights, nil, theme)
+	m.SetSize(180, 50)
+	out := m.View()
+	if !strings.Contains(out, theme.Text.Selected.Render("bottleneck-1")) {
+		t.Error("selected metric ID ignored role")
+	}
+	if !strings.Contains(out, theme.Text.Metadata.Render("Betweenness Centrality")) {
+		t.Error("metric explanation ignored metadata role")
+	}
+}
+
+func TestInsightsPlainSelectedTextRole(t *testing.T) {
+	theme := ui.DefaultTheme()
+	theme.Text.Selected = lipgloss.NewStyle().Foreground(theme.Warning).Background(theme.Primary).Bold(false).Italic(false).Underline(false)
+	theme.Text.Heading = lipgloss.NewStyle().Underline(true).Bold(false)
+	theme.Text.Body = lipgloss.NewStyle().Underline(true).Bold(false)
+	theme.Text.Metadata = lipgloss.NewStyle().Italic(false).Bold(false)
+	insights := createTestInsights()
+	insights.Stats = nil
+	issues := createTestIssueMap()
+	issues["bottleneck-1"].Description = "ordinary support"
+	m := ui.NewInsightsModel(insights, issues, theme)
+	m.SetSize(320, 50)
+	out := m.View()
+	for _, text := range []string{"Critical Junction", "ordinary support"} {
+		if !strings.Contains(out, theme.Text.Selected.Render(text)) {
+			t.Errorf("selected %q lost background/false attributes", text)
+		}
+	}
+	if !strings.Contains(out, theme.Text.Heading.Render("Bottlenecks (3)")) {
+		t.Error("metric heading ignored own role")
+	}
+	if !strings.Contains(out, theme.Text.Body.Render("Secondary Junction")) {
+		t.Error("ordinary metric title ignored body role")
+	}
+	if !strings.Contains(ansi.Strip(out), "0.850") {
+		t.Error("metric value disappeared")
+	}
+	if strings.Contains(out, "\x1b[3m") {
+		t.Error("plain explanation forced italic")
+	}
+}
 
 // createTestInsights creates a test Insights struct with sample data
 func createTestInsights() analysis.Insights {
@@ -910,7 +960,7 @@ func TestInsightsResponsiveColumnCount(t *testing.T) {
 		// still room for a 3-col main grid (mainWidth >= 90) after subtracting
 		// it; at narrower widths the detail panel is suppressed.
 		{"col_3_w100", 100, 3},
-		{"col_3_w121", 121, 3}, // canonical breakage point: detail suppressed
+		{"col_3_w121", 121, 3},        // canonical breakage point: detail suppressed
 		{"col_3_w160_detail", 160, 3}, // detail active, still 3 metric cols
 	}
 

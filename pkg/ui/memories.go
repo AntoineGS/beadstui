@@ -311,11 +311,11 @@ func (m MemoriesModel) renderNotes() string {
 		if n != 1 {
 			noun = "sources"
 		}
-		style := m.theme.Base.Foreground(m.theme.Muted).Italic(true)
+		style := m.theme.Text.Metadata
 		lines = append(lines, style.Render(fmt.Sprintf("%d Gas City %s hidden (own lens, coming later)", n, noun)))
 	}
 	if n := len(m.aggregate.Unavailable); n > 0 {
-		style := m.theme.Base.Foreground(m.theme.Warning)
+		style := m.theme.Text.Body.Foreground(m.theme.Warning)
 		shown := n
 		if shown > 3 {
 			shown = 3
@@ -405,8 +405,8 @@ func (m MemoriesModel) VisibleProjectCount() int {
 // renderEmptyState is the full-screen empty state shown only when every
 // attempted source had zero memories (design spec S8).
 func (m MemoriesModel) renderEmptyState() string {
-	titleStyle := m.theme.Base.Bold(true)
-	bodyStyle := m.theme.Base.Foreground(m.theme.Muted)
+	titleStyle := m.theme.Text.Heading
+	bodyStyle := m.theme.Text.Metadata
 
 	lines := []string{
 		titleStyle.Render("No memories found"),
@@ -418,10 +418,10 @@ func (m MemoriesModel) renderEmptyState() string {
 		if n != 1 {
 			noun = "sources"
 		}
-		lines = append(lines, "", bodyStyle.Italic(true).Render(fmt.Sprintf("%d Gas City %s hidden (own lens, coming later)", n, noun)))
+		lines = append(lines, "", bodyStyle.Render(fmt.Sprintf("%d Gas City %s hidden (own lens, coming later)", n, noun)))
 	}
 	if n := len(m.aggregate.Unavailable); n > 0 {
-		lines = append(lines, "", m.theme.Base.Foreground(m.theme.Warning).Render(fmt.Sprintf("%d source%s unavailable", n, pluralSuffix(n))))
+		lines = append(lines, "", bodyStyle.Foreground(m.theme.Warning).Render(fmt.Sprintf("%d source%s unavailable", n, pluralSuffix(n))))
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Center, lines...)
@@ -440,12 +440,12 @@ func (m MemoriesModel) renderEmptyState() string {
 func (m MemoriesModel) renderMasterLines() string {
 	var lines []string
 	if m.searchActive {
-		inputStyle := m.theme.Base.Foreground(m.theme.Primary)
+		inputStyle := m.theme.Text.Heading
 		lines = append(lines, inputStyle.Render("Search: ")+m.searchInput.View())
 	}
 
 	if len(m.rows) == 0 {
-		lines = append(lines, m.theme.Base.Foreground(m.theme.Muted).Italic(true).Render("No matches"))
+		lines = append(lines, m.theme.Text.Metadata.Render("No matches"))
 		return strings.Join(lines, "\n")
 	}
 
@@ -463,13 +463,13 @@ func (m MemoriesModel) renderMasterLines() string {
 		row := m.rows[i]
 		switch row.kind {
 		case memoriesRowGroup:
-			lines = append(lines, m.theme.Header.Render(row.header))
+			lines = append(lines, m.theme.Text.Heading.Render(row.header))
 		default:
 			text := "  " + row.memory.Key
 			if i == m.cursor {
-				lines = append(lines, m.theme.Selected.Render(text))
+				lines = append(lines, m.theme.Text.Selected.Render(text))
 			} else {
-				lines = append(lines, m.theme.Base.Render(text))
+				lines = append(lines, m.theme.Text.Body.Render(text))
 			}
 		}
 	}
@@ -501,7 +501,7 @@ func (m MemoriesModel) detailContent(innerWidth, innerHeight int) string {
 	if ok {
 		body = mem.Body
 	}
-	wrapped := lipgloss.NewStyle().Width(innerWidth).Render(body)
+	wrapped := m.theme.Text.Body.Width(innerWidth).Render(body)
 	m.detail.SetWidth(innerWidth)
 	m.detail.SetHeight(innerHeight)
 	m.detail.SetContent(wrapped)
@@ -525,16 +525,18 @@ func (m MemoriesModel) renderSplitPanels(panelH int) string {
 	rightWidth := m.width - leftWidth
 
 	left := RenderTitledPanel(m.renderMasterLines(), PanelOpts{
-		Title:   fmt.Sprintf("Memories (%d)", m.memoryRowCount()),
-		Width:   leftWidth,
-		Height:  panelH,
-		Focused: !m.detailFocused,
+		TitleStyle: &m.theme.Text.Heading,
+		Title:      fmt.Sprintf("Memories (%d)", m.memoryRowCount()),
+		Width:      leftWidth,
+		Height:     panelH,
+		Focused:    !m.detailFocused,
 	})
 	right := RenderTitledPanel(m.detailContent(rightWidth-4, panelH-2), PanelOpts{
-		Title:   m.detailTitleText(),
-		Width:   rightWidth,
-		Height:  panelH,
-		Focused: m.detailFocused,
+		TitleStyle: &m.theme.Text.Heading,
+		Title:      m.detailTitleText(),
+		Width:      rightWidth,
+		Height:     panelH,
+		Focused:    m.detailFocused,
 	})
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, right)
@@ -547,17 +549,19 @@ func (m MemoriesModel) renderSplitPanels(panelH int) string {
 func (m MemoriesModel) renderSinglePanel(panelH int) string {
 	if m.detailFocused {
 		return RenderTitledPanel(m.detailContent(m.width-4, panelH-2), PanelOpts{
-			Title:   m.detailTitleText(),
-			Width:   m.width,
-			Height:  panelH,
-			Focused: true,
+			TitleStyle: &m.theme.Text.Heading,
+			Title:      m.detailTitleText(),
+			Width:      m.width,
+			Height:     panelH,
+			Focused:    true,
 		})
 	}
 	return RenderTitledPanel(m.renderMasterLines(), PanelOpts{
-		Title:   fmt.Sprintf("Memories (%d) - tab/enter: detail", m.memoryRowCount()),
-		Width:   m.width,
-		Height:  panelH,
-		Focused: true,
+		TitleStyle: &m.theme.Text.Heading,
+		Title:      fmt.Sprintf("Memories (%d) - tab/enter: detail", m.memoryRowCount()),
+		Width:      m.width,
+		Height:     panelH,
+		Focused:    true,
 	})
 }
 

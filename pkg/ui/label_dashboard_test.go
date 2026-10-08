@@ -1,11 +1,45 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 )
+
+func TestLabelDashboardTextRole(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Heading = lipgloss.NewStyle().Underline(true).Bold(false)
+	theme.Text.Body = lipgloss.NewStyle().Underline(true).Bold(false)
+	m := NewLabelDashboardModel(theme)
+	m.SetSize(120, 20)
+	m.SetData([]analysis.LabelHealth{{Label: "example", Health: 90, HealthLevel: analysis.HealthLevelHealthy}, {Label: "ordinary", Health: 90, HealthLevel: analysis.HealthLevelHealthy}})
+	header := strings.Split(m.View(), "\n")[0]
+	if header != theme.Text.Heading.Render(ansi.Strip(header)) {
+		t.Fatal("column heading ignored configured role")
+	}
+	if !strings.Contains(m.View(), theme.Text.Body.Render("ordinary")) {
+		t.Error("ordinary label ignored body role")
+	}
+}
+
+func TestLabelDashboardSelectedTextRole(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Selected = lipgloss.NewStyle().Foreground(theme.Warning).Background(theme.Primary).Bold(false).Italic(false).Underline(false)
+	m := NewLabelDashboardModel(theme)
+	m.SetSize(120, 20)
+	m.SetData([]analysis.LabelHealth{{Label: "example", Health: 90, HealthLevel: analysis.HealthLevelHealthy, Blocked: 2}})
+	out := m.View()
+	if !strings.Contains(out, theme.Text.Selected.Foreground(theme.Blocked).Render("2")) {
+		t.Error("semantic blocked count lost selected attributes/background")
+	}
+	if !strings.Contains(out, theme.Text.Selected.Foreground(theme.Open).Render("█████████░")) {
+		t.Error("health chart lost semantic foreground/selected attributes")
+	}
+}
 
 // createTheme creates a theme for testing
 func createTheme() Theme {

@@ -1,16 +1,76 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"charm.land/lipgloss/v2"
+
 	"github.com/seanmartinsmith/beadstui/pkg/cass"
 	"github.com/seanmartinsmith/beadstui/pkg/correlation"
 	"github.com/seanmartinsmith/beadstui/pkg/projects"
 )
+
+func TestHistoryTextRole(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Title = lipgloss.NewStyle().Underline(true).Bold(false)
+	theme.Text.Selected = lipgloss.NewStyle().Underline(true).Bold(false)
+	theme.Text.Metadata = lipgloss.NewStyle().Underline(true).Italic(false)
+	theme.Text.Body = lipgloss.NewStyle().Underline(true).Bold(false)
+	h := NewHistoryModel(createTestHistoryReport(), theme)
+	h.SetSize(180, 40)
+	if !strings.Contains(h.renderHeader(), theme.Text.Title.Padding(0, 1).Render("History")) {
+		t.Error("History title ignored role")
+	}
+	row := h.renderBeadLine(0, h.histories[0], 80)
+	if !strings.Contains(row, theme.Text.Selected.Render(h.histories[0].Title)) {
+		t.Error("selected history title ignored role")
+	}
+	if !strings.Contains(h.renderBeadLine(1, h.histories[1], 80), theme.Text.Body.Render(h.histories[1].Title)) {
+		t.Error("ordinary history title ignored body role")
+	}
+	if !strings.Contains(h.renderFilterLine(), theme.Text.Metadata.Padding(0, 1).Render("Showing all 3 beads with commits")) {
+		t.Error("history filter ignored metadata role")
+	}
+}
+
+func TestHistoryPlainSelectedTextRole(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Heading = lipgloss.NewStyle().Foreground(theme.Warning).Bold(false)
+	theme.Text.Metadata = lipgloss.NewStyle().Italic(false).Bold(false)
+	theme.Text.Selected = lipgloss.NewStyle().Foreground(theme.Warning).Background(theme.Primary).Bold(false).Italic(false).Underline(false)
+	h := NewHistoryModel(createTestHistoryReport(), theme)
+	h.SetSize(180, 40)
+	row := h.renderBeadLine(0, h.histories[0], 80)
+	for _, text := range []string{h.histories[0].Title, fmt.Sprintf("%d commits", len(h.histories[0].Commits))} {
+		if !strings.Contains(row, theme.Text.Selected.Render(text)) {
+			t.Errorf("selected text %q lost background/false attributes", text)
+		}
+	}
+	if !strings.Contains(row, theme.Text.Selected.Width(12).Render(h.histories[0].BeadID)) {
+		t.Error("selected ID lost role")
+	}
+	if !strings.Contains(h.renderListPanel(80, 20), theme.Text.Heading.Render("BEADS WITH HISTORY")) {
+		t.Error("panel did not use own heading")
+	}
+	commit := h.histories[0].Commits[0]
+	lines := h.renderCommitDetail(commit, 120, false)
+	typeIcon := commitTypeIndicator(commit.Message)
+	if typeIcon != "" {
+		typeIcon += " "
+	}
+	wantHeader := fmt.Sprintf("%s%s%s %s", theme.Text.Body.Render("  "), typeIcon, theme.Text.Metadata.Render(commit.ShortSHA), theme.Text.Metadata.Render("("+relativeTime(commit.Timestamp)+")"))
+	if lines[0] != wantHeader {
+		t.Error("plain commit time/ID forced attributes")
+	}
+	if !strings.Contains(strings.Join(lines, "\n"), theme.Text.Metadata.Foreground(theme.Open).Render(fmt.Sprintf("%.0f%% confidence", commit.Confidence*100))) {
+		t.Error("confidence semantics disappeared")
+	}
+}
 
 func createTestHistoryReport() *correlation.HistoryReport {
 	now := time.Now()

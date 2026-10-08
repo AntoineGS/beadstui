@@ -673,7 +673,7 @@ func (m *InsightsModel) View() string {
 	}
 
 	if m.extraText != "" {
-		return m.theme.Base.Render(m.extraText)
+		return m.theme.Text.Body.Render(m.extraText)
 	}
 
 	t := m.theme
@@ -695,7 +695,7 @@ func (m *InsightsModel) View() string {
 		if v.Estimated {
 			estimate = " (estimated)"
 		}
-		velocityLine = t.Base.Render(fmt.Sprintf("Velocity: 7d=%d, 30d=%d, avg=%.1fd%s%s",
+		velocityLine = t.Text.Body.Render(fmt.Sprintf("Velocity: 7d=%d, 30d=%d, avg=%.1fd%s%s",
 			v.Closed7, v.Closed30, v.AvgDays, weekly, estimate))
 	}
 
@@ -873,14 +873,11 @@ func (m *InsightsModel) renderMetricPanel(panel MetricPanel, width, height int, 
 
 	// Border/title colors (passed as overrides to RenderTitledPanel)
 	borderColor := t.Secondary
-	titleColor := t.Secondary
 	if isFocused {
 		borderColor = t.Primary
-		titleColor = t.Primary
 	}
 	if skipped {
 		borderColor = t.Subtext
-		titleColor = t.Subtext
 	}
 
 	// Border title: "icon Title (count)" or "icon Title [Skipped]"
@@ -895,10 +892,7 @@ func (m *InsightsModel) renderMetricPanel(panel MetricPanel, width, height int, 
 	var lines []string
 
 	// Subtitle: metric name
-	subtitleStyle := lipgloss.NewStyle().Foreground(t.Subtext).Italic(true)
-	if skipped {
-		subtitleStyle = subtitleStyle.Foreground(t.Subtext)
-	}
+	subtitleStyle := t.Text.Metadata
 	lines = append(lines, subtitleStyle.Render(info.ShortDesc))
 
 	// Explanation (if enabled) - render as markdown for **bold** etc.
@@ -909,9 +903,7 @@ func (m *InsightsModel) renderMetricPanel(panel MetricPanel, width, height int, 
 
 	// If metric was skipped, show skip reason instead of items
 	if skipped {
-		skipStyle := lipgloss.NewStyle().
-			Foreground(t.Subtext).
-			Italic(true).
+		skipStyle := t.Text.Metadata.
 			Width(width - 4).
 			Align(lipgloss.Center)
 
@@ -923,12 +915,12 @@ func (m *InsightsModel) renderMetricPanel(panel MetricPanel, width, height int, 
 		lines = append(lines, skipStyle.Render("Use --force-full-analysis to compute"))
 
 		return RenderTitledPanel(lipgloss.JoinVertical(lipgloss.Left, lines...), PanelOpts{
+			TitleStyle:  &t.Text.Heading,
 			Title:       panelTitle,
 			Width:       width + 2,
 			Height:      height + 2,
 			Focused:     isFocused,
 			BorderColor: borderColor,
-			TitleColor:  titleColor,
 		})
 	}
 
@@ -970,20 +962,19 @@ func (m *InsightsModel) renderMetricPanel(panel MetricPanel, width, height int, 
 	// Scroll indicator
 	if len(items) > visibleRows {
 		scrollInfo := fmt.Sprintf("↕ %d/%d", selectedIdx+1, len(items))
-		scrollStyle := lipgloss.NewStyle().
-			Foreground(t.Subtext).
+		scrollStyle := t.Text.Metadata.
 			Align(lipgloss.Center).
 			Width(width - 4)
 		lines = append(lines, scrollStyle.Render(scrollInfo))
 	}
 
 	return RenderTitledPanel(lipgloss.JoinVertical(lipgloss.Left, lines...), PanelOpts{
+		TitleStyle:  &t.Text.Heading,
 		Title:       panelTitle,
 		Width:       width + 2,
 		Height:      height + 2,
 		Focused:     isFocused,
 		BorderColor: borderColor,
-		TitleColor:  titleColor,
 	})
 }
 
@@ -1005,16 +996,15 @@ func (m *InsightsModel) renderInsightRow(id string, value float64, width int, is
 
 	// Selection indicator
 	if isSelected {
-		rowBuilder.WriteString(lipgloss.NewStyle().Foreground(t.Primary).Bold(true).Render("▸ "))
+		rowBuilder.WriteString(t.Text.Selected.Render("▸ "))
 	} else {
 		rowBuilder.WriteString("  ")
 	}
 
 	// Value badge
-	valueStyle := lipgloss.NewStyle().
-		Background(ColorBgHighlight).
+	valueStyle := t.Text.Badge.
+		Background(t.BgHighlight).
 		Foreground(t.Primary).
-		Bold(true).
 		Padding(0, 1)
 	rowBuilder.WriteString(valueStyle.Render(valueStr))
 	rowBuilder.WriteString(" ")
@@ -1050,9 +1040,9 @@ func (m *InsightsModel) renderInsightRow(id string, value float64, width int, is
 
 		title := truncateRunesHelper(issue.Title, titleWidth, "…")
 
-		titleStyle := lipgloss.NewStyle()
+		titleStyle := t.Text.Body
 		if isSelected {
-			titleStyle = titleStyle.Foreground(t.Primary).Bold(true)
+			titleStyle = t.Text.Selected
 		}
 		rowBuilder.WriteString(titleStyle.Render(title))
 
@@ -1061,16 +1051,19 @@ func (m *InsightsModel) renderInsightRow(id string, value float64, width int, is
 			// Clean up description - remove newlines, trim whitespace
 			desc := strings.Join(strings.Fields(issue.Description), " ")
 			desc = truncateRunesHelper(desc, descWidth, "…")
-			descStyle := lipgloss.NewStyle().Foreground(t.Subtext).Italic(true)
-			rowBuilder.WriteString(lipgloss.NewStyle().Foreground(t.Secondary).Render(" - "))
+			descStyle := t.Text.Metadata
+			if isSelected {
+				descStyle = t.Text.Selected
+			}
+			rowBuilder.WriteString(descStyle.Render(" - "))
 			rowBuilder.WriteString(descStyle.Render(desc))
 		}
 	} else {
 		// Fallback: just show ID
 		idTrunc := truncateRunesHelper(id, width-12-len(valueStr), "…")
-		idStyle := lipgloss.NewStyle().Foreground(t.Secondary)
+		idStyle := t.Text.Metadata
 		if isSelected {
-			idStyle = idStyle.Foreground(t.Primary).Bold(true)
+			idStyle = t.Text.Selected
 		}
 		rowBuilder.WriteString(idStyle.Render(idTrunc))
 	}
@@ -1088,14 +1081,11 @@ func (m *InsightsModel) renderCyclesPanel(width, height int, t Theme) string {
 
 	// Border/title colors
 	borderColor := t.Secondary
-	titleColor := t.Secondary
 	if isFocused {
 		borderColor = t.Primary
-		titleColor = t.Primary
 	}
 	if skipped {
 		borderColor = t.Subtext
-		titleColor = t.Subtext
 	}
 
 	// Border title
@@ -1109,7 +1099,7 @@ func (m *InsightsModel) renderCyclesPanel(width, height int, t Theme) string {
 	// Use slice + JoinVertical pattern (like Board) instead of strings.Builder + manual newlines
 	var lines []string
 
-	subtitleStyle := lipgloss.NewStyle().Foreground(t.Subtext).Italic(true)
+	subtitleStyle := t.Text.Metadata
 	lines = append(lines, subtitleStyle.Render(info.ShortDesc))
 
 	// Explanation (if enabled) - render as markdown for **bold** etc.
@@ -1120,9 +1110,7 @@ func (m *InsightsModel) renderCyclesPanel(width, height int, t Theme) string {
 
 	// If skipped, show skip reason
 	if skipped {
-		skipStyle := lipgloss.NewStyle().
-			Foreground(t.Subtext).
-			Italic(true).
+		skipStyle := t.Text.Metadata.
 			Width(width - 4).
 			Align(lipgloss.Center)
 
@@ -1135,20 +1123,18 @@ func (m *InsightsModel) renderCyclesPanel(width, height int, t Theme) string {
 
 		return RenderTitledPanel(lipgloss.JoinVertical(lipgloss.Left, lines...), PanelOpts{
 			Title:       panelTitle,
+			TitleStyle:  &t.Text.Heading,
 			Width:       width + 2,
 			Height:      height + 2,
 			Focused:     isFocused,
 			BorderColor: borderColor,
-			TitleColor:  titleColor,
 		})
 	}
 
 	if len(cycles) == 0 {
-		healthyStyle := lipgloss.NewStyle().
-			Foreground(t.Open).
-			Bold(true)
+		healthyStyle := t.Text.Body.Foreground(t.Open)
 		lines = append(lines, healthyStyle.Render(activeGlyphs.Success+" No cycles detected"))
-		lines = append(lines, lipgloss.NewStyle().Foreground(t.Subtext).Render("Graph is acyclic (DAG)"))
+		lines = append(lines, t.Text.Metadata.Render("Graph is acyclic (DAG)"))
 	} else {
 		selectedIdx := m.selectedIndex[PanelCycles]
 		visibleRows := height - 6
@@ -1179,15 +1165,15 @@ func (m *InsightsModel) renderCyclesPanel(width, height int, t Theme) string {
 			isSelected := isFocused && i == selectedIdx
 			prefix := "  "
 			if isSelected {
-				prefix = lipgloss.NewStyle().Foreground(t.Primary).Bold(true).Render("▸ ")
+				prefix = t.Text.Selected.Render("▸ ")
 			}
 
 			// Render cycle as chain
 			cycleStr := m.renderCycleChain(cycle, width-6, t)
 
-			warningStyle := lipgloss.NewStyle().Foreground(t.Blocked)
+			warningStyle := t.Text.Body.Foreground(t.Blocked)
 			if isSelected {
-				warningStyle = warningStyle.Bold(true)
+				warningStyle = t.Text.Selected.Foreground(t.Blocked)
 			}
 
 			lines = append(lines, prefix+warningStyle.Render(cycleStr))
@@ -1196,8 +1182,7 @@ func (m *InsightsModel) renderCyclesPanel(width, height int, t Theme) string {
 		// Scroll indicator
 		if len(cycles) > visibleRows {
 			scrollInfo := fmt.Sprintf("↕ %d/%d", selectedIdx+1, len(cycles))
-			scrollStyle := lipgloss.NewStyle().
-				Foreground(t.Subtext).
+			scrollStyle := t.Text.Metadata.
 				Align(lipgloss.Center).
 				Width(width - 4)
 			lines = append(lines, scrollStyle.Render(scrollInfo))
@@ -1210,7 +1195,7 @@ func (m *InsightsModel) renderCyclesPanel(width, height int, t Theme) string {
 		Height:      height + 2,
 		Focused:     isFocused,
 		BorderColor: borderColor,
-		TitleColor:  titleColor,
+		TitleStyle:  &t.Text.Heading,
 	})
 }
 
@@ -1222,10 +1207,8 @@ func (m *InsightsModel) renderPriorityPanel(width, height int, t Theme) string {
 
 	// Border/title colors
 	borderColor := t.Secondary
-	titleColor := t.Secondary
 	if isFocused {
 		borderColor = t.Primary
-		titleColor = t.Primary
 	}
 
 	// Border title with subtitle inline
@@ -1235,13 +1218,11 @@ func (m *InsightsModel) renderPriorityPanel(width, height int, t Theme) string {
 	var lines []string
 
 	// Subtitle as first content line
-	subtitleStyle := lipgloss.NewStyle().Foreground(t.Subtext).Italic(true)
+	subtitleStyle := t.Text.Metadata
 	lines = append(lines, subtitleStyle.Render(info.ShortDesc))
 
 	if len(picks) == 0 {
-		emptyStyle := lipgloss.NewStyle().
-			Foreground(t.Subtext).
-			Italic(true)
+		emptyStyle := t.Text.Metadata
 		lines = append(lines, emptyStyle.Render("No priority recommendations available. Run 'bt --robot-triage' to generate."))
 		return RenderTitledPanel(lipgloss.JoinVertical(lipgloss.Left, lines...), PanelOpts{
 			Title:       panelTitle,
@@ -1249,7 +1230,7 @@ func (m *InsightsModel) renderPriorityPanel(width, height int, t Theme) string {
 			Height:      height + 2,
 			Focused:     isFocused,
 			BorderColor: borderColor,
-			TitleColor:  titleColor,
+			TitleStyle:  &t.Text.Heading,
 		})
 	}
 
@@ -1305,8 +1286,7 @@ func (m *InsightsModel) renderPriorityPanel(width, height int, t Theme) string {
 	// Scroll indicator
 	if len(picks) > visibleItems {
 		scrollInfo := fmt.Sprintf("◀ %d/%d ▶", selectedIdx+1, len(picks))
-		scrollStyle := lipgloss.NewStyle().
-			Foreground(t.Subtext).
+		scrollStyle := t.Text.Metadata.
 			Align(lipgloss.Center).
 			Width(width - 4)
 		lines = append(lines, scrollStyle.Render(scrollInfo))
@@ -1314,9 +1294,7 @@ func (m *InsightsModel) renderPriorityPanel(width, height int, t Theme) string {
 
 	// Data hash footer (bv-93)
 	if m.triageDataHash != "" {
-		hashStyle := lipgloss.NewStyle().
-			Foreground(t.Subtext).
-			Italic(true).
+		hashStyle := t.Text.Metadata.
 			Align(lipgloss.Right).
 			Width(width - 4)
 		lines = append(lines, hashStyle.Render(activeGlyphs.BarChart+" "+m.triageDataHash))
@@ -1328,7 +1306,7 @@ func (m *InsightsModel) renderPriorityPanel(width, height int, t Theme) string {
 		Height:      height + 2,
 		Focused:     isFocused,
 		BorderColor: borderColor,
-		TitleColor:  titleColor,
+		TitleStyle:  &t.Text.Heading,
 	})
 }
 
@@ -1336,7 +1314,11 @@ func (m *InsightsModel) renderPriorityPanel(width, height int, t Theme) string {
 // label: 2-char label (e.g., "PR", "BW", "TI")
 // value: normalized 0.0-1.0
 // width: total width for the bar (including label)
-func (m *InsightsModel) renderMiniBar(label string, value float64, width int, t Theme) string {
+func (m *InsightsModel) renderMiniBar(label string, value float64, width int, selected bool, t Theme) string {
+	labelStyle := t.Text.Metadata
+	if selected {
+		labelStyle = t.Text.Selected
+	}
 	// Ensure value is in range
 	if value < 0 {
 		value = 0
@@ -1353,7 +1335,7 @@ func (m *InsightsModel) renderMiniBar(label string, value float64, width int, t 
 	if barWidth < 1 {
 		// Not enough space for any bar
 		if width >= prefixLen {
-			return lipgloss.NewStyle().Foreground(t.Subtext).Render(prefix)
+			return labelStyle.Render(prefix)
 		}
 		return ""
 	}
@@ -1367,16 +1349,15 @@ func (m *InsightsModel) renderMiniBar(label string, value float64, width int, t 
 	var barColor color.Color
 	switch {
 	case value >= 0.7:
-		barColor = ColorSuccess // Green - high
+		barColor = t.Success // Green - high
 	case value >= 0.4:
-		barColor = ColorWarning // Orange - medium
+		barColor = t.Warning // Orange - medium
 	default:
-		barColor = ColorMuted // Gray - low
+		barColor = t.Muted // Gray - low
 	}
 
-	labelStyle := lipgloss.NewStyle().Foreground(t.Subtext)
 	filledStyle := lipgloss.NewStyle().Foreground(barColor)
-	emptyStyle := lipgloss.NewStyle().Foreground(ColorBgHighlight)
+	emptyStyle := lipgloss.NewStyle().Foreground(t.BgHighlight)
 
 	filledBar := strings.Repeat("█", filled)
 	emptyBar := strings.Repeat("░", barWidth-filled)
@@ -1388,7 +1369,6 @@ func (m *InsightsModel) renderMiniBar(label string, value float64, width int, t 
 func (m *InsightsModel) renderPriorityItem(pick analysis.TopPick, width, height int, isSelected bool, t Theme) string {
 	// Border/title colors
 	borderColor := t.Secondary
-	titleColor := t.Primary
 	if isSelected {
 		borderColor = t.Primary
 	}
@@ -1400,7 +1380,7 @@ func (m *InsightsModel) renderPriorityItem(pick analysis.TopPick, width, height 
 
 	// Selection indicator
 	if isSelected {
-		sb.WriteString(lipgloss.NewStyle().Foreground(t.Primary).Bold(true).Render("▸ "))
+		sb.WriteString(t.Text.Selected.Render("▸ "))
 	} else {
 		sb.WriteString("  ")
 	}
@@ -1414,29 +1394,40 @@ func (m *InsightsModel) renderPriorityItem(pick analysis.TopPick, width, height 
 
 		sb.WriteString(lipgloss.NewStyle().Foreground(iconColor).Render(icon))
 		sb.WriteString(" ")
-		sb.WriteString(lipgloss.NewStyle().Foreground(statusColor).Bold(true).Render(strings.ToUpper(string(issue.Status))))
+		statusStyle := t.Text.Badge.Foreground(statusColor).UnsetBackground()
+		if isSelected {
+			statusStyle = t.Text.Selected.Foreground(statusColor)
+		}
+		sb.WriteString(statusStyle.Render(strings.ToUpper(string(issue.Status))))
 		sb.WriteString(" ")
 		sb.WriteString(GetPriorityIcon(issue.Priority))
-		sb.WriteString(fmt.Sprintf("P%d", issue.Priority))
+		priorityStyle := t.Text.Metadata
+		if isSelected {
+			priorityStyle = t.Text.Selected
+		}
+		sb.WriteString(priorityStyle.Render(fmt.Sprintf("P%d", issue.Priority)))
 		sb.WriteString("\n")
 
 		// Title (truncated)
 		titleWidth := width - 6
 		title := truncateRunesHelper(issue.Title, titleWidth, "…")
-		titleStyle := lipgloss.NewStyle()
+		titleStyle := t.Text.Body
 		if isSelected {
-			titleStyle = titleStyle.Foreground(t.Primary).Bold(true)
+			titleStyle = t.Text.Selected
 		}
 		sb.WriteString(strings.TrimRight(titleStyle.Render(title), "\n\r"))
 		sb.WriteString("\n")
 	} else {
 		// Fallback to ID + Title from pick
-		idStyle := lipgloss.NewStyle().Foreground(t.Secondary)
+		idStyle := t.Text.Metadata
+		if isSelected {
+			idStyle = t.Text.Selected
+		}
 		sb.WriteString(strings.TrimRight(idStyle.Render(pick.ID), "\n\r"))
 		sb.WriteString("\n")
-		titleStyle := lipgloss.NewStyle()
+		titleStyle := t.Text.Body
 		if isSelected {
-			titleStyle = titleStyle.Foreground(t.Primary).Bold(true)
+			titleStyle = t.Text.Selected
 		}
 		sb.WriteString(strings.TrimRight(titleStyle.Render(truncateRunesHelper(pick.Title, width-6, "…")), "\n\r"))
 		sb.WriteString("\n")
@@ -1449,23 +1440,29 @@ func (m *InsightsModel) renderPriorityItem(pick analysis.TopPick, width, height 
 		if barWidth > 20 {
 			barWidth = 20 // Cap bar width for readability
 		}
-		sb.WriteString(strings.TrimRight(m.renderMiniBar("PR", rec.Breakdown.PageRankNorm, barWidth, t), "\n\r"))
+		sb.WriteString(strings.TrimRight(m.renderMiniBar("PR", rec.Breakdown.PageRankNorm, barWidth, isSelected, t), "\n\r"))
 		sb.WriteString(" ")
-		sb.WriteString(strings.TrimRight(m.renderMiniBar("BW", rec.Breakdown.BetweennessNorm, barWidth, t), "\n\r"))
+		sb.WriteString(strings.TrimRight(m.renderMiniBar("BW", rec.Breakdown.BetweennessNorm, barWidth, isSelected, t), "\n\r"))
 		sb.WriteString("\n")
-		sb.WriteString(strings.TrimRight(m.renderMiniBar("TI", rec.Breakdown.TimeToImpactNorm, barWidth, t), "\n\r"))
+		sb.WriteString(strings.TrimRight(m.renderMiniBar("TI", rec.Breakdown.TimeToImpactNorm, barWidth, isSelected, t), "\n\r"))
 		sb.WriteString("\n")
 	}
 
 	// Unblocks indicator
 	if pick.Unblocks > 0 {
-		unblockStyle := lipgloss.NewStyle().Foreground(t.Open).Bold(true)
+		unblockStyle := t.Text.Body.Foreground(t.Open)
+		if isSelected {
+			unblockStyle = t.Text.Selected.Foreground(t.Open)
+		}
 		sb.WriteString(strings.TrimRight(unblockStyle.Render(fmt.Sprintf("↳ Unblocks %d", pick.Unblocks)), "\n\r"))
 		sb.WriteString("\n")
 	}
 
 	// Reasons (compact) - reduced to 1 reason to save space for bars
-	reasonStyle := lipgloss.NewStyle().Foreground(t.Subtext).Italic(true)
+	reasonStyle := t.Text.Metadata
+	if isSelected {
+		reasonStyle = t.Text.Selected
+	}
 	for i, reason := range pick.Reasons {
 		if i >= 1 { // Show max 1 reason (reduced from 2 to fit bars)
 			break
@@ -1476,12 +1473,12 @@ func (m *InsightsModel) renderPriorityItem(pick analysis.TopPick, width, height 
 	}
 
 	return RenderTitledPanel(sb.String(), PanelOpts{
+		TitleStyle:  &t.Text.Heading,
 		Title:       panelTitle,
 		Width:       width,
 		Height:      height + 2,
 		Focused:     isSelected,
 		BorderColor: borderColor,
-		TitleColor:  titleColor,
 	})
 }
 
@@ -1493,10 +1490,8 @@ func (m *InsightsModel) renderHeatmapPanel(width, height int, t Theme) string {
 
 	// Border/title colors
 	borderColor := t.Secondary
-	titleColor := t.Secondary
 	if isFocused {
 		borderColor = t.Primary
-		titleColor = t.Primary
 	}
 
 	panelTitle := activeGlyphs.BarChart + " Priority Heatmap"
@@ -1504,12 +1499,12 @@ func (m *InsightsModel) renderHeatmapPanel(width, height int, t Theme) string {
 	// Helper to wrap content in the titled panel
 	wrapPanel := func(content string) string {
 		return RenderTitledPanel(content, PanelOpts{
+			TitleStyle:  &t.Text.Heading,
 			Title:       panelTitle,
 			Width:       width + 2,
 			Height:      height + 2,
 			Focused:     isFocused,
 			BorderColor: borderColor,
-			TitleColor:  titleColor,
 		})
 	}
 
@@ -1521,14 +1516,12 @@ func (m *InsightsModel) renderHeatmapPanel(width, height int, t Theme) string {
 	var sb strings.Builder
 
 	// Navigation hint as subtitle
-	subtitleStyle := lipgloss.NewStyle().Foreground(t.Subtext).Italic(true)
+	subtitleStyle := t.Text.Metadata
 	sb.WriteString(strings.TrimRight(subtitleStyle.Render("j/k/h/l=navigate Enter=drill H=toggle"), "\n\r"))
 	sb.WriteString("\n")
 
 	if m.insights.Stats == nil || len(m.topPicks) == 0 {
-		emptyStyle := lipgloss.NewStyle().
-			Foreground(t.Subtext).
-			Italic(true)
+		emptyStyle := t.Text.Metadata
 		sb.WriteString(strings.TrimRight(emptyStyle.Render("No data available. Run 'bt --robot-triage' to generate."), "\n\r"))
 		return wrapPanel(sb.String())
 	}
@@ -1559,7 +1552,7 @@ func (m *InsightsModel) renderHeatmapPanel(width, height int, t Theme) string {
 	}
 
 	// Axis title
-	sb.WriteString(strings.TrimRight(lipgloss.NewStyle().Foreground(t.Subtext).Italic(true).Render(
+	sb.WriteString(strings.TrimRight(t.Text.Metadata.Render(
 		"      ──── Priority Score ────  Low→High"), "\n\r"))
 	sb.WriteString("\n")
 
@@ -1569,7 +1562,7 @@ func (m *InsightsModel) renderHeatmapPanel(width, height int, t Theme) string {
 		cellWidth = 5
 	}
 
-	headerStyle := lipgloss.NewStyle().Foreground(t.Secondary).Bold(true)
+	headerStyle := t.Text.Heading
 	sb.WriteString(fmt.Sprintf("%5s │", "Depth"))
 	for _, label := range scoreLabels {
 		sb.WriteString(headerStyle.Render(fmt.Sprintf("%*s", cellWidth, label)))
@@ -1587,7 +1580,7 @@ func (m *InsightsModel) renderHeatmapPanel(width, height int, t Theme) string {
 
 	// Render each depth row with selection highlighting
 	for i, depthLabel := range depthLabels {
-		labelStyle := lipgloss.NewStyle().Foreground(t.Secondary)
+		labelStyle := t.Text.Metadata
 		sb.WriteString(labelStyle.Render(fmt.Sprintf("%5s", depthLabel)))
 		sb.WriteString(" │")
 
@@ -1601,7 +1594,7 @@ func (m *InsightsModel) renderHeatmapPanel(width, height int, t Theme) string {
 		}
 
 		// Row total
-		totalStyle := lipgloss.NewStyle().Foreground(t.Subtext)
+		totalStyle := t.Text.Body
 		sb.WriteString(totalStyle.Render(fmt.Sprintf("%*d", cellWidth, rowTotals[i])))
 		sb.WriteString("\n")
 	}
@@ -1614,14 +1607,14 @@ func (m *InsightsModel) renderHeatmapPanel(width, height int, t Theme) string {
 	sb.WriteString(strings.Repeat("─", cellWidth))
 	sb.WriteString("\n")
 
-	totalLabelStyle := lipgloss.NewStyle().Foreground(t.Secondary).Bold(true)
+	totalLabelStyle := t.Text.Heading
 	sb.WriteString(totalLabelStyle.Render(fmt.Sprintf("%5s", "Tot")))
 	sb.WriteString(" │")
-	totalStyle := lipgloss.NewStyle().Foreground(t.Subtext)
+	totalStyle := t.Text.Body
 	for _, ct := range colTotals {
 		sb.WriteString(totalStyle.Render(fmt.Sprintf("%*d", cellWidth, ct)))
 	}
-	sb.WriteString(lipgloss.NewStyle().Foreground(t.Primary).Bold(true).Render(
+	sb.WriteString(t.Text.Body.Render(
 		fmt.Sprintf("%*d", cellWidth, grandTotal)))
 	sb.WriteString("\n")
 
@@ -1630,11 +1623,11 @@ func (m *InsightsModel) renderHeatmapPanel(width, height int, t Theme) string {
 		m.heatmapCol >= 0 && m.heatmapCol < len(scoreLabels) {
 		sb.WriteString("\n")
 		selCount := m.HeatmapCellCount()
-		selStyle := lipgloss.NewStyle().Foreground(t.Primary)
+		selStyle := t.Text.Metadata
 		sb.WriteString(selStyle.Render(fmt.Sprintf("Selected: %s × %s (%d issues)",
 			depthLabels[m.heatmapRow], scoreLabels[m.heatmapCol], selCount)))
 		if selCount > 0 {
-			sb.WriteString(lipgloss.NewStyle().Foreground(t.Subtext).Italic(true).Render(" [Enter to view]"))
+			sb.WriteString(t.Text.Metadata.Render(" [Enter to view]"))
 		}
 	}
 
@@ -1677,7 +1670,7 @@ func (m *InsightsModel) renderHeatmapCell(count, maxCount, width int, isSelected
 func (m *InsightsModel) renderHeatmapLegend(t Theme) string {
 	var sb strings.Builder
 
-	legendStyle := lipgloss.NewStyle().Foreground(t.Subtext)
+	legendStyle := t.Text.Metadata
 	sb.WriteString(legendStyle.Render("Heat: "))
 
 	// Show gradient samples
@@ -1719,18 +1712,18 @@ func (m *InsightsModel) renderHeatmapDrillDown(width int, t Theme) string {
 	if m.heatmapCol >= 0 && m.heatmapCol < len(scoreLabels) {
 		scoreLabel = scoreLabels[m.heatmapCol]
 	}
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(t.Primary)
+	titleStyle := t.Text.Heading
 	sb.WriteString(titleStyle.Render(fmt.Sprintf(activeGlyphs.Clipboard+" Issues in %s × %s (%d items)",
 		depthLabel, scoreLabel, len(m.heatmapIssues))))
 	sb.WriteString("\n")
 
 	// Navigation hints
-	hintStyle := lipgloss.NewStyle().Foreground(t.Subtext).Italic(true)
+	hintStyle := t.Text.Metadata
 	sb.WriteString(hintStyle.Render("j/k=navigate Enter=view Esc=back"))
 	sb.WriteString("\n\n")
 
 	if len(m.heatmapIssues) == 0 {
-		sb.WriteString(lipgloss.NewStyle().Foreground(t.Subtext).Italic(true).Render("No issues in this cell"))
+		sb.WriteString(t.Text.Metadata.Render("No issues in this cell"))
 		return sb.String()
 	}
 
@@ -1754,7 +1747,7 @@ func (m *InsightsModel) renderHeatmapDrillDown(width int, t Theme) string {
 
 	// Scroll indicator
 	if len(m.heatmapIssues) > maxVisible {
-		scrollStyle := lipgloss.NewStyle().Foreground(t.Subtext)
+		scrollStyle := t.Text.Metadata
 		sb.WriteString(scrollStyle.Render(fmt.Sprintf("\n↕ %d/%d", m.heatmapDrillIdx+1, len(m.heatmapIssues))))
 	}
 
@@ -1767,16 +1760,16 @@ func (m *InsightsModel) renderDrillDownIssue(issueID string, isSelected bool, wi
 
 	issue := m.issueMap[issueID]
 	if issue == nil {
-		style := lipgloss.NewStyle().Foreground(t.Subtext)
+		style := t.Text.Metadata
 		if isSelected {
-			style = style.Reverse(true)
+			style = t.Text.Selected
 		}
 		return style.Render(fmt.Sprintf("  %s (not found)", issueID))
 	}
 
 	// Selection indicator
 	if isSelected {
-		sb.WriteString(lipgloss.NewStyle().Foreground(t.Primary).Bold(true).Render("▸ "))
+		sb.WriteString(t.Text.Selected.Render("▸ "))
 	} else {
 		sb.WriteString("  ")
 	}
@@ -1814,7 +1807,10 @@ func (m *InsightsModel) renderDrillDownIssue(issueID string, isSelected bool, wi
 
 	// Priority if available (1-5 scale, 0 = unset)
 	if issue.Priority > 0 {
-		priStyle := lipgloss.NewStyle().Foreground(t.Subtext)
+		priStyle := t.Text.Metadata
+		if isSelected {
+			priStyle = t.Text.Selected
+		}
 		sb.WriteString(priStyle.Render(fmt.Sprintf("P%d ", issue.Priority)))
 	}
 
@@ -1824,9 +1820,9 @@ func (m *InsightsModel) renderDrillDownIssue(issueID string, isSelected bool, wi
 		titleWidth = 20
 	}
 	title := truncateRunesHelper(issue.Title, titleWidth, "…")
-	titleStyle := t.Base
+	titleStyle := t.Text.Body
 	if isSelected {
-		titleStyle = titleStyle.Bold(true)
+		titleStyle = t.Text.Selected
 	}
 	sb.WriteString(titleStyle.Render(title))
 
@@ -2122,9 +2118,7 @@ Navigate to a metric panel and select an item to view its details here.
 	// Add scroll indicator if content overflows
 	scrollPercent := m.detailVP.ScrollPercent()
 	if scrollPercent < 1.0 || m.detailVP.YOffset() > 0 {
-		scrollHint := lipgloss.NewStyle().
-			Foreground(t.Secondary).
-			Italic(true).
+		scrollHint := t.Text.Metadata.
 			Render(fmt.Sprintf("─ %d%% ─ ctrl+j/k scroll", int(scrollPercent*100)))
 		sb.WriteString("\n")
 		sb.WriteString(strings.TrimRight(scrollHint, "\n\r"))
@@ -2132,10 +2126,10 @@ Navigate to a metric panel and select an item to view its details here.
 
 	return RenderTitledPanel(sb.String(), PanelOpts{
 		Title:       "Details",
+		TitleStyle:  &t.Text.Heading,
 		Width:       width,
 		Height:      height + 2,
 		BorderColor: t.Primary,
-		TitleColor:  t.Primary,
 	})
 }
 
