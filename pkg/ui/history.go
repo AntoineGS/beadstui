@@ -201,6 +201,7 @@ type HistoryModel struct {
 func NewHistoryModel(report *correlation.HistoryReport, theme Theme) HistoryModel {
 	// Initialize search input (bv-nkrj)
 	ti := textinput.New()
+	styleTextInput(&ti, theme)
 	ti.Placeholder = "Search commits, beads, authors..."
 	ti.CharLimit = 100
 	ti.SetWidth(40)

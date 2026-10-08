@@ -9,14 +9,97 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/textinput"
 	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/seanmartinsmith/beadstui/internal/datasource"
 	"github.com/seanmartinsmith/beadstui/pkg/cass"
 	"github.com/seanmartinsmith/beadstui/pkg/correlation"
 	"github.com/seanmartinsmith/beadstui/pkg/projects"
 )
+
+func TestFreshAndLazySearchInputsTextRoles(t *testing.T) {
+	restoreThemeGlobals(t)
+	theme := DefaultTheme()
+	theme.Text.Body = lipgloss.NewStyle().Foreground(lipgloss.Color("#123456")).Background(lipgloss.Color("#345678")).Bold(false).Italic(false).Underline(true)
+	theme.Text.Metadata = lipgloss.NewStyle().Foreground(lipgloss.Color("#fedcba")).Background(lipgloss.Color("#654321")).Bold(false).Italic(true).Underline(false)
+	theme.Text.Heading = lipgloss.NewStyle().Foreground(lipgloss.Color("#abcdef")).Background(lipgloss.Color("#234567")).Bold(true).Italic(false).Underline(false)
+	assertInput := func(name string, input textinput.Model) {
+		t.Helper()
+		for _, state := range []textinput.StyleState{input.Styles().Focused, input.Styles().Blurred} {
+			if !reflect.DeepEqual(state.Text, theme.Text.Body) || !reflect.DeepEqual(state.Placeholder, theme.Text.Metadata) || !reflect.DeepEqual(state.Prompt, theme.Text.Heading) {
+				t.Errorf("%s fresh focused/blurred roles differ", name)
+			}
+		}
+		input.Blur() // No cursor cell obscuring the rendered text role.
+		input.Prompt = "Prompt: "
+		input.Placeholder = "Placeholder"
+		for _, draft := range []string{"", "Draft"} {
+			input.SetValue(draft)
+			out := input.View()
+			for text, role := range map[string]lipgloss.Style{"Prompt:": theme.Text.Heading, "Placeholder": theme.Text.Metadata, "Draft": theme.Text.Body} {
+				if (text == "Placeholder" && draft != "") || (text == "Draft" && draft == "") {
+					continue
+				}
+				plain := ansi.Strip(out)
+				start := strings.Index(plain, text)
+				if start < 0 {
+					t.Fatalf("%s missing %q in %q", name, text, plain)
+				}
+				cells := uv.NewStyledString(out).Lines(ansi.GraphemeWidth)[0]
+				want := uv.NewStyledString(role.Render("x")).Lines(ansi.GraphemeWidth)[0][0].Style
+				for x := start; x < start+len(text); x++ {
+					if !reflect.DeepEqual(cells[x].Style, want) {
+						t.Errorf("%s %q cell %d: got %+v, want %+v", name, text, x, cells[x].Style, want)
+						break
+					}
+				}
+			}
+		}
+	}
+	h := NewHistoryModel(createTestHistoryReport(), theme)
+	h.StartSearch()
+	assertInput("fresh history", h.searchInput)
+	mem := NewMemoriesModel(theme)
+	mem.StartSearch()
+	assertInput("fresh memories", mem.searchInput)
+	m := NewModel(nil, nil, "", nil, nil)
+	m.theme = theme
+	m.refreshThemeConsumers()
+	for entry := 0; entry < 2; entry++ {
+		_ = m.enterHistoryView() // Do not execute commands or touch live sources.
+		assertInput("lazy history", m.historyView.searchInput)
+		m = m.handleHistoryLoaded(HistoryLoadedMsg{Report: createTestHistoryReport()})
+		assertInput("loaded history", m.historyView.searchInput)
+		_ = m.enterMemoriesView()
+		assertInput("lazy memories", m.memories.searchInput)
+	}
+	// A pinned source admits the async loading path without executing its cmd.
+	m.data.dataSource = &datasource.DataSource{Type: datasource.SourceTypeDolt}
+	for entry := 0; entry < 2; entry++ {
+		if cmd := m.enterHistoryView(); cmd == nil || !m.historyLoading {
+			t.Fatal("expected async history placeholder")
+		}
+		assertInput("loading history", m.historyView.searchInput)
+		m = m.handleHistoryLoaded(HistoryLoadedMsg{Report: createTestHistoryReport()})
+		assertInput("async loaded history", m.historyView.searchInput)
+	}
+	m.historyView.StartSearch()
+	m.memories.StartSearch()
+	for _, input := range []*textinput.Model{&m.historyView.searchInput, &m.memories.searchInput} {
+		input.SetValue("unsaved draft")
+		input.SetCursor(3)
+	}
+	m.theme.Text.Body = theme.Text.Metadata
+	m.refreshThemeConsumers()
+	for _, input := range []*textinput.Model{&m.historyView.searchInput, &m.memories.searchInput} {
+		if input.Value() != "unsaved draft" || input.Position() != 3 || !input.Focused() || !reflect.DeepEqual(input.Styles().Focused.Text, m.theme.Text.Body) {
+			t.Error("theme refresh lost draft/cursor/focus or failed to update body")
+		}
+	}
+}
 
 func TestHistorySelectedOrdinaryCellsTextRole(t *testing.T) {
 	for _, attributes := range []bool{false, true} {

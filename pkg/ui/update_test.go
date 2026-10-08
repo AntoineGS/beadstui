@@ -1,15 +1,111 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
+
+func TestInsightsOrdinaryGapCellsTextRoles(t *testing.T) {
+	for _, selected := range []bool{false, true} {
+		for _, attributes := range []bool{false, true} {
+			t.Run(fmt.Sprintf("selected_%t_attributes_%t", selected, attributes), func(t *testing.T) {
+				theme := DefaultTheme()
+				theme.Text.Body = lipgloss.NewStyle().Foreground(theme.Info).Background(theme.BgDark).Bold(false).Italic(attributes).Underline(attributes)
+				theme.Text.Selected = lipgloss.NewStyle().Foreground(theme.Warning).Background(theme.Primary).Bold(false).Italic(attributes).Underline(attributes)
+				ordinary := theme.Text.Body
+				if selected {
+					ordinary = theme.Text.Selected
+				}
+				issue := &model.Issue{ID: "gap", Title: "Gap title", Description: "Support prose", Status: model.StatusOpen, IssueType: model.TypeBug, Priority: 1}
+				m := NewInsightsModel(analysis.Insights{}, map[string]*model.Issue{issue.ID: issue}, theme)
+				m.SetRecommendations([]analysis.Recommendation{{ID: issue.ID, Breakdown: analysis.ScoreBreakdown{PageRankNorm: 0.5, BetweennessNorm: 0.25}}}, "gap-hash")
+				assertRange := func(line string, start, end int, role lipgloss.Style) {
+					t.Helper()
+					cells := uv.NewStyledString(line).Lines(ansi.GraphemeWidth)[0]
+					for x := start; x < end; x++ {
+						want := uv.NewStyledString(role.Render(cells[x].Content)).Lines(ansi.GraphemeWidth)[0][0].Style
+						if !reflect.DeepEqual(cells[x].Style, want) {
+							t.Errorf("cell %d (%q) got %+v, want %+v in %q", x, cells[x].Content, cells[x].Style, want, ansi.Strip(line))
+						}
+					}
+				}
+				metric := m.renderInsightRow(issue.ID, 0.85, 100, selected, theme)
+				icon, iconColor := theme.GetTypeIcon(string(issue.IssueType))
+				valueStyle := theme.Text.Badge.Background(theme.BgHighlight).Foreground(theme.Primary).Padding(0, 1)
+				badgeEnd := 2 + lipgloss.Width(valueStyle.Render("0.850"))
+				assertRange(metric, 0, 2, ordinary)
+				assertRange(metric, badgeEnd, badgeEnd+1, ordinary)
+				iconEnd := badgeEnd + 1 + ansi.StringWidth(icon)
+				assertRange(metric, iconEnd, iconEnd+1, ordinary)
+				assertRange(metric, iconEnd+2, iconEnd+3, ordinary)
+				assertRange(metric, iconEnd+3, iconEnd+3+len(issue.Title), ordinary)
+				descriptionStyle := theme.Text.Metadata
+				if selected {
+					descriptionStyle = theme.Text.Selected
+				}
+				assertRange(metric, iconEnd+3+len(issue.Title), ansi.StringWidth(ansi.Strip(metric)), descriptionStyle)
+				if !strings.Contains(metric, valueStyle.Render("0.850")) || !strings.Contains(metric, lipgloss.NewStyle().Foreground(iconColor).Render(icon)) || !strings.Contains(metric, lipgloss.NewStyle().Foreground(theme.Open).Render("●")) {
+					t.Error("metric badge/type/status semantic styling changed")
+				}
+				priority := m.renderPriorityItem(analysis.TopPick{ID: issue.ID, Score: 0.85, Reasons: []string{"Useful work"}, Unblocks: 2}, 100, 10, selected, theme)
+				statusStyle := theme.Text.Badge.Foreground(theme.Open).UnsetBackground()
+				if selected {
+					statusStyle = theme.Text.Selected.Foreground(theme.Open)
+				}
+				if !strings.Contains(priority, statusStyle.Render("OPEN")) || !strings.Contains(ansi.Strip(priority), GetPriorityIcon(issue.Priority)+"P1") {
+					t.Error("priority status/type meaning changed")
+				}
+				foundHeader, foundBars := false, false
+				for _, line := range strings.Split(priority, "\n") {
+					plain := ansi.Strip(line)
+					for _, text := range []string{issue.Title, "• Useful work"} {
+						if pos := strings.Index(plain, text); pos >= 0 {
+							role := ordinary
+							if text != issue.Title && !selected {
+								role = theme.Text.Metadata
+							}
+							start := ansi.StringWidth(plain[:pos])
+							assertRange(line, start, start+ansi.StringWidth(text), role)
+						}
+					}
+					if pos := strings.Index(plain, icon+" OPEN "); pos >= 0 {
+						foundHeader = true
+						iconStart := ansi.StringWidth(plain[:pos])
+						assertRange(line, iconStart-2, iconStart, ordinary)
+						gap := iconStart + ansi.StringWidth(icon)
+						assertRange(line, gap, gap+1, ordinary)
+						assertRange(line, gap+5, gap+6, ordinary)
+					}
+					if pr, bw := strings.Index(plain, "PR:"), strings.Index(plain, "BW:"); pr >= 0 && bw >= 0 {
+						foundBars = true
+						gap := ansi.StringWidth(plain[:bw]) - 1
+						assertRange(line, gap, gap+1, ordinary)
+						for _, bar := range []string{m.renderMiniBar("PR", 0.5, 20, selected, theme), m.renderMiniBar("BW", 0.25, 20, selected, theme)} {
+							if !strings.Contains(line, bar) {
+								t.Error("semantic chart styling changed")
+							}
+						}
+					}
+				}
+				if !foundHeader || !foundBars {
+					t.Fatalf("populated priority header/bars missing: %s", ansi.Strip(priority))
+				}
+			})
+		}
+	}
+}
 
 // exercise Phase2Ready and FileChanged branches of Update for coverage.
 func TestModelUpdatePhase2AndFileChanged(t *testing.T) {

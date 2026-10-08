@@ -75,6 +75,7 @@ type MemoriesModel struct {
 // the async load (LoadMemoriesCmd) completes.
 func NewMemoriesModel(theme Theme) MemoriesModel {
 	ti := textinput.New()
+	styleTextInput(&ti, theme)
 	ti.Placeholder = "Search keys and bodies..."
 	ti.CharLimit = 200
 	ti.SetWidth(40)

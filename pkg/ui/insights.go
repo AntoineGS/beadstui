@@ -993,12 +993,17 @@ func (m *InsightsModel) renderInsightRow(id string, value float64, width int, is
 
 	// Build row content
 	var rowBuilder strings.Builder
+	ordinaryStyle := t.Text.Body
+	if isSelected {
+		ordinaryStyle = t.Text.Selected
+	}
+	gap := ordinaryStyle.Render(" ")
 
 	// Selection indicator
 	if isSelected {
 		rowBuilder.WriteString(t.Text.Selected.Render("▸ "))
 	} else {
-		rowBuilder.WriteString("  ")
+		rowBuilder.WriteString(ordinaryStyle.Render("  "))
 	}
 
 	// Value badge
@@ -1007,7 +1012,7 @@ func (m *InsightsModel) renderInsightRow(id string, value float64, width int, is
 		Foreground(t.Primary).
 		Padding(0, 1)
 	rowBuilder.WriteString(valueStyle.Render(valueStr))
-	rowBuilder.WriteString(" ")
+	rowBuilder.WriteString(gap)
 
 	// Issue content
 	if issue != nil {
@@ -1015,13 +1020,13 @@ func (m *InsightsModel) renderInsightRow(id string, value float64, width int, is
 		icon, iconColor := t.GetTypeIcon(string(issue.IssueType))
 		iconRendered := lipgloss.NewStyle().Foreground(iconColor).Render(icon)
 		rowBuilder.WriteString(iconRendered)
-		rowBuilder.WriteString(" ")
+		rowBuilder.WriteString(gap)
 
 		// Status indicator
 		statusColor := t.GetStatusColor(string(issue.Status))
 		statusDot := lipgloss.NewStyle().Foreground(statusColor).Render("●")
 		rowBuilder.WriteString(statusDot)
-		rowBuilder.WriteString(" ")
+		rowBuilder.WriteString(gap)
 
 		// Title (truncated) - leave room for description preview
 		// Calculate actual used width by measuring rendered content
@@ -1377,12 +1382,17 @@ func (m *InsightsModel) renderPriorityItem(pick analysis.TopPick, width, height 
 	panelTitle := fmt.Sprintf("%.2f", pick.Score)
 
 	var sb strings.Builder
+	ordinaryStyle := t.Text.Body
+	if isSelected {
+		ordinaryStyle = t.Text.Selected
+	}
+	gap := ordinaryStyle.Render(" ")
 
 	// Selection indicator
 	if isSelected {
 		sb.WriteString(t.Text.Selected.Render("▸ "))
 	} else {
-		sb.WriteString("  ")
+		sb.WriteString(ordinaryStyle.Render("  "))
 	}
 
 	// Issue details
@@ -1393,13 +1403,13 @@ func (m *InsightsModel) renderPriorityItem(pick analysis.TopPick, width, height 
 		statusColor := t.GetStatusColor(string(issue.Status))
 
 		sb.WriteString(lipgloss.NewStyle().Foreground(iconColor).Render(icon))
-		sb.WriteString(" ")
+		sb.WriteString(gap)
 		statusStyle := t.Text.Badge.Foreground(statusColor).UnsetBackground()
 		if isSelected {
 			statusStyle = t.Text.Selected.Foreground(statusColor)
 		}
 		sb.WriteString(statusStyle.Render(strings.ToUpper(string(issue.Status))))
-		sb.WriteString(" ")
+		sb.WriteString(gap)
 		sb.WriteString(GetPriorityIcon(issue.Priority))
 		priorityStyle := t.Text.Metadata
 		if isSelected {
@@ -1441,7 +1451,7 @@ func (m *InsightsModel) renderPriorityItem(pick analysis.TopPick, width, height 
 			barWidth = 20 // Cap bar width for readability
 		}
 		sb.WriteString(strings.TrimRight(m.renderMiniBar("PR", rec.Breakdown.PageRankNorm, barWidth, isSelected, t), "\n\r"))
-		sb.WriteString(" ")
+		sb.WriteString(gap)
 		sb.WriteString(strings.TrimRight(m.renderMiniBar("BW", rec.Breakdown.BetweennessNorm, barWidth, isSelected, t), "\n\r"))
 		sb.WriteString("\n")
 		sb.WriteString(strings.TrimRight(m.renderMiniBar("TI", rec.Breakdown.TimeToImpactNorm, barWidth, isSelected, t), "\n\r"))
