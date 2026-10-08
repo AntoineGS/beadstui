@@ -131,6 +131,100 @@ func TestPopupFrame_AccentOverride(t *testing.T) {
 	}
 }
 
+func TestPopupMenu_ColumnsSurvivePageAndMarkerChanges(t *testing.T) {
+	entries := []PopupMenuEntry{{Label: "Open", Shortcut: "s", Marker: "*", Selected: true}, {Label: "In Progress"}, {Label: "界面", Shortcut: "A", Marker: "✓"}}
+	layout := MeasurePopupMenu(entries, PopupMenuOpts{Shortcuts: true, Markers: true})
+	var columns []int
+	for _, page := range [][]PopupMenuEntry{entries[:1], entries[1:]} {
+		for _, row := range RenderPopupMenu(page, layout, DefaultTheme(), 30) {
+			plain := ansi.Strip(row)
+			for _, label := range []string{"Open", "In Progress", "界面"} {
+				if index := strings.Index(plain, label); index >= 0 {
+					columns = append(columns, ansi.StringWidth(plain[:index]))
+				}
+			}
+			if ansi.StringWidth(row) != 30 {
+				t.Errorf("row width=%d, want 30", ansi.StringWidth(row))
+			}
+		}
+	}
+	if len(columns) != 3 || columns[0] != columns[1] || columns[1] != columns[2] {
+		t.Fatalf("label columns=%v", columns)
+	}
+	if columns[0] != 13 {
+		t.Fatalf("centered label column=%d, want 13", columns[0])
+	}
+}
+
+func TestPopupMenu_StyledWideContentKeepsGeometry(t *testing.T) {
+	entries := []PopupMenuEntry{{Label: "\x1b[1m界面\x1b[0m", Marker: "✓", Suffix: " (4)", Selected: true}, {Label: "Plain", Detail: "a long detail that must occupy only one row"}}
+	layout := MeasurePopupMenu(entries, PopupMenuOpts{Markers: true})
+	rows := RenderPopupMenu(entries, layout, DefaultTheme(), 16)
+	if len(rows) != 3 {
+		t.Fatalf("got %d rows, want 3", len(rows))
+	}
+	for _, row := range rows {
+		if ansi.StringWidth(row) != 16 {
+			t.Fatalf("row width=%d, want 16", ansi.StringWidth(row))
+		}
+	}
+	first, second := ansi.Strip(rows[0]), ansi.Strip(rows[1])
+	if x, y := ansi.StringWidth(first[:strings.Index(first, "界面")]), ansi.StringWidth(second[:strings.Index(second, "Plain")]); x != y {
+		t.Fatalf("label columns %d != %d", x, y)
+	}
+	if detail := ansi.Strip(rows[2]); !strings.HasPrefix(detail, "     a long") {
+		t.Fatalf("detail not under label: %q", detail)
+	}
+}
+
+func TestPopupMenu_OptionalColumnsAndNarrowRows(t *testing.T) {
+	entries := []PopupMenuEntry{{Label: "Label", Selected: true}, {Label: "Other"}}
+	for _, tc := range []struct {
+		opts  PopupMenuOpts
+		wantX int
+	}{{PopupMenuOpts{}, 2}, {PopupMenuOpts{Shortcuts: true}, 5}, {PopupMenuOpts{Markers: true}, 5}, {PopupMenuOpts{Shortcuts: true, Markers: true}, 8}} {
+		layout := MeasurePopupMenu(entries, tc.opts)
+		if layout.LabelX != tc.wantX {
+			t.Fatalf("column=%d, want %d", layout.LabelX, tc.wantX)
+		}
+		for _, width := range []int{0, 1, 4, 20} {
+			rows := RenderPopupMenu(entries, layout, DefaultTheme(), width)
+			if width == 0 && len(rows) != 0 {
+				t.Fatal("zero budget rendered menu")
+			}
+			for _, row := range rows {
+				if ansi.StringWidth(row) != width {
+					t.Fatalf("row width=%d, want %d", ansi.StringWidth(row), width)
+				}
+			}
+		}
+	}
+	entries[0].Marker = "界"
+	layout := MeasurePopupMenu(entries, PopupMenuOpts{Markers: true})
+	before := RenderPopupMenu(entries, layout, DefaultTheme(), 20)
+	entries[0].Selected = false
+	entries[1].Selected = true
+	after := RenderPopupMenu(entries, layout, DefaultTheme(), 20)
+	if strings.Index(ansi.Strip(before[0]), "Label") != strings.Index(ansi.Strip(after[0]), "Label") {
+		t.Fatal("selection moved label origin")
+	}
+	if PopupMenuEntryRows(PopupMenuEntry{}) != 1 || PopupMenuEntryRows(PopupMenuEntry{Detail: "detail"}) != 2 {
+		t.Fatal("wrong menu row counts")
+	}
+}
+
+func TestPopupMenu_MultilineDetailStillOccupiesOneRow(t *testing.T) {
+	entries := []PopupMenuEntry{{Label: "Name", Detail: "first\nsecond"}}
+	layout := MeasurePopupMenu(entries, PopupMenuOpts{})
+	rows := RenderPopupMenu(entries, layout, DefaultTheme(), 24)
+	if len(rows) != 2 || strings.Contains(rows[1], "\n") || ansi.StringWidth(rows[1]) != 24 {
+		t.Fatalf("multiline detail broke row geometry: %q", rows)
+	}
+	if !strings.Contains(ansi.Strip(rows[1]), "first second") {
+		t.Fatal("detail text lost")
+	}
+}
+
 func TestRenderTitledPanel_Basic(t *testing.T) {
 	content := "hello"
 

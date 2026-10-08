@@ -180,6 +180,112 @@ func RenderPopup(body []string, opts PopupOpts) string {
 	})
 }
 
+// PopupMenuEntry is a presentation projection; interaction state stays in callers.
+type PopupMenuEntry struct {
+	Label, Shortcut, Marker, Detail, Suffix string
+	Selected                                bool
+}
+
+// PopupMenuOpts explicitly reserves optional columns, including empty cells.
+type PopupMenuOpts struct{ Shortcuts, Markers bool }
+
+// PopupMenuLayout must be measured across the full filtered menu before paging.
+type PopupMenuLayout struct {
+	Width, LabelX, ShortcutWidth, MarkerWidth int
+	Shortcuts, Markers                        bool
+}
+
+func MeasurePopupMenu(entries []PopupMenuEntry, opts PopupMenuOpts) PopupMenuLayout {
+	l := PopupMenuLayout{Shortcuts: opts.Shortcuts, Markers: opts.Markers, LabelX: 2}
+	if opts.Shortcuts {
+		l.ShortcutWidth = 1
+		for _, e := range entries {
+			e = popupSingleRow(e)
+			l.ShortcutWidth = max(l.ShortcutWidth, ansi.StringWidth(e.Shortcut))
+		}
+		l.LabelX += l.ShortcutWidth + 2
+	}
+	if opts.Markers {
+		l.MarkerWidth = 2
+		for _, e := range entries {
+			e = popupSingleRow(e)
+			l.MarkerWidth = max(l.MarkerWidth, ansi.StringWidth(e.Marker))
+		}
+		l.LabelX += l.MarkerWidth + 1
+	}
+	l.Width = l.LabelX
+	for _, e := range entries {
+		e = popupSingleRow(e)
+		l.Width = max(l.Width, l.LabelX+ansi.StringWidth(e.Label+e.Suffix))
+		l.Width = max(l.Width, l.LabelX+ansi.StringWidth(e.Detail))
+	}
+	return l
+}
+
+func popupSingleRow(e PopupMenuEntry) PopupMenuEntry {
+	clean := func(s string) string {
+		return strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ").Replace(s)
+	}
+	e.Label, e.Shortcut, e.Marker, e.Detail, e.Suffix = clean(e.Label), clean(e.Shortcut), clean(e.Marker), clean(e.Detail), clean(e.Suffix)
+	return e
+}
+
+func PopupMenuEntryRows(entry PopupMenuEntry) int {
+	if entry.Detail != "" {
+		return 2
+	}
+	return 1
+}
+
+func popupStyledText(text string, style lipgloss.Style) string {
+	if strings.Contains(text, "\x1b") {
+		return text
+	}
+	return style.Render(text)
+}
+
+func popupPadCell(text string, width int) string {
+	text = ansi.Truncate(text, max(0, width), "")
+	return text + strings.Repeat(" ", max(0, width-ansi.StringWidth(text)))
+}
+
+// RenderPopupMenu centers one fixed-width block, never individual rows. Labels
+// with existing ANSI spans retain their specialized status/priority styling.
+func RenderPopupMenu(entries []PopupMenuEntry, l PopupMenuLayout, theme Theme, width int) []string {
+	if width <= 0 {
+		return nil
+	}
+	blockWidth := min(l.Width, width)
+	left := strings.Repeat(" ", max(0, (width-blockWidth)/2))
+	primary := lipgloss.NewStyle().Foreground(theme.Primary).Bold(true)
+	idle := lipgloss.NewStyle().Foreground(theme.Base.GetForeground())
+	secondary := lipgloss.NewStyle().Foreground(theme.Secondary)
+	detail := secondary.Italic(true)
+	fit := func(row string) string { return popupPadCell(left+popupPadCell(row, blockWidth), width) }
+	var rows []string
+	for _, e := range entries {
+		e = popupSingleRow(e)
+		cursor, labelStyle := "  ", idle
+		if e.Selected {
+			cursor = primary.Render("> ")
+			labelStyle = primary
+		}
+		row := cursor
+		if l.Shortcuts {
+			row += popupPadCell(popupStyledText(e.Shortcut, primary), l.ShortcutWidth) + "  "
+		}
+		if l.Markers {
+			row += popupPadCell(popupStyledText(e.Marker, secondary), l.MarkerWidth) + " "
+		}
+		row += popupStyledText(e.Label, labelStyle) + popupStyledText(e.Suffix, secondary)
+		rows = append(rows, fit(row))
+		if e.Detail != "" {
+			rows = append(rows, fit(strings.Repeat(" ", max(0, l.LabelX))+popupStyledText(e.Detail, detail)))
+		}
+	}
+	return rows
+}
+
 // BorderVariant controls the weight of box-drawing characters.
 type BorderVariant int
 
