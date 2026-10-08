@@ -1162,12 +1162,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				m.focused = focusList
 			} else {
 				m.mode = ViewActionable
-				// Build execution plan from the visible set (bt-imh), not
-				// the full cross-project corpus.
-				analyzer := analysis.NewAnalyzer(m.visibleIssues())
-				plan := analyzer.GetExecutionPlan()
-				m.actionableView = NewActionableModel(plan, m.theme)
-				m.actionableView.SetSize(m.width, m.height-2)
+				m.refreshActionableView()
 				m.focused = focusActionable
 			}
 			return m, nil

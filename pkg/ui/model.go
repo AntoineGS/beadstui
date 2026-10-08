@@ -1759,6 +1759,7 @@ func (m *Model) replaceIssues(newIssues []model.Issue) {
 	m.attentionCached = false
 	m.ac.triage = nil
 	m.ac.triageWaitPhase2 = true
+	m.filter.visibleKey = "" // new data: applyFilter refreshes open analysis views
 
 	// Rebuild lookup map
 	m.data.issueMap = make(map[string]*model.Issue, len(newIssues))

@@ -1012,3 +1012,115 @@ func TestPhase2AfterReloadRanksTriageOverVisibleSet(t *testing.T) {
 	updated, _ = m.Update(Phase2ReadyMsg{Stats: m.data.analysis})
 	assertTriageOnlyProja(t, updated.(Model))
 }
+
+// An open actionable view follows later filter changes (bt-imh final review).
+func TestActionableViewRefreshesOnFilterChange(t *testing.T) {
+	m := NewModel(buildRecommendationFixture("proja"), nil, "", nil, nil)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
+	m = updated.(Model)
+	if m.mode != ViewActionable || len(m.actionableView.plan.Tracks) == 0 {
+		t.Fatalf("precondition: actionable view open with tracks (mode %v)", m.mode)
+	}
+	m.SetFilter("closed") // fixture has no closed issue
+	if n := len(m.actionableView.plan.Tracks); n != 0 {
+		t.Fatalf("actionable plan has %d tracks after the filter emptied the view", n)
+	}
+}
+
+func insightIDs(ins analysis.Insights) []string {
+	var ids []string
+	for _, list := range [][]analysis.InsightItem{ins.Bottlenecks, ins.Keystones, ins.Influencers, ins.Hubs, ins.Authorities, ins.Cores, ins.Slack} {
+		for _, it := range list {
+			ids = append(ids, it.ID)
+		}
+	}
+	ids = append(ids, ins.Articulation...)
+	ids = append(ids, ins.Orphans...)
+	for _, c := range ins.Cycles {
+		ids = append(ids, c...)
+	}
+	return ids
+}
+
+// A reload under the same filter refreshes an open insights view from the
+// visible set instead of installing the snapshot's corpus-wide insights
+// (bt-imh final review).
+func TestSnapshotReloadKeepsOpenInsightsFiltered(t *testing.T) {
+	fixture := func() []model.Issue {
+		return append(buildRecommendationFixture("proja"), buildRecommendationFixture("projb")...)
+	}
+	m := NewModel(fixture(), nil, "", nil, nil)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+	m = updated.(Model)
+	m.EnableWorkspaceMode(WorkspaceInfo{Enabled: true, RepoCount: 2, RepoPrefixes: []string{"proja-", "projb-"}})
+	m.SetActiveRepos(map[string]bool{"proja": true})
+	updated, _ = m.Update(tea.KeyPressMsg{Code: 'i', Text: "i"})
+	m = updated.(Model)
+
+	snap := NewSnapshotBuilder(fixture()).Build()
+	snap.Analysis.WaitForPhase2()
+	snap.Phase2Ready = true
+	snap.Insights = snap.Analysis.GenerateInsights(len(snap.Issues))
+	leaks := false
+	for _, id := range insightIDs(snap.Insights) {
+		leaks = leaks || ExtractRepoPrefix(id) == "projb"
+	}
+	if !leaks {
+		t.Fatal("precondition: snapshot insights rank projb issues")
+	}
+	updated, _ = m.Update(SnapshotReadyMsg{Snapshot: snap})
+	m = updated.(Model)
+	for _, id := range insightIDs(m.insightsPanel.insights) {
+		if ExtractRepoPrefix(id) != "proja" {
+			t.Fatalf("insights panel lists hidden %s after reload", id)
+		}
+	}
+}
+
+// A reload refreshes an open label dashboard even though the filter is
+// unchanged (bt-imh final review).
+func TestReloadRefreshesOpenLabelDashboard(t *testing.T) {
+	m := NewModel(buildLabelFlowFixture("proja"), nil, "", nil, nil)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyPressMsg{Code: '[', Text: "["})
+	m = updated.(Model)
+
+	relabeled := buildLabelFlowFixture("proja")
+	for i := range relabeled {
+		relabeled[i].Labels = []string{"new-label"}
+	}
+	m.replaceIssues(relabeled)
+	var labels []string
+	for _, lh := range m.labelHealthCache.Labels {
+		labels = append(labels, lh.Label)
+	}
+	if len(labels) != 1 || labels[0] != "new-label" {
+		t.Fatalf("label dashboard after reload = %v, want [new-label]", labels)
+	}
+}
+
+// Refreshing an open insights view on reload keeps the user's pane and row.
+func TestInsightsReloadKeepsCursor(t *testing.T) {
+	issues := append(buildRecommendationFixture("proja"), buildRecommendationFixture("projb")...)
+	m := NewModel(issues, nil, "", nil, nil)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyPressMsg{Code: 'i', Text: "i"})
+	m = updated.(Model)
+	panel := PanelKeystones
+	m.insightsPanel.RestoreCursor(panel, 2) // the user moved to row 2 of keystones
+	idx := m.insightsPanel.SelectedIndexFor(panel)
+	if m.insightsPanel.FocusedPanel() != panel || idx != 2 {
+		t.Fatalf("precondition: cursor on keystones row 2, got %v row %d", m.insightsPanel.FocusedPanel(), idx)
+	}
+	m.replaceIssues(append(buildRecommendationFixture("proja"), buildRecommendationFixture("projb")...))
+	if got := m.insightsPanel.FocusedPanel(); got != panel {
+		t.Fatalf("focused panel after reload = %v, want %v", got, panel)
+	}
+	if got := m.insightsPanel.SelectedIndexFor(panel); got != idx {
+		t.Fatalf("insights row after reload = %d, want %d", got, idx)
+	}
+}

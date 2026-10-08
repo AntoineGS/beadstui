@@ -54,7 +54,15 @@ func (s FilterSpec) Apply(issues []model.Issue, env FilterEnv) []model.Issue {
 	switch {
 	case s.BQL != nil:
 		if env.BQL != nil {
-			out = env.BQL.Execute(s.BQL, out, env.BQLOpts)
+			// EXPAND pulls related issues from the full map; they must still
+			// pass scope, labels and wisps.
+			expanded := env.BQL.Execute(s.BQL, out, env.BQLOpts)
+			out = expanded[:0:0]
+			for _, issue := range expanded {
+				if s.passesBase(issue) {
+					out = append(out, issue)
+				}
+			}
 		}
 	case s.Recipe != nil:
 		sortIssuesByRecipe(out, env.Stats, s.Recipe)

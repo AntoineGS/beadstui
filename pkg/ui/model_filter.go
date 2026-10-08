@@ -240,9 +240,11 @@ func (m *Model) visibleInsights(ins analysis.Insights) analysis.Insights {
 	ins.Slack = keepItems(ins.Slack)
 	ins.Articulation = keepIDs(ins.Articulation)
 	ins.Orphans = keepIDs(ins.Orphans)
+	// A cycle is shown only when every member is visible: listing a partial
+	// cycle would show hidden issues or invent a cycle that isn't there.
 	var cycles [][]string
 	for _, c := range ins.Cycles {
-		if len(keepIDs(c)) > 0 {
+		if len(keepIDs(c)) == len(c) {
 			cycles = append(cycles, c)
 		}
 	}
@@ -285,9 +287,18 @@ func (m *Model) refreshFlowMatrix() {
 	m.flowMatrix.SetSize(m.width, max(3, m.height-2))
 }
 
+// refreshActionableView builds the execution plan from the visible set.
+func (m *Model) refreshActionableView() {
+	plan := analysis.NewAnalyzer(m.filter.visible).GetExecutionPlan()
+	m.actionableView = NewActionableModel(plan, m.theme)
+	m.actionableView.SetSize(m.width, m.height-2)
+}
+
 // refreshAnalysisViews recomputes the open analysis view after a filter change.
 func (m *Model) refreshAnalysisViews() {
 	switch m.mode {
+	case ViewActionable:
+		m.refreshActionableView()
 	case ViewLabelDashboard:
 		m.refreshLabelDashboard()
 	case ViewAttention:
@@ -295,7 +306,11 @@ func (m *Model) refreshAnalysisViews() {
 	case ViewFlowMatrix:
 		m.refreshFlowMatrix()
 	case ViewInsights:
+		// Rebuilding the panel resets its cursor; keep the user's pane and row.
+		panel := m.insightsPanel.FocusedPanel()
+		row := m.insightsPanel.SelectedIndexFor(panel)
 		m.openInsightsView()
+		m.insightsPanel.RestoreCursor(panel, row)
 	}
 }
 

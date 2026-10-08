@@ -145,11 +145,13 @@ func (m Model) handleSnapshotReady(msg SnapshotReadyMsg) (Model, tea.Cmd) {
 
 	// Clear caches that need recomputation. Triage over the visible set is
 	// recomputed now if this snapshot already has Phase 2, else on
-	// Phase2ReadyMsg (bt-imh).
+	// Phase2ReadyMsg; new data counts as a new visible set, so applyFilter
+	// refreshes any open analysis view (bt-imh).
 	m.labelHealthCached = false
 	m.attentionCached = false
 	m.ac.triage = nil
 	m.ac.triageWaitPhase2 = !msg.Snapshot.Phase2Ready
+	m.filter.visibleKey = ""
 	m.ac.priorityHints = make(map[string]*analysis.PriorityRecommendation)
 	m.labelDrilldownCache = make(map[string][]model.Issue)
 
@@ -186,8 +188,9 @@ func (m Model) handleSnapshotReady(msg SnapshotReadyMsg) (Model, tea.Cmd) {
 		cmds = append(cmds, BuildHybridMetricsCmd(m.issuesForAsync()))
 	}
 
-	// Regenerate sub-views (Phase 1 data; Phase 2 will update via Phase2ReadyMsg)
-	m.insightsPanel.SetInsights(m.data.snapshot.Insights)
+	// Regenerate sub-views (Phase 1 data; Phase 2 will update via
+	// Phase2ReadyMsg). The snapshot's insights are installed after applyFilter
+	// below, filtered to the new visible set (bt-imh).
 	m.insightsPanel.issueMap = m.data.issueMap
 	bodyHeight := m.height - 1
 	if bodyHeight < 5 {
@@ -200,6 +203,7 @@ func (m Model) handleSnapshotReady(msg SnapshotReadyMsg) (Model, tea.Cmd) {
 		m.filter.currentFilter = "recipe:" + m.filter.activeRecipe.Name
 	}
 	m.applyFilter()
+	m.insightsPanel.SetInsights(m.visibleInsights(m.data.snapshot.Insights))
 
 	// Restore selection by ID against the visible (possibly / searched) view.
 	// Indexing into the unfiltered set would drive Paginator.Page out of
@@ -572,6 +576,7 @@ func (m Model) handleFileChanged(msg FileChangedMsg) (Model, tea.Cmd) {
 	m.attentionCached = false
 	m.ac.triage = nil
 	m.ac.triageWaitPhase2 = true
+	m.filter.visibleKey = "" // new data: applyFilter refreshes open analysis views
 
 	// Rebuild lookup map
 	var mapStart time.Time
@@ -659,48 +664,9 @@ func (m Model) handleFileChanged(msg FileChangedMsg) (Model, tea.Cmd) {
 		}
 	}
 
-	// Regenerate sub-views (with Phase 1 data; Phase 2 will update via Phase2ReadyMsg)
-	// Preserve triage data already computed to avoid UI flicker.
-	needsInsights := m.mode == ViewInsights
-	var ins analysis.Insights
-	if needsInsights {
-		var insightsStart time.Time
-		if profileRefresh {
-			insightsStart = time.Now()
-		}
-		ins = m.data.analysis.GenerateInsights(len(m.filter.visible))
-		if profileRefresh {
-			recordTiming("insights_generate", time.Since(insightsStart))
-		}
-	}
-	if needsInsights {
-		oldTopPicks := m.insightsPanel.topPicks
-		oldRecs := m.insightsPanel.recommendations
-		oldRecMap := m.insightsPanel.recommendationMap
-		oldHash := m.insightsPanel.triageDataHash
+	// applyFilter above rebuilt any open analysis view (insights, attention,
+	// label dashboard, flow, actionable) from the new visible set (bt-imh).
 
-		m.insightsPanel = NewInsightsModel(m.visibleInsights(ins), m.data.issueMap, m.theme)
-		m.insightsPanel.topPicks = oldTopPicks
-		m.insightsPanel.recommendations = oldRecs
-		m.insightsPanel.recommendationMap = oldRecMap
-		m.insightsPanel.triageDataHash = oldHash
-		bodyHeight := m.height - 1
-		if bodyHeight < 5 {
-			bodyHeight = 5
-		}
-		m.insightsPanel.SetSize(m.width, bodyHeight)
-	}
-	if m.mode == ViewAttention {
-		var attentionStart time.Time
-		if profileRefresh {
-			attentionStart = time.Now()
-		}
-		m.attentionCached = false
-		m.refreshAttentionView()
-		if profileRefresh {
-			recordTiming("attention_view", time.Since(attentionStart))
-		}
-	}
 	// Keep semantic index current when enabled.
 	if m.semanticSearchEnabled && !m.semanticIndexBuilding {
 		m.semanticIndexBuilding = true

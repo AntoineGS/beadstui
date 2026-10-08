@@ -13,6 +13,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/bql"
 	"github.com/seanmartinsmith/beadstui/pkg/drift"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
@@ -545,5 +546,41 @@ func TestFilterConsistencyMatrix(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// EXPAND adds related issues after the WHERE clause; they must still pass
+// scope, labels and wisps (bt-imh final review).
+func TestFilterSpecBQLExpandRespectsBaseDimensions(t *testing.T) {
+	issues := filterMatrixFixture()
+	env := fixtureEnv(issues)
+	q := "id = projb-2 expand up"
+	got := idsOf(FilterSpec{BQL: mustBQL(t, q), BQLText: q}.Apply(issues, env))
+	if len(got) != 2 {
+		t.Fatalf("precondition: expand up from projb-2 = %v, want projb-1 and projb-2", got)
+	}
+	got = idsOf(FilterSpec{BQL: mustBQL(t, q), BQLText: q, Labels: []string{"ops"}}.Apply(issues, env))
+	if len(got) != 1 || got[0] != "projb-2" {
+		t.Fatalf("expand under label ops = %v, want only projb-2", got)
+	}
+	got = idsOf(FilterSpec{BQL: mustBQL(t, q), BQLText: q, Workspace: true, Repos: map[string]bool{"proja": true}}.Apply(issues, env))
+	if len(got) != 0 {
+		t.Fatalf("expand under proja scope = %v, want none", got)
+	}
+}
+
+// A cycle is shown only when every member is visible, so insights never list
+// a hidden issue (bt-imh final review).
+func TestVisibleInsightsDropsPartlyHiddenCycles(t *testing.T) {
+	m := NewModel(filterMatrixFixture(), nil, "", nil, nil)
+	m.SetFilter("all")
+	m.EnableWorkspaceMode(WorkspaceInfo{Enabled: true, RepoCount: 2, RepoPrefixes: []string{"proja", "projb"}})
+	m.SetActiveRepos(map[string]bool{"proja": true})
+	ins := m.visibleInsights(analysis.Insights{Cycles: [][]string{
+		{"proja-1", "proja-3"},
+		{"proja-1", "projb-1"},
+	}})
+	if len(ins.Cycles) != 1 || len(ins.Cycles[0]) != 2 || ins.Cycles[0][1] != "proja-3" {
+		t.Fatalf("cycles = %v, want only [proja-1 proja-3]", ins.Cycles)
 	}
 }
