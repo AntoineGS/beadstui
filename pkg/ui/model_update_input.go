@@ -1493,13 +1493,12 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.Global.LabelPicker):
 			// Open label picker for quick filter (bv-126)
-			if len(m.data.issues) == 0 {
+			if len(m.data.issueMap) == 0 {
 				return m, nil
 			}
-			// Labels and counts follow the project scope (bt-obw) but not the
-			// status/BQL/recipe/label filters: counts that shifted with the
-			// label filter would hide the labels the user is choosing between.
-			labelExtraction := analysis.ExtractLabels(m.workspacePrefilter(m.data.issues))
+			// Facet counts (bt-imh): every filter except the label selection,
+			// so counts match the list while other labels stay choosable.
+			labelExtraction := analysis.ExtractLabels(m.applySpec(m.filterSpec().Without(DimLabels)))
 			labelCounts := extractLabelCounts(labelExtraction.Stats)
 			labels := labelExtraction.Labels
 			var activeLabels []string

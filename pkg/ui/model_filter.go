@@ -316,19 +316,6 @@ func (m *Model) setActiveRecipe(r *recipe.Recipe) {
 	}
 }
 
-// matchesLabelFilter checks if an issue has any of the comma-separated labels.
-func matchesLabelFilter(issue model.Issue, labelFilter string) bool {
-	labels := strings.Split(labelFilter, ",")
-	for _, fl := range labels {
-		for _, l := range issue.Labels {
-			if l == fl {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func (m *Model) refreshBoardAndGraphForCurrentFilter() {
 	if m.mode != ViewBoard && m.mode != ViewGraph {
 		return

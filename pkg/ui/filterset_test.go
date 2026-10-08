@@ -2,9 +2,11 @@ package ui
 
 import (
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/seanmartinsmith/beadstui/pkg/bql"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/recipe"
@@ -325,5 +327,59 @@ func TestSnapshotReloadKeepsStatusFilter(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestLabelPickerCountsFollowStatusFilter is the reported case (bt-imh):
+// project scoped, status open, label tests -> list of N and picker tests (N).
+func TestLabelPickerCountsFollowStatusFilter(t *testing.T) {
+	m := newSizedModel(t, filterMatrixFixture(), 140, 40)
+	m.EnableWorkspaceMode(WorkspaceInfo{Enabled: true, RepoCount: 2, RepoPrefixes: []string{"proja", "projb"}})
+	m.SetActiveRepos(map[string]bool{"proja": true})
+	m.filter.currentFilter = "open"
+	m.filter.labelFilter = "tests"
+	m.applyFilter()
+	if n := len(m.FilteredIssues()); n != 1 {
+		t.Fatalf("list = %v, want only proja-1", idsOf(m.FilteredIssues()))
+	}
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})
+	m = updated.(Model)
+	if got := m.labelPicker.labelCounts["tests"]; got != 1 {
+		t.Fatalf("picker tests count = %d, want 1 (matches the list)", got)
+	}
+	// Facet rule: other labels count with every filter except labels.
+	// proja open, non-wisp: proja-1 (tests), proja-3 (docs).
+	if got := m.labelPicker.labelCounts["docs"]; got != 1 {
+		t.Fatalf("picker docs count = %d, want 1", got)
+	}
+	if _, ok := m.labelPicker.labelCounts["ops"]; ok {
+		t.Fatal("projb-only label listed while scoped to proja")
+	}
+}
+
+func TestBoardHintTotalIsProjectScope(t *testing.T) {
+	m := newSizedModel(t, filterMatrixFixture(), 140, 40)
+	m.EnableWorkspaceMode(WorkspaceInfo{Enabled: true, RepoCount: 2, RepoPrefixes: []string{"proja", "projb"}})
+	m.SetActiveRepos(map[string]bool{"proja": true})
+	m.mode = ViewBoard
+	m.SetFilter("open")
+	// proja non-wisp issues: proja-1, proja-2, proja-3.
+	if hint := m.extractHintText(); !strings.Contains(hint, "[open:2/3]") {
+		t.Fatalf("board hint = %q, want [open:2/3]", hint)
+	}
+}
+
+func TestEpicsIgnoreStatusButFollowLabels(t *testing.T) {
+	m := newSizedModel(t, epicProgressFixture(), 140, 40)
+	m.SetFilter("open")
+	got := m.applySpec(m.filterSpec().Without(DimPrimary))
+	closed := 0
+	for _, iss := range got {
+		if isClosedLikeStatus(iss.Status) {
+			closed++
+		}
+	}
+	if closed == 0 {
+		t.Fatal("epics source dropped closed children under the open filter")
 	}
 }

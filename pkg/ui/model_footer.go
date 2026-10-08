@@ -593,7 +593,7 @@ func (m *Model) extractHintText() string {
 		filterInfo := ""
 		if m.filter.currentFilter != "all" && m.filter.currentFilter != "" {
 			shown := m.board.TotalCount()
-			total := len(m.data.issues)
+			total := m.filter.scopeCount
 			filterInfo = fmt.Sprintf("[%s:%d/%d] ", m.filter.currentFilter, shown, total)
 		}
 		return fmt.Sprintf("%s1-4:col • o/c/r:filter • l:labels • /:search • ?:help", filterInfo)
