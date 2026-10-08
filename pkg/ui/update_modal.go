@@ -59,6 +59,7 @@ type UpdateModal struct {
 	theme          Theme
 	width          int
 	height         int
+	popupSize      *PopupSize
 	startTime      time.Time
 	confirmFocus   int // 0 = Update, 1 = Cancel
 }
@@ -182,18 +183,21 @@ func (m UpdateModal) Update(msg tea.Msg) (UpdateModal, tea.Cmd) {
 
 // View renders the modal.
 func (m UpdateModal) View() string {
-
-	// Modal container style
-	modalStyle := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(m.theme.Primary).
-		Padding(1, 2).
-		Width(m.width)
-
-	// Header style
-	headerStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.Primary)
+	opts := PopupOpts{Theme: m.theme, Available: m.popupSize, Width: 70, Title: "Updating..."}
+	switch m.state {
+	case UpdateStateConfirm:
+		opts.Title = "Update Available"
+		opts.MinBodyRows = 4 // version pair, question, and actionable focus row
+		opts.Footer = []string{"←/→ select  [Y] Update  [N] Cancel  [Enter] Select  Esc cancel", "←/→ Y/N Enter select Esc cancel"}
+	case UpdateStateSuccess:
+		opts.Title = "Update Complete!"
+		opts.Accent = ColorStatusOpen
+		opts.Footer = []string{"[Enter] Close  Esc/q close", "Enter Esc/q close"}
+	case UpdateStateError:
+		opts.Title = "Update Failed"
+		opts.Accent = ColorStatusBlocked
+		opts.Footer = []string{"[Enter] Close  Esc/q close", "Enter Esc/q close"}
+	}
 
 	// Version styles
 	currentVersionStyle := lipgloss.NewStyle().
@@ -205,14 +209,11 @@ func (m UpdateModal) View() string {
 
 	// Button styles
 	buttonStyle := lipgloss.NewStyle().
-		Padding(0, 2).
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(m.theme.Border)
+		Padding(0, 1).
+		Foreground(m.theme.Base.GetForeground())
 
 	selectedButtonStyle := lipgloss.NewStyle().
-		Padding(0, 2).
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(m.theme.Primary).
+		Padding(0, 1).
 		Background(m.theme.Primary).
 		Foreground(ColorBg).
 		Bold(true)
@@ -233,39 +234,30 @@ func (m UpdateModal) View() string {
 
 	switch m.state {
 	case UpdateStateConfirm:
-		b.WriteString(headerStyle.Render("Update Available"))
-		b.WriteString("\n\n")
-
 		b.WriteString("Current version: ")
 		b.WriteString(currentVersionStyle.Render(m.currentVersion))
 		b.WriteString("\n")
 
 		b.WriteString("New version:     ")
 		b.WriteString(newVersionStyle.Render(m.newVersion))
-		b.WriteString("\n\n")
+		b.WriteString("\n")
 
-		b.WriteString("Would you like to update now?\n\n")
+		b.WriteString("Would you like to update now?\n")
 
 		// Buttons
 		var updateBtn, cancelBtn string
 		if m.confirmFocus == 0 {
-			updateBtn = selectedButtonStyle.Render(" Update ")
+			updateBtn = selectedButtonStyle.Render("> Update")
 			cancelBtn = buttonStyle.Render(" Cancel ")
 		} else {
 			updateBtn = buttonStyle.Render(" Update ")
-			cancelBtn = selectedButtonStyle.Render(" Cancel ")
+			cancelBtn = selectedButtonStyle.Render("> Cancel")
 		}
-		b.WriteString("    ")
 		b.WriteString(updateBtn)
 		b.WriteString("  ")
 		b.WriteString(cancelBtn)
-		b.WriteString("\n\n")
-
-		b.WriteString(subtextStyle.Render("[Y] Update   [N] Cancel   [Enter] Select"))
 
 	case UpdateStateDownloading:
-		b.WriteString(headerStyle.Render("Updating..."))
-		b.WriteString("\n\n")
 		b.WriteString(m.renderSpinner())
 		b.WriteString(" Downloading ")
 		b.WriteString(newVersionStyle.Render(m.newVersion))
@@ -276,20 +268,14 @@ func (m UpdateModal) View() string {
 		b.WriteString(subtextStyle.Render(fmt.Sprintf("Elapsed: %s", elapsed)))
 
 	case UpdateStateVerifying:
-		b.WriteString(headerStyle.Render("Updating..."))
-		b.WriteString("\n\n")
 		b.WriteString(m.renderSpinner())
 		b.WriteString(" Verifying checksum...\n")
 
 	case UpdateStateInstalling:
-		b.WriteString(headerStyle.Render("Updating..."))
-		b.WriteString("\n\n")
 		b.WriteString(m.renderSpinner())
 		b.WriteString(" Installing new version...\n")
 
 	case UpdateStateSuccess:
-		b.WriteString(successStyle.Render("Update Complete!"))
-		b.WriteString("\n\n")
 		b.WriteString(m.successMessage)
 		b.WriteString("\n\n")
 		if m.backupPath != "" {
@@ -300,17 +286,13 @@ func (m UpdateModal) View() string {
 		}
 		b.WriteString(successStyle.Render("Restart bv to use the new version."))
 		b.WriteString("\n\n")
-		b.WriteString(subtextStyle.Render("[Enter] Close"))
 
 	case UpdateStateError:
-		b.WriteString(errorStyle.Render("Update Failed"))
+		b.WriteString(errorStyle.Render(m.errorMessage))
 		b.WriteString("\n\n")
-		b.WriteString(m.errorMessage)
-		b.WriteString("\n\n")
-		b.WriteString(subtextStyle.Render("[Enter] Close"))
 	}
 
-	return modalStyle.Render(b.String())
+	return RenderPopup(strings.Split(strings.TrimRight(b.String(), "\n"), "\n"), opts)
 }
 
 // renderSpinner returns an animated spinner character
@@ -340,14 +322,8 @@ func (m UpdateModal) renderProgressBar() string {
 
 // SetSize sets the modal dimensions based on terminal size.
 func (m *UpdateModal) SetSize(width, height int) {
-	maxWidth := width - 10
-	if maxWidth < 50 {
-		maxWidth = 50
-	}
-	if maxWidth > 70 {
-		maxWidth = 70
-	}
-	m.width = maxWidth
+	m.popupSize = &PopupSize{width, height}
+	m.width = min(70, max(0, width))
 	m.height = height
 }
 

@@ -21,6 +21,7 @@ type LabelPickerModel struct {
 	selected      map[string]bool // labels toggled in this session (space to toggle)
 	width         int
 	height        int
+	popupSize     *PopupSize
 	theme         Theme
 	// searchFocused gates whether typed characters route to the text input or
 	// are interpreted as navigation/no-op. The picker opens with searchFocused
@@ -95,6 +96,7 @@ func sortLabelsByCountDesc(labels []string, counts map[string]int) []string {
 
 // SetSize updates the picker dimensions
 func (m *LabelPickerModel) SetSize(width, height int) {
+	m.popupSize = &PopupSize{width, height}
 	m.width = width
 	m.height = height
 }
@@ -213,57 +215,15 @@ func (m *LabelPickerModel) PageUp() {
 	m.selectedIndex = target
 }
 
-// labelPickerVerticalChrome is the number of rows the picker reserves for
-// non-list content: 1 (input) + 1 (blank) + 1 (blank) + 1 (page indicator)
-// + 1 (blank) + 1 (footer) = 6, plus 2 panel border rows from
-// RenderTitledPanel. Must stay in sync with View().
-const labelPickerVerticalChrome = 8
-
 // labelPickerMaxVisible caps the number of label rows shown at once. With 440
 // real-world labels (bt-wnda dogfood data) we want substantially more than the
 // previous 10-row cap, but a hard ceiling keeps the modal from filling the
 // entire screen on tall terminals.
 const labelPickerMaxVisible = 30
 
-// visibleCount returns how many labels are visible in the picker. The modal
-// total height is `visibleCount + labelPickerVerticalChrome (8)`, and that
-// total must fit inside the available bg height (m.height as set by
-// SetSize) so the OverlayCenterDimBackdrop centering doesn't clip the
-// bottom border on small terminals (bt-vr2h).
-//
-// Sizing strategy mirrors model_alerts.go alertsPanelHeight: aim for ~75%
-// of the bg as the soft target, fall back to whatever fits on small
-// terminals, and cap at labelPickerMaxVisible (30) on tall ones. Below
-// ~9 rows of bg the chrome itself can't fit -- accept overflow rather
-// than restructuring chrome.
+// visibleCount consumes the shared body budget after search/page rows.
 func (m *LabelPickerModel) visibleCount() int {
-	bg := m.height
-
-	// Soft target: ~75% of bg for breathing room above and below.
-	softTotal := int(float64(bg) * 0.75)
-	if softTotal > bg {
-		softTotal = bg
-	}
-
-	visible := softTotal - labelPickerVerticalChrome
-
-	// On small terminals where 75% can't accommodate any label rows, fall
-	// back to whatever fits.
-	if visible < 1 {
-		visible = bg - labelPickerVerticalChrome
-	}
-
-	// Tall-terminal cap.
-	if visible > labelPickerMaxVisible {
-		visible = labelPickerMaxVisible
-	}
-
-	// Absolute floor: at least 1 row even if the modal overflows on a
-	// terminal smaller than chrome (~9 rows).
-	if visible < 1 {
-		visible = 1
-	}
-	return visible
+	return min(labelPickerMaxVisible, max(1, m.popupLayout().BodyHeight-4))
 }
 
 // SelectedLabel returns the currently selected label
@@ -291,30 +251,20 @@ func (m *LabelPickerModel) SetCursor(idx int) {
 	m.selectedIndex = idx
 }
 
-// labelRowOffsetInBox is the row offset, relative to the panel top border,
-// at which the first label appears. Layout above each label list:
-//   - row 0: top border
-//   - row 1: search input
-//   - row 2: blank
-//   - row 3+: labels begin here
-//
-// Must stay aligned with View().
-const labelRowOffsetInBox = 3
-
-// searchRowOffsetInBox is the row offset (relative to panel top border)
-// of the search input row. A click here focuses the search input.
-const searchRowOffsetInBox = 1
-
 // ItemAtPanelY maps a Y coordinate relative to the picker's top border to
 // the filtered-list index currently rendered there. Returns (-1, false) for
 // non-row regions (chrome, input, blanks, footer, etc.). The window math
 // mirrors View()'s page-aligned slice (start, end).
 func (m *LabelPickerModel) ItemAtPanelY(my int) (int, bool) {
+	l := m.popupLayout()
+	if l.Compact || l.Height == 0 {
+		return -1, false
+	}
 	maxVisible := m.visibleCount()
 	if maxVisible <= 0 {
 		return -1, false
 	}
-	relRow := my - labelRowOffsetInBox
+	relRow := my - l.BodyY - 2
 	if relRow < 0 || relRow >= maxVisible {
 		return -1, false
 	}
@@ -332,7 +282,8 @@ func (m *LabelPickerModel) ItemAtPanelY(my int) (int, bool) {
 // IsSearchRow reports whether the given panel-relative Y is the search
 // input row. Used by mouse routing to focus the search input on click.
 func (m *LabelPickerModel) IsSearchRow(my int) bool {
-	return my == searchRowOffsetInBox
+	l := m.popupLayout()
+	return !l.Compact && l.Height > 0 && my == l.BodyY
 }
 
 // UpdateInput processes a key message for the text input
@@ -500,184 +451,38 @@ func fuzzyScore(label, query string) int {
 	return 0
 }
 
-const labelPickerHPad = 3 // horizontal padding inside box
-
-// labelPickerFooterText is the footer hint string. Defined at package scope
-// so Dimensions() and View() share the same width budget without drift.
-const labelPickerFooterText = "toggle: space page: \u2190/\u2192 \u2022 apply: enter"
-
-// computeBoxWidth derives the modal's outer box width (including borders).
-// Pure layout math \u2014 no rendering side effects \u2014 so the click handler can
-// reuse it via Dimensions() without re-running the entire View pipeline.
-func (m *LabelPickerModel) computeBoxWidth() int {
-	maxLabelWidth := 0
-	for _, label := range m.allLabels {
-		count := m.labelCounts[label]
-		w := len(label) + len(fmt.Sprintf(" (%d)", count))
-		if w > maxLabelWidth {
-			maxLabelWidth = w
+func (m *LabelPickerModel) popupEntries() []PopupMenuEntry {
+	entries := make([]PopupMenuEntry, len(m.filtered))
+	for i, label := range m.filtered {
+		marker := "•"
+		if m.selected[label] {
+			marker = activeGlyphs.Success
 		}
+		entries[i] = PopupMenuEntry{Label: label, Marker: marker, Suffix: fmt.Sprintf(" (%d)", m.labelCounts[label]), Selected: i == m.selectedIndex}
 	}
+	return entries
+}
 
-	// hpad + cursor(2) + indicator(2) + space(1) + label+count + hpad
-	lineWidth := labelPickerHPad + 2 + 2 + 1 + maxLabelWidth + labelPickerHPad
-	footerLineWidth := labelPickerHPad + len(labelPickerFooterText) + labelPickerHPad
-	inputLineWidth := labelPickerHPad + 4 + 30 + labelPickerHPad // "> " + input
+func (m *LabelPickerModel) popupOpts() PopupOpts {
+	return PopupOpts{Title: "Filter by Label", Theme: m.theme, Available: m.popupSize, Footer: []string{"space toggle / search ←/→ page enter apply esc back", "space / ←/→ enter esc"}}
+}
 
-	innerWidth := lineWidth
-	if footerLineWidth > innerWidth {
-		innerWidth = footerLineWidth
-	}
-	if inputLineWidth > innerWidth {
-		innerWidth = inputLineWidth
-	}
-
-	boxWidth := innerWidth + 2 // add border chars
-
-	// Cap at 80% of terminal width so a few long label names don't make the
-	// modal swallow the entire row on narrow terminals (bt-vr2h). Hard cap at
-	// m.width-4 stays as a safety floor.
-	if widthCap := int(float64(m.width) * 0.80); boxWidth > widthCap {
-		boxWidth = widthCap
-	}
-	if boxWidth > m.width-4 {
-		boxWidth = m.width - 4
-	}
-	if boxWidth < 35 {
-		boxWidth = 35
-	}
-	return boxWidth
+func (m *LabelPickerModel) popupLayout() PopupLayout {
+	return measureSearchPopup(m.popupEntries(), labelPickerMaxVisible, m.popupOpts())
 }
 
 // Dimensions returns the modal's outer box (width, height) in cells. The
 // click handler uses this to compute the panel's centered start row/col.
-// Box height layout: 1 (top border) + 1 (input) + 1 (blank) + maxVisible
-// + 1 (blank) + 1 (page) + 1 (blank) + 1 (footer) + 1 (bottom border).
 func (m *LabelPickerModel) Dimensions() (int, int) {
-	w := m.computeBoxWidth()
-	h := m.visibleCount() + labelPickerVerticalChrome
-	return w, h
+	l := m.popupLayout()
+	return l.Width, l.Height
 }
 
 // View renders the label picker overlay
 func (m *LabelPickerModel) View() string {
-	if m.width == 0 {
-		m.width = 60
-	}
-	if m.height == 0 {
-		m.height = 20
-	}
-
-	t := m.theme
-
-	maxVisible := m.visibleCount()
-	boxWidth := m.computeBoxWidth()
-
-	pad := strings.Repeat(" ", labelPickerHPad)
-
-	var lines []string
-
-	// Search input
-	inputStyle := lipgloss.NewStyle().
-		Foreground(t.Primary)
-	inputLine := pad + inputStyle.Render("> ") + m.input.View()
-	lines = append(lines, inputLine)
-	lines = append(lines, "")
-
-	// Label list with scroll - always render maxVisible lines for vertical stability
-	activeStyle := lipgloss.NewStyle().Foreground(t.Primary)
-	dimStyle := lipgloss.NewStyle().Foreground(t.Secondary)
-
-	if len(m.filtered) == 0 {
-		lines = append(lines, dimStyle.Render(pad+"No matching labels"))
-		// Pad to fixed height
-		for i := 1; i < maxVisible; i++ {
-			lines = append(lines, "")
-		}
-	} else {
-		// Page-aligned visible window so paging feels natural
-		start := (m.selectedIndex / maxVisible) * maxVisible
-		end := start + maxVisible
-		if end > len(m.filtered) {
-			end = len(m.filtered)
-		}
-
-		for i := start; i < end; i++ {
-			label := m.filtered[i]
-			isCursor := i == m.selectedIndex
-			isSelected := m.selected[label]
-
-			nameStyle := lipgloss.NewStyle().Foreground(t.Base.GetForeground())
-			countStyle := lipgloss.NewStyle().Foreground(t.Secondary)
-			if isCursor {
-				nameStyle = nameStyle.Foreground(t.Primary).Bold(true)
-				countStyle = countStyle.Foreground(t.Primary)
-			}
-
-			cursor := "  "
-			if isCursor {
-				cursor = nameStyle.Render("▸ ")
-			}
-
-			indicator := dimStyle.Render("• ")
-			if isSelected {
-				indicator = activeStyle.Render(activeGlyphs.Success + " ")
-			}
-
-			count := m.labelCounts[label]
-			countStr := countStyle.Render(fmt.Sprintf(" (%d)", count))
-			line := pad + cursor + indicator + nameStyle.Render(label) + countStr
-			lines = append(lines, line)
-		}
-
-		// Pad remaining lines to fixed height
-		for i := end - start; i < maxVisible; i++ {
-			lines = append(lines, "")
-		}
-	}
-
-	// Page indicator + selection count (always present for vertical stability)
-	pageStyle := lipgloss.NewStyle().
-		Foreground(t.Secondary).
-		Italic(true)
-	selCountStyle := lipgloss.NewStyle().
-		Foreground(t.Primary).
-		Bold(true)
-	selSuffix := ""
-	if len(m.selected) > 0 {
-		selSuffix = " • " + selCountStyle.Render(fmt.Sprintf("%d selected", len(m.selected)))
-	}
-	lines = append(lines, "")
-	if len(m.filtered) > maxVisible {
-		page := m.selectedIndex/maxVisible + 1
-		totalPages := (len(m.filtered) + maxVisible - 1) / maxVisible
-		lines = append(lines, pageStyle.Render(
-			pad+fmt.Sprintf("%d/%d (%d labels)", page, totalPages, len(m.filtered)))+selSuffix)
-	} else if len(m.filtered) > 0 {
-		lines = append(lines, pageStyle.Render(
-			pad+fmt.Sprintf("%d labels", len(m.filtered)))+selSuffix)
-	} else {
-		if selSuffix != "" {
-			lines = append(lines, pad+selSuffix)
-		} else {
-			lines = append(lines, "")
-		}
-	}
-
-	// Footer hints
-	lines = append(lines, "")
-	footerStyle := lipgloss.NewStyle().
-		Foreground(t.Secondary).
-		Italic(true)
-	lines = append(lines, footerStyle.Render(pad+labelPickerFooterText))
-
-	content := strings.Join(lines, "\n")
-
-	return RenderTitledPanel(content, PanelOpts{
-		Title:   "Filter by Label",
-		Width:   boxWidth,
-		Focused: true,
-	})
+	l := m.popupLayout()
+	m.input.SetWidth(max(1, l.BodyWidth-lipgloss.Width(m.input.Prompt)))
+	return renderSearchPopup(m.popupEntries(), m.selectedIndex, labelPickerMaxVisible, len(m.selected), m.input.View(), "No matching labels", "labels", m.popupOpts(), l)
 }
 
 // InputValue returns the current input value

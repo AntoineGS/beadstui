@@ -326,7 +326,7 @@ func (m *Model) pendingWriteIDs() map[string]bool {
 //     Issue field to compare against (bd comments add appends to a list, not
 //     a replaceable value). Comment callers always register Target == "" and
 //     settle on the very next reload after a successful write, unconditionally
-//     - there is nothing more precise to check without re-reading bd's
+//   - there is nothing more precise to check without re-reading bd's
 //     comment list. This is a third, explicit predicate case (not the
 //     fieldValue default-"" fallthrough the comment above this used to rely
 //     on implicitly - see fieldValue's doc comment for why that was wrong).
@@ -455,7 +455,6 @@ func (m Model) renderClaimConfirm() string {
 	t := m.theme
 
 	textStyle := lipgloss.NewStyle().Foreground(t.Base.GetForeground())
-	keyStyle := lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
 	idStyle := lipgloss.NewStyle().Foreground(t.Secondary).Bold(true)
 	warnStyle := lipgloss.NewStyle().Foreground(t.Warning)
 
@@ -473,8 +472,6 @@ func (m Model) renderClaimConfirm() string {
 
 	lineWhat := textStyle.Render("Claim ") + idStyle.Render(m.claimTargetID)
 	lineTitle := textStyle.Render(truncateRunesHelper(m.claimTargetTitle, titleMax, "..."))
-	lineConfirm := keyStyle.Render("y") + textStyle.Render("/") + keyStyle.Render("enter") +
-		textStyle.Render(" confirm    ") + keyStyle.Render("esc") + textStyle.Render(" cancel")
 
 	lines := []string{lineWhat, lineTitle}
 	// Outcome prediction (bt-55n3s matrix, bt-oiaj.13 step 5): WARN only,
@@ -483,36 +480,5 @@ func (m Model) renderClaimConfirm() string {
 	if prediction := predictClaimOutcome(m.data.issueMap[m.claimTargetID]); prediction != "" {
 		lines = append(lines, warnStyle.Render(truncateRunesHelper(prediction, titleMax, "...")))
 	}
-	lines = append(lines, lineConfirm)
-
-	innerW := 0
-	for _, l := range lines {
-		if w := lipgloss.Width(l); w > innerW {
-			innerW = w
-		}
-	}
-	if innerW > maxInner {
-		innerW = maxInner
-	}
-
-	const sidePad = 4
-	panelWidth := innerW + 2 + sidePad
-	pad := strings.Repeat(" ", sidePad/2)
-	var body strings.Builder
-	for i, l := range lines {
-		if i > 0 {
-			body.WriteString("\n")
-		}
-		body.WriteString(pad + centerLine(l, innerW) + pad)
-	}
-	content := "\n" + body.String() + "\n"
-
-	return RenderTitledPanel(content, PanelOpts{
-		Title:       "Claim?",
-		Width:       panelWidth,
-		CenterTitle: true,
-		BorderColor: t.Primary,
-		TitleColor:  t.Primary,
-		Focused:     true,
-	})
+	return RenderPopup(lines, PopupOpts{Title: "Claim?", Theme: t, Available: &PopupSize{m.width, max(0, m.height-1)}, Footer: []string{"y/enter confirm    esc cancel", "y/enter esc"}})
 }

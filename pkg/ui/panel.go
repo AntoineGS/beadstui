@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"image/color"
 	"strings"
 
@@ -8,6 +9,395 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 )
+
+// PopupSize is the actual terminal budget, including the popup's border.
+type PopupSize struct{ Width, Height int }
+
+// PopupOpts supplies content and preferred outer dimensions. A nil Available
+// means not sized yet; an explicit zero budget renders nothing.
+type PopupOpts struct {
+	Title, RightLabel string
+	Theme             Theme
+	Available         *PopupSize
+	Width, Height     int
+	MinBodyRows       int
+	Accent            color.Color
+	Footer            []string // detailed to compact, unstyled hints
+}
+
+// PopupLayout is shared by rendering, widget sizing, paging and hit-testing.
+type PopupLayout struct {
+	Width, Height         int
+	BodyWidth, BodyHeight int
+	BodyX, BodyY          int
+	FooterY               int // -1 when absent
+	PadX, PadY            int
+	Footer                []string
+	Compact               bool
+}
+
+func popupAvailableSize(size *PopupSize) PopupSize {
+	if size == nil {
+		return PopupSize{80, 24}
+	}
+	return PopupSize{max(0, size.Width), max(0, size.Height)}
+}
+
+func popupBodyLines(body []string) []string {
+	var lines []string
+	for _, block := range body {
+		lines = append(lines, strings.Split(block, "\n")...)
+	}
+	return lines
+}
+
+func popupFooterLines(width int, candidates []string) []string {
+	if width <= 0 || len(candidates) == 0 {
+		return nil
+	}
+	for _, hint := range candidates {
+		hint = popupChromeLine(hint)
+		if ansi.StringWidth(hint) <= width {
+			if hint == "" {
+				return nil
+			}
+			return []string{hint}
+		}
+	}
+	last := popupChromeLine(candidates[len(candidates)-1])
+	if last == "" {
+		return nil
+	}
+	return strings.Split(ansi.Wrap(last, width, ""), "\n")
+}
+
+// Popup titles and footer hints are single-line chrome, not body blocks.
+func popupChromeLine(text string) string {
+	text = ansi.Strip(text)
+	text = strings.ReplaceAll(text, "\r\n", " ")
+	text = strings.ReplaceAll(text, "\n", " ")
+	text = strings.ReplaceAll(text, "\r", " ")
+	return strings.ReplaceAll(text, "\t", " ")
+}
+
+func popupHorizontalPadding(width int) int {
+	if width < 10 {
+		return 0
+	}
+	if width < 16 {
+		return 1
+	}
+	return 2
+}
+
+// MeasurePopup reserves footer and border rows before allocating the body.
+// Callers with their own body chrome can request a minimum useful row count.
+func MeasurePopup(body []string, opts PopupOpts) PopupLayout {
+	available := popupAvailableSize(opts.Available)
+	l := PopupLayout{FooterY: -1}
+	if available.Width == 0 || available.Height == 0 {
+		return l
+	}
+	flat := popupBodyLines(body)
+	contentWidth := 0
+	for _, line := range flat {
+		contentWidth = max(contentWidth, ansi.StringWidth(line))
+	}
+	maxBodyWidth := max(1, available.Width-2-2*popupHorizontalPadding(available.Width))
+	for _, line := range popupFooterLines(maxBodyWidth, opts.Footer) {
+		contentWidth = max(contentWidth, ansi.StringWidth(line))
+	}
+	titleWidth := ansi.StringWidth(popupChromeLine(opts.Title)) + 4
+	if opts.RightLabel != "" {
+		titleWidth += ansi.StringWidth(popupChromeLine(opts.RightLabel)) + 3
+	}
+	l.Width = opts.Width
+	if l.Width <= 0 {
+		l.Width = max(8, max(contentWidth+6, titleWidth+2))
+	}
+	l.Width = min(l.Width, available.Width)
+	l.PadX = popupHorizontalPadding(l.Width)
+	l.BodyWidth = max(0, l.Width-2-2*l.PadX)
+	l.Footer = popupFooterLines(l.BodyWidth, opts.Footer)
+	separator := 0
+	if len(l.Footer) > 0 {
+		separator = 1
+	}
+	l.PadY = 1
+	bodyRows := max(max(1, opts.MinBodyRows), len(flat))
+	naturalHeight := bodyRows + 2 + 2*l.PadY + separator + len(l.Footer)
+	l.Height = opts.Height
+	if l.Height <= 0 {
+		l.Height = naturalHeight
+	}
+	l.Height = min(l.Height, available.Height)
+	minimumBody := max(1, opts.MinBodyRows)
+	if l.Height < minimumBody+2+2*l.PadY+separator+len(l.Footer) {
+		l.PadY = 0
+	}
+	if l.Height < minimumBody+2+separator+len(l.Footer) {
+		separator = 0
+	}
+	l.BodyHeight = l.Height - 2 - 2*l.PadY - separator - len(l.Footer)
+	if l.Width < 8 || l.BodyHeight < max(1, opts.MinBodyRows) {
+		return PopupLayout{Width: min(l.Width, ansi.StringWidth("Terminal too small")), Height: 1, FooterY: -1, Compact: true}
+	}
+	l.BodyX = 1 + l.PadX
+	l.BodyY = 1 + l.PadY
+	if len(l.Footer) > 0 {
+		l.FooterY = l.BodyY + l.BodyHeight + separator
+	}
+	return l
+}
+
+// RenderPopup draws shared modal chrome. Its body is always left-aligned;
+// selectable menu blocks perform their own fixed-column centering.
+func RenderPopup(body []string, opts PopupOpts) string {
+	l := MeasurePopup(body, opts)
+	if l.Width == 0 || l.Height == 0 {
+		return ""
+	}
+	if l.Compact {
+		return ansi.Truncate("Terminal too small", l.Width, "")
+	}
+	flat := popupBodyLines(body)
+	inner := make([]string, l.Height-2)
+	pad := strings.Repeat(" ", l.PadX)
+	for i := 0; i < l.BodyHeight; i++ {
+		line := ""
+		if i < len(flat) {
+			line = ansi.Truncate(flat[i], l.BodyWidth, "")
+		}
+		inner[l.BodyY-1+i] = pad + line
+	}
+	hintStyle := lipgloss.NewStyle().Foreground(opts.Theme.Secondary).Italic(true)
+	for i, hint := range l.Footer {
+		inner[l.FooterY-1+i] = pad + centerLine(hintStyle.Render(hint), l.BodyWidth)
+	}
+	accent := opts.Accent
+	if accent == nil {
+		accent = opts.Theme.Primary
+	}
+	title := popupChromeLine(opts.Title)
+	right := popupChromeLine(opts.RightLabel)
+	if right != "" {
+		right = ansi.Truncate(right, max(0, l.Width-5), "")
+		title = ansi.Truncate(title, max(0, l.Width-8-ansi.StringWidth(right)), "")
+	} else {
+		title = ansi.Truncate(title, max(0, l.Width-6), "")
+	}
+	return RenderTitledPanel(strings.Join(inner, "\n"), PanelOpts{
+		Title: title, RightLabel: right, Width: l.Width, Height: l.Height,
+		Focused: true, CenterTitle: right == "", BorderColor: accent, TitleColor: accent,
+		ansiTitleWidth: true,
+	})
+}
+
+// PopupMenuEntry is a presentation projection; interaction state stays in callers.
+type PopupMenuEntry struct {
+	Label, Shortcut, Marker, Detail, Suffix string
+	Selected                                bool
+}
+
+// PopupMenuOpts explicitly reserves optional columns, including empty cells.
+type PopupMenuOpts struct{ Shortcuts, Markers bool }
+
+// PopupMenuLayout must be measured across the full filtered menu before paging.
+type PopupMenuLayout struct {
+	Width, LabelX, ShortcutWidth, MarkerWidth int
+	Shortcuts, Markers                        bool
+}
+
+func MeasurePopupMenu(entries []PopupMenuEntry, opts PopupMenuOpts) PopupMenuLayout {
+	l := PopupMenuLayout{Shortcuts: opts.Shortcuts, Markers: opts.Markers, LabelX: 2}
+	if opts.Shortcuts {
+		l.ShortcutWidth = 1
+		for _, e := range entries {
+			e = popupSingleRow(e)
+			l.ShortcutWidth = max(l.ShortcutWidth, ansi.StringWidth(e.Shortcut))
+		}
+		l.LabelX += l.ShortcutWidth + 2
+	}
+	if opts.Markers {
+		l.MarkerWidth = 2
+		for _, e := range entries {
+			e = popupSingleRow(e)
+			l.MarkerWidth = max(l.MarkerWidth, ansi.StringWidth(e.Marker))
+		}
+		l.LabelX += l.MarkerWidth + 1
+	}
+	l.Width = l.LabelX
+	for _, e := range entries {
+		e = popupSingleRow(e)
+		l.Width = max(l.Width, l.LabelX+ansi.StringWidth(e.Label+e.Suffix))
+		l.Width = max(l.Width, l.LabelX+ansi.StringWidth(e.Detail))
+	}
+	return l
+}
+
+var popupRowReplacer = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ")
+
+func popupSingleRow(e PopupMenuEntry) PopupMenuEntry {
+	clean := func(s string) string {
+		if strings.IndexAny(s, "\r\n\t") < 0 {
+			return s
+		}
+		return popupRowReplacer.Replace(s)
+	}
+	e.Label, e.Shortcut, e.Marker, e.Detail, e.Suffix = clean(e.Label), clean(e.Shortcut), clean(e.Marker), clean(e.Detail), clean(e.Suffix)
+	return e
+}
+
+func PopupMenuEntryRows(entry PopupMenuEntry) int {
+	if entry.Detail != "" {
+		return 2
+	}
+	return 1
+}
+
+func popupStyledText(text string, style lipgloss.Style) string {
+	if strings.Contains(text, "\x1b") {
+		return text
+	}
+	return style.Render(text)
+}
+
+func popupPadCell(text string, width int) string {
+	text = ansi.Truncate(text, max(0, width), "")
+	return text + strings.Repeat(" ", max(0, width-ansi.StringWidth(text)))
+}
+
+// RenderPopupMenu centers one fixed-width block, never individual rows. Labels
+// with existing ANSI spans retain their specialized status/priority styling.
+func RenderPopupMenu(entries []PopupMenuEntry, l PopupMenuLayout, theme Theme, width int) []string {
+	if width <= 0 {
+		return nil
+	}
+	blockWidth := min(l.Width, width)
+	left := strings.Repeat(" ", max(0, (width-blockWidth)/2))
+	primary := lipgloss.NewStyle().Foreground(theme.Primary).Bold(true)
+	idle := lipgloss.NewStyle().Foreground(theme.Base.GetForeground())
+	secondary := lipgloss.NewStyle().Foreground(theme.Secondary)
+	detail := secondary.Italic(true)
+	fit := func(row string) string { return popupPadCell(left+popupPadCell(row, blockWidth), width) }
+	var rows []string
+	for _, e := range entries {
+		e = popupSingleRow(e)
+		cursor, labelStyle := "  ", idle
+		if e.Selected {
+			cursor = primary.Render("> ")
+			labelStyle = primary
+		}
+		row := cursor
+		if l.Shortcuts {
+			row += popupPadCell(popupStyledText(e.Shortcut, primary), l.ShortcutWidth) + "  "
+		}
+		if l.Markers {
+			row += popupPadCell(popupStyledText(e.Marker, secondary), l.MarkerWidth) + " "
+		}
+		row += popupStyledText(e.Label, labelStyle) + popupStyledText(e.Suffix, secondary)
+		rows = append(rows, fit(row))
+		if e.Detail != "" {
+			rows = append(rows, fit(strings.Repeat(" ", max(0, l.LabelX))+popupStyledText(e.Detail, detail)))
+		}
+	}
+	return rows
+}
+
+// renderPopupMenuWindow keeps selection visible while measuring all entries.
+// The frozen outer size prevents a shorter page from moving the menu block.
+func renderPopupMenuWindow(entries []PopupMenuEntry, menuOpts PopupMenuOpts, cursor int, opts PopupOpts) string {
+	menu := MeasurePopupMenu(entries, menuOpts)
+	var shape []string
+	for _, e := range entries {
+		for i := 0; i < PopupMenuEntryRows(e); i++ {
+			shape = append(shape, "")
+		}
+	}
+	if len(shape) > 0 {
+		shape[0] = strings.Repeat(" ", menu.Width)
+	}
+	l := MeasurePopup(shape, opts)
+	if l.Compact || l.Height == 0 {
+		return RenderPopup(shape, opts)
+	}
+	start, end := popupMenuWindowRange(entries, cursor, l.BodyHeight)
+	opts.Width, opts.Height, opts.MinBodyRows = l.Width, l.Height, l.BodyHeight
+	return RenderPopup(RenderPopupMenu(entries[start:end], menu, opts.Theme, l.BodyWidth), opts)
+}
+
+func popupMenuWindowRange(entries []PopupMenuEntry, cursor, rows int) (start, end int) {
+	if len(entries) == 0 || rows <= 0 {
+		return 0, 0
+	}
+	cursor = min(max(0, cursor), len(entries)-1)
+	start = cursor
+	end = cursor + 1
+	used := PopupMenuEntryRows(entries[cursor])
+	for start > 0 && used+PopupMenuEntryRows(entries[start-1]) <= rows {
+		start--
+		used += PopupMenuEntryRows(entries[start])
+	}
+	for end < len(entries) && used+PopupMenuEntryRows(entries[end]) <= rows {
+		used += PopupMenuEntryRows(entries[end])
+		end++
+	}
+	return start, end
+}
+
+// measureSearchPopup shares geometry for searchable multi-select pickers.
+// slots is a caller policy: fixed for labels, content-sized for projects.
+func measureSearchPopup(entries []PopupMenuEntry, slots int, opts PopupOpts) PopupLayout {
+	menu := MeasurePopupMenu(entries, PopupMenuOpts{Markers: true})
+	available := popupAvailableSize(opts.Available)
+	opts.Width = min(max(36, menu.Width+6), available.Width*8/10)
+	if available.Width > 0 {
+		opts.Width = max(1, opts.Width)
+	}
+	opts.MinBodyRows = 5
+	shape := make([]string, max(1, slots)+4)
+	shape[0] = strings.Repeat(" ", max(30, menu.Width))
+	natural := MeasurePopup(shape, opts)
+	opts.Height = min(natural.Height, max(1, available.Height*3/4))
+	l := MeasurePopup(shape, opts)
+	if l.Compact && !natural.Compact {
+		return natural
+	}
+	return l
+}
+
+func renderSearchPopup(entries []PopupMenuEntry, cursor, slots, selected int, input, empty, noun string, opts PopupOpts, l PopupLayout) string {
+	if l.Compact || l.Height == 0 {
+		opts.Width, opts.Height, opts.MinBodyRows = l.Width, l.Height, 5
+		return RenderPopup(nil, opts)
+	}
+	visible := min(slots, max(1, l.BodyHeight-4))
+	start := (cursor / visible) * visible
+	start = min(start, len(entries))
+	end := min(start+visible, len(entries))
+	menu := MeasurePopupMenu(entries, PopupMenuOpts{Markers: true})
+	lines := []string{input, ""}
+	if len(entries) == 0 {
+		lines = append(lines, lipgloss.NewStyle().Foreground(opts.Theme.Secondary).Italic(true).Render(empty))
+	} else {
+		lines = append(lines, RenderPopupMenu(entries[start:end], menu, opts.Theme, l.BodyWidth)...)
+	}
+	for len(lines) < visible+2 {
+		lines = append(lines, "")
+	}
+	count := ""
+	if len(entries) > visible {
+		count = fmt.Sprintf("%d/%d (%d %s)", cursor/visible+1, (len(entries)+visible-1)/visible, len(entries), noun)
+	} else if len(entries) > 0 {
+		count = fmt.Sprintf("%d %s", len(entries), noun)
+	}
+	if selected > 0 {
+		count += fmt.Sprintf(" • %d selected", selected)
+	}
+	lines = append(lines, "", lipgloss.NewStyle().Foreground(opts.Theme.Secondary).Italic(true).Render(count))
+	opts.Width, opts.Height, opts.MinBodyRows = l.Width, l.Height, l.BodyHeight
+	return RenderPopup(lines, opts)
+}
 
 // BorderVariant controls the weight of box-drawing characters.
 type BorderVariant int
@@ -42,6 +432,10 @@ type PanelOpts struct {
 	// dimmed "skipped" panels).
 	BorderColor color.Color
 	TitleColor  color.Color
+
+	// Popup chrome opts into the same grapheme-aware width used by its
+	// layout. Ordinary panels retain their existing title-width behavior.
+	ansiTitleWidth bool
 }
 
 // borderChars returns the box-drawing characters for a variant.
@@ -99,6 +493,10 @@ func RenderTitledPanel(content string, opts PanelOpts) string {
 	}
 
 	innerWidth := opts.Width - 2 // subtract left and right border chars
+	measureTitle, truncateTitle := runewidth.StringWidth, runewidth.Truncate
+	if opts.ansiTitleWidth {
+		measureTitle, truncateTitle = ansi.StringWidth, ansi.Truncate
+	}
 
 	// Build top line: ┌─ Title ─────┐
 	var top strings.Builder
@@ -111,10 +509,10 @@ func RenderTitledPanel(content string, opts PanelOpts) string {
 		if maxTitle < 1 {
 			maxTitle = 1
 		}
-		titleDisplayWidth := runewidth.StringWidth(titleText)
+		titleDisplayWidth := measureTitle(titleText)
 		if titleDisplayWidth > maxTitle {
-			titleText = runewidth.Truncate(titleText, maxTitle-1, "") + "…"
-			titleDisplayWidth = runewidth.StringWidth(titleText)
+			titleText = truncateTitle(titleText, maxTitle-1, "") + "…"
+			titleDisplayWidth = measureTitle(titleText)
 		}
 
 		if opts.CenterTitle {
@@ -143,7 +541,7 @@ func RenderTitledPanel(content string, opts PanelOpts) string {
 			var rightDisplay string
 			if opts.RightLabel != "" {
 				rightDisplay = opts.RightLabel
-				rightDisplayWidth := runewidth.StringWidth(rightDisplay)
+				rightDisplayWidth := measureTitle(rightDisplay)
 				// Match " label ─" (one space on each side of label, trailing dash).
 				rightChunk = 1 + rightDisplayWidth + 2
 			}
@@ -169,7 +567,7 @@ func RenderTitledPanel(content string, opts PanelOpts) string {
 		// No left title, only a right-aligned label (bt-fxbl). Renders as
 		// ╭───────────── Label ─╮  — the panel-as-titled-strip variant.
 		rightDisplay := opts.RightLabel
-		rightDisplayWidth := runewidth.StringWidth(rightDisplay)
+		rightDisplayWidth := measureTitle(rightDisplay)
 		// " label ─" overhead (space + label + space + trailing dash)
 		rightChunk := 1 + rightDisplayWidth + 2
 		fillTotal := innerWidth - rightChunk

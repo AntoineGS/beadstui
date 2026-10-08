@@ -1,18 +1,64 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
+
+func TestSettingsLauncherPopup_AlignedDetailsAndShortSelection(t *testing.T) {
+	m := settingsTestModel(t)
+	m.settingsMenu.SetSize(48, 16)
+	out := m.settingsMenu.View()
+	assertPopupBounds(t, out, 48, 16)
+	var column int
+	for i, entry := range []struct{ label, detail string }{{"OPTIONS", "theme and display settings"}, {"HELP", "keybindings and views"}, {"QUIT", "leave bt"}} {
+		_, row := popupFindRow(t, out, entry.label)
+		_, detail := popupFindRow(t, out, entry.detail)
+		x := ansi.StringWidth(row[:strings.Index(row, entry.label)])
+		if i > 0 && x != column {
+			t.Fatal("menu label columns differ")
+		}
+		column = x
+		if y := ansi.StringWidth(detail[:strings.Index(detail, entry.detail)]); y != x {
+			t.Fatal("menu detail not under label")
+		}
+	}
+	m.settingsMenu.MoveUp()
+	m.settingsMenu.SetSize(36, 8)
+	out = m.settingsMenu.View()
+	assertPopupBounds(t, out, 36, 8)
+	_, quit := popupFindRow(t, out, "QUIT")
+	if !strings.Contains(quit, ">") {
+		t.Fatal("short menu lost selection")
+	}
+	popupFindRow(t, out, "esc")
+}
 
 func settingsTestModel(t *testing.T) Model {
 	t.Helper()
 	m := NewModel([]model.Issue{{ID: "1", Title: "One", Status: model.StatusOpen}}, nil, "", nil, nil)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	return updated.(Model)
+}
+
+func TestOptionsPopup_ColumnsAndFooterFit(t *testing.T) {
+	m := settingsTestModel(t)
+	m.settingsModal.SetSize(48, 16)
+	out := m.settingsModal.View()
+	assertPopupBounds(t, out, 48, 16)
+	popupFindRow(t, out, "esc")
+	popupFindRow(t, out, "enter")
+	_, row := popupFindRow(t, out, "Color")
+	if !strings.Contains(row, "│") || !strings.Contains(out, "Set the color") {
+		t.Fatal("two-column setting/help body missing")
+	}
+	m.settingsModal.SetSize(8, 3)
+	assertPopupBounds(t, m.settingsModal.View(), 8, 3)
 }
 
 // TestSettingsCyclesThemeLive is the contract the whole screen exists for: a

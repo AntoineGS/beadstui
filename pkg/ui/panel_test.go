@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -8,6 +9,273 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
+
+func assertPopupBounds(t *testing.T, out string, width, height int) {
+	t.Helper()
+	if out == "" {
+		return
+	}
+	rows := strings.Split(out, "\n")
+	if len(rows) > height {
+		t.Fatalf("popup has %d rows, available %d:\n%s", len(rows), height, ansi.Strip(out))
+	}
+	firstWidth := ansi.StringWidth(rows[0])
+	for i, row := range rows {
+		if w := ansi.StringWidth(row); w > width || w != firstWidth {
+			t.Errorf("row %d width=%d, first=%d, available=%d", i, w, firstWidth, width)
+		}
+	}
+}
+
+func popupFindRow(t *testing.T, out, text string) (int, string) {
+	t.Helper()
+	for i, row := range strings.Split(ansi.Strip(out), "\n") {
+		if strings.Contains(row, text) {
+			return i, row
+		}
+	}
+	t.Fatalf("missing %q in popup:\n%s", text, ansi.Strip(out))
+	return -1, ""
+}
+
+func TestPopupFrame_FitsAndKeepsFooter(t *testing.T) {
+	opts := PopupOpts{Title: "Status", Theme: DefaultTheme(), Available: &PopupSize{Width: 36, Height: 10}, Width: 60, Height: 20, Footer: []string{"j/k move  enter commit  esc back  * current", "j/k enter esc"}}
+	out := RenderPopup([]string{"Open", "In Progress", "Blocked"}, opts)
+	assertPopupBounds(t, out, 36, 10)
+	y, row := popupFindRow(t, out, "j/k enter esc")
+	if y >= len(strings.Split(out, "\n"))-1 {
+		t.Fatal("footer must be inside bottom border")
+	}
+	x := ansi.StringWidth(row[:strings.Index(row, "j/k enter esc")])
+	if d := x - (ansi.StringWidth(row) - x - len("j/k enter esc")); d < -1 || d > 1 {
+		t.Fatalf("footer not centered: %q", row)
+	}
+}
+
+func TestPopupFrame_Budgets(t *testing.T) {
+	for _, size := range []PopupSize{{120, 32}, {48, 16}, {24, 8}, {8, 3}, {1, 1}, {0, 10}, {10, 0}, {-1, 10}, {10, -1}} {
+		t.Run(fmt.Sprintf("%dx%d", size.Width, size.Height), func(t *testing.T) {
+			opts := PopupOpts{Title: "Test", Theme: DefaultTheme(), Available: &size, Width: 100, Height: 30, Footer: []string{"enter confirm esc cancel", "enter esc"}}
+			body := []string{"界面\nsecond", "third"}
+			out := RenderPopup(body, opts)
+			layout := MeasurePopup(body, opts)
+			if size.Width <= 0 || size.Height <= 0 {
+				if out != "" {
+					t.Fatalf("zero budget rendered %q", out)
+				}
+				return
+			}
+			if out == "" {
+				t.Fatal("positive budget rendered nothing")
+			}
+			assertPopupBounds(t, out, size.Width, size.Height)
+			if layout.Width != ansi.StringWidth(strings.Split(out, "\n")[0]) || layout.Height != len(strings.Split(out, "\n")) {
+				t.Fatalf("layout disagrees with rendering: %+v", layout)
+			}
+			if size.Width <= 8 && strings.Contains(out, "╭") {
+				t.Fatalf("tiny budget requires fallback: %q", out)
+			}
+		})
+	}
+}
+
+func TestPopupFrame_DefaultAndBodyOrigin(t *testing.T) {
+	opts := PopupOpts{Title: "Test", Theme: DefaultTheme(), Width: 30}
+	body := []string{"first\nsecond", "third"}
+	out := RenderPopup(body, opts)
+	assertPopupBounds(t, out, 80, 24)
+	layout := MeasurePopup(body, opts)
+	y, row := popupFindRow(t, out, "first")
+	if y != 2 || ansi.StringWidth(row[:strings.Index(row, "first")]) != 3 || layout.BodyX != 3 || layout.BodyY != 2 || layout.BodyHeight != 3 || layout.FooterY != -1 {
+		t.Fatalf("wrong body origin/layout: %+v, row %q", layout, row)
+	}
+	popupFindRow(t, out, "second")
+	popupFindRow(t, out, "third")
+	assertPopupBounds(t, RenderPopup([]string{strings.Repeat("a", 200)}, opts), 80, 24)
+}
+
+func TestPopupFrame_WrapsCompactHintAndBoundsTitle(t *testing.T) {
+	opts := PopupOpts{Title: strings.Repeat("界", 30), RightLabel: "(123)", Theme: DefaultTheme(), Available: &PopupSize{12, 12}, Width: 12, Footer: []string{"enter esc"}}
+	out := RenderPopup([]string{"body"}, opts)
+	assertPopupBounds(t, out, 12, 12)
+	popupFindRow(t, out, "(123)")
+	popupFindRow(t, out, "enter")
+	popupFindRow(t, out, "esc")
+	for _, candidates := range [][]string{nil, {}, {""}} {
+		if lines := popupFooterLines(8, candidates); len(lines) != 0 {
+			t.Fatalf("empty footer produced %v", lines)
+		}
+	}
+}
+
+func TestPopupFrame_MinimumUsefulBody(t *testing.T) {
+	opts := PopupOpts{Theme: DefaultTheme(), Available: &PopupSize{40, 7}, MinBodyRows: 5, Footer: []string{"enter esc"}}
+	layout := MeasurePopup([]string{"search", "", "item", "", "page"}, opts)
+	if !layout.Compact || layout.BodyHeight != 0 || layout.FooterY != -1 {
+		t.Fatalf("unusable body exposed as normal layout: %+v", layout)
+	}
+	assertPopupBounds(t, RenderPopup([]string{"search", "", "item", "", "page"}, opts), 40, 7)
+}
+
+func TestPopupFrame_WindowKeepsBreathingRoomWhenUsefulBodyFits(t *testing.T) {
+	opts := PopupOpts{Theme: DefaultTheme(), Available: &PopupSize{40, 20}, Height: 15, MinBodyRows: 5, Footer: []string{"enter esc"}}
+	l := MeasurePopup(make([]string, 30), opts)
+	if l.PadY != 1 || l.BodyY != 2 || l.BodyHeight != 9 {
+		t.Fatalf("window lost breathing room despite useful body fitting: %+v", l)
+	}
+}
+
+func TestPopupFrame_AccentOverride(t *testing.T) {
+	theme := DefaultTheme()
+	opts := PopupOpts{Theme: theme, Title: "Accent", Width: 30}
+	base := RenderPopup([]string{"body"}, opts)
+	opts.Accent = lipgloss.Color("#ff0000")
+	out := RenderPopup([]string{"body"}, opts)
+	if out == base {
+		t.Fatal("accent override did not change frame styling")
+	}
+	if ansi.Strip(out) != ansi.Strip(base) {
+		t.Fatal("accent override changed geometry")
+	}
+}
+
+func TestPopupFrame_GraphemeTitlesKeepMeasuredWidth(t *testing.T) {
+	for _, title := range []string{"✈️", "🇨🇦", "👨‍👩‍👧‍👦", "界面"} {
+		for _, right := range []string{"", "🇨🇦"} {
+			opts := PopupOpts{Title: title, RightLabel: right, Theme: DefaultTheme(), Width: 20, Available: &PopupSize{20, 8}, Footer: []string{"enter esc"}}
+			out := RenderPopup([]string{"body"}, opts)
+			assertPopupBounds(t, out, 20, 8)
+			layout := MeasurePopup([]string{"body"}, opts)
+			if ansi.StringWidth(strings.Split(out, "\n")[0]) != layout.Width {
+				t.Fatal("top border differs from measured width")
+			}
+			popupFindRow(t, out, title)
+		}
+	}
+}
+
+func TestPopupFrame_MultilineChromeIsNormalized(t *testing.T) {
+	opts := PopupOpts{Title: "one\ntwo", RightLabel: "(1)\r\n(2)", Theme: DefaultTheme(), Width: 30, Available: &PopupSize{30, 8}, Footer: []string{"enter\nesc"}}
+	out := RenderPopup([]string{"body"}, opts)
+	layout := MeasurePopup([]string{"body"}, opts)
+	assertPopupBounds(t, out, 30, 8)
+	if len(strings.Split(out, "\n")) != layout.Height {
+		t.Fatal("chrome introduced unmeasured rows")
+	}
+	popupFindRow(t, out, "one two")
+	popupFindRow(t, out, "(1) (2)")
+	popupFindRow(t, out, "enter esc")
+}
+
+func TestPopupMenu_ColumnsSurvivePageAndMarkerChanges(t *testing.T) {
+	entries := []PopupMenuEntry{{Label: "Open", Shortcut: "s", Marker: "*", Selected: true}, {Label: "In Progress"}, {Label: "界面", Shortcut: "A", Marker: "✓"}}
+	layout := MeasurePopupMenu(entries, PopupMenuOpts{Shortcuts: true, Markers: true})
+	var columns []int
+	for _, page := range [][]PopupMenuEntry{entries[:1], entries[1:]} {
+		for _, row := range RenderPopupMenu(page, layout, DefaultTheme(), 30) {
+			plain := ansi.Strip(row)
+			for _, label := range []string{"Open", "In Progress", "界面"} {
+				if index := strings.Index(plain, label); index >= 0 {
+					columns = append(columns, ansi.StringWidth(plain[:index]))
+				}
+			}
+			if ansi.StringWidth(row) != 30 {
+				t.Errorf("row width=%d, want 30", ansi.StringWidth(row))
+			}
+		}
+	}
+	if len(columns) != 3 || columns[0] != columns[1] || columns[1] != columns[2] {
+		t.Fatalf("label columns=%v", columns)
+	}
+	if columns[0] != 13 {
+		t.Fatalf("centered label column=%d, want 13", columns[0])
+	}
+}
+
+func TestPopupMenu_StyledWideContentKeepsGeometry(t *testing.T) {
+	entries := []PopupMenuEntry{{Label: "\x1b[1m界面\x1b[0m", Marker: "✓", Suffix: " (4)", Selected: true}, {Label: "Plain", Detail: "a long detail that must occupy only one row"}}
+	layout := MeasurePopupMenu(entries, PopupMenuOpts{Markers: true})
+	rows := RenderPopupMenu(entries, layout, DefaultTheme(), 16)
+	if len(rows) != 3 {
+		t.Fatalf("got %d rows, want 3", len(rows))
+	}
+	for _, row := range rows {
+		if ansi.StringWidth(row) != 16 {
+			t.Fatalf("row width=%d, want 16", ansi.StringWidth(row))
+		}
+	}
+	first, second := ansi.Strip(rows[0]), ansi.Strip(rows[1])
+	if x, y := ansi.StringWidth(first[:strings.Index(first, "界面")]), ansi.StringWidth(second[:strings.Index(second, "Plain")]); x != y {
+		t.Fatalf("label columns %d != %d", x, y)
+	}
+	if detail := ansi.Strip(rows[2]); !strings.HasPrefix(detail, "     a long") {
+		t.Fatalf("detail not under label: %q", detail)
+	}
+}
+
+func TestPopupMenu_OptionalColumnsAndNarrowRows(t *testing.T) {
+	entries := []PopupMenuEntry{{Label: "Label", Selected: true}, {Label: "Other"}}
+	for _, tc := range []struct {
+		opts  PopupMenuOpts
+		wantX int
+	}{{PopupMenuOpts{}, 2}, {PopupMenuOpts{Shortcuts: true}, 5}, {PopupMenuOpts{Markers: true}, 5}, {PopupMenuOpts{Shortcuts: true, Markers: true}, 8}} {
+		layout := MeasurePopupMenu(entries, tc.opts)
+		if layout.LabelX != tc.wantX {
+			t.Fatalf("column=%d, want %d", layout.LabelX, tc.wantX)
+		}
+		for _, width := range []int{0, 1, 4, 20} {
+			rows := RenderPopupMenu(entries, layout, DefaultTheme(), width)
+			if width == 0 && len(rows) != 0 {
+				t.Fatal("zero budget rendered menu")
+			}
+			for _, row := range rows {
+				if ansi.StringWidth(row) != width {
+					t.Fatalf("row width=%d, want %d", ansi.StringWidth(row), width)
+				}
+			}
+		}
+	}
+	entries[0].Marker = "界"
+	layout := MeasurePopupMenu(entries, PopupMenuOpts{Markers: true})
+	before := RenderPopupMenu(entries, layout, DefaultTheme(), 20)
+	entries[0].Selected = false
+	entries[1].Selected = true
+	after := RenderPopupMenu(entries, layout, DefaultTheme(), 20)
+	if strings.Index(ansi.Strip(before[0]), "Label") != strings.Index(ansi.Strip(after[0]), "Label") {
+		t.Fatal("selection moved label origin")
+	}
+	if PopupMenuEntryRows(PopupMenuEntry{}) != 1 || PopupMenuEntryRows(PopupMenuEntry{Detail: "detail"}) != 2 {
+		t.Fatal("wrong menu row counts")
+	}
+}
+
+func TestPopupMenu_MultilineDetailStillOccupiesOneRow(t *testing.T) {
+	entries := []PopupMenuEntry{{Label: "Name", Detail: "first\nsecond"}}
+	layout := MeasurePopupMenu(entries, PopupMenuOpts{})
+	rows := RenderPopupMenu(entries, layout, DefaultTheme(), 24)
+	if len(rows) != 2 || strings.Contains(rows[1], "\n") || ansi.StringWidth(rows[1]) != 24 {
+		t.Fatalf("multiline detail broke row geometry: %q", rows)
+	}
+	if !strings.Contains(ansi.Strip(rows[1]), "first second") {
+		t.Fatal("detail text lost")
+	}
+}
+
+func TestPopupMenu_FullCollectionMeasurementAllocationBudget(t *testing.T) {
+	entries := make([]PopupMenuEntry, 1000)
+	for i := range entries {
+		entries[i] = PopupMenuEntry{Label: "project", Marker: "✓", Shortcut: "1"}
+	}
+	opts := PopupMenuOpts{Markers: true, Shortcuts: true}
+	MeasurePopupMenu(entries, opts) // warm immutable width/normalization helpers
+	allocations := testing.AllocsPerRun(3, func() { MeasurePopupMenu(entries, opts) })
+	t.Logf("measurement: %.0f allocations for %d rows", allocations, len(entries))
+	// Full-collection measurement is required, but it must not build a new
+	// normalization trie for each field of each entry on each pass.
+	if allocations > float64(len(entries)*5) {
+		t.Fatalf("measurement allocated %.0f times for %d rows", allocations, len(entries))
+	}
+}
 
 func TestRenderTitledPanel_Basic(t *testing.T) {
 	content := "hello"

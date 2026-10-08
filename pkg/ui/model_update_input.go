@@ -2215,8 +2215,10 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (Model, tea.Cmd) {
 	m.applyListDetailSizing(bodyW, bodyHeight)
 	m.updateListDelegate()
 	m.labelDashboard.SetSize(bodyW, bodyHeight)
-	m.labelPicker.SetSize(m.width, bodyHeight)
-	m.repoPicker.SetSize(m.width, bodyHeight)
+	popupWidth, popupHeight := max(0, m.width), max(0, m.height-1)
+	m.labelPicker.SetSize(popupWidth, popupHeight)
+	m.repoPicker.SetSize(popupWidth, popupHeight)
+	m.resizeActivePopup(popupWidth, popupHeight)
 
 	// Bump the generation counter and schedule phase 2 after the settle delay.
 	// Any prior pending resizeSettledMsg with an older gen is ignored by
@@ -2227,6 +2229,39 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (Model, tea.Cmd) {
 		return resizeSettledMsg{gen: gen}
 	})
 	return m, cmd
+}
+
+// resizeActivePopup forwards only layout budgets; buffers, commands, and
+// interaction state belong to the existing modal models.
+func (m *Model) resizeActivePopup(width, height int) {
+	switch m.activeModal {
+	case ModalFieldSelect:
+		m.fieldSelect.SetSize(width, height)
+	case ModalFieldPicker:
+		m.fieldPicker.SetSize(width, height)
+	case ModalFieldInput:
+		m.fieldInput.SetSize(width, height)
+	case ModalLongformEdit:
+		m.longformEdit.SetSize(width, height)
+	case ModalRecipePicker:
+		m.recipePicker.SetSize(width, height)
+	case ModalSettings:
+		m.settingsModal.SetSize(width, height)
+	case ModalSettingsMenu:
+		m.settingsMenu.SetSize(width, height)
+	case ModalRepoPicker:
+		m.repoPicker.SetSize(width, height)
+	case ModalLabelPicker:
+		m.labelPicker.SetSize(width, height)
+	case ModalAgentPrompt:
+		m.agentPromptModal.SetSize(width, height)
+	case ModalCassSession:
+		m.cassModal.SetSize(width, height)
+	case ModalUpdate:
+		m.updateModal.SetSize(width, height)
+	case ModalBQLQuery:
+		m.bqlQuery.SetSize(width, height)
+	}
 }
 
 // applyWindowSizeHeavy runs the expensive phase of resize: rebuilds the Glamour
@@ -2445,32 +2480,6 @@ const (
 	wheelRampDivisor = 2
 )
 
-// modalChromeAboveItems is the number of terminal rows above the first
-// item inside the shared alerts/notifications modal. Layered top-to-bottom:
-//  1. Panel top border (RenderTitledPanel, always 1 row).
-//  2. Summary line ("N total · K critical · …" / "K created · K closed · …").
-//  3. Blank separator written by the tab's "\n\n" after the summary.
-//  4. Above-hint / filter-label line (always written, even when empty; the
-//     renderer terminates the row with "\n" so it consumes 1 row either way).
-//
-// Items begin at modal row 4 (0-indexed). padContentLines applies horizontal
-// padding only — it does NOT add a vertical pad row, contrary to the prior
-// comment that put items at row 5 and produced a real-world off-by-one
-// (bt-46p6.13 dogfooding caught this). TestProbeNotificationChrome dumps the
-// rendered rows so future drift trips a visible failure rather than silently
-// returning the row above the click.
-const modalChromeAboveItems = 4
-
-// modalSummaryRow is the panel-relative row of the summary/count line (row 0
-// is the top border; see the modalChromeAboveItems layering). Clicks here are
-// hit-tested against the tab's summary segments to toggle filters.
-const modalSummaryRow = 1
-
-// modalContentXOffset translates a panel-relative X into the tab renderer's
-// line coordinates: 1 column of left border + 1 column added by
-// padContentLines in renderAlertsPanel.
-const modalContentXOffset = 2
-
 // handleAlertsModalClick routes a MouseClickMsg when the shared alerts /
 // notifications modal is open (bt-46p6.14). Mirrors the keyboard handler
 // semantics: clicking a row moves the cursor there; double-clicking the
@@ -2483,8 +2492,11 @@ func (m Model) handleAlertsModalClick(mouse tea.Mouse) (Model, tea.Cmd) {
 	// m.height-1 (footer is rendered below it). The panel's outer size is
 	// fixed by renderAlertsPanel: width = alertsPanelWidth(), height set by
 	// alertsPanelHeight.
-	panelWidth := m.alertsPanelWidth()
-	panelHeight := m.alertsPanelHeight()
+	layout := m.alertsPopupLayout()
+	if layout.Compact || layout.Height == 0 {
+		return m, nil
+	}
+	panelWidth, panelHeight := layout.Width, layout.Height
 	startRow := (m.height - 1 - panelHeight) / 2
 	startCol := (m.width - panelWidth) / 2
 	if startRow < 0 {
@@ -2509,7 +2521,7 @@ func (m Model) handleAlertsModalClick(mouse tea.Mouse) (Model, tea.Cmd) {
 	// the alerts tab the status header (bt-2nepr) pushes the summary row down by
 	// alertsHeaderRows(); the header rows themselves are informational no-ops
 	// (alertsModalItemAtY returns false for them).
-	summaryRow := modalSummaryRow + m.alertsHeaderRows() // headerRows is 0 on notifications
+	summaryRow := layout.BodyY + m.alertsHeaderRows() // headerRows is 0 on notifications
 	if my == summaryRow {
 		return m.handleModalSummaryClick(mx), nil
 	}
@@ -2696,7 +2708,7 @@ func (m Model) alertsModalItemAtY(my int) (int, bool) {
 	}
 	// Day-separator trim must mirror renderNotificationsTab (bt-l5zk) so
 	// click-to-row math stays aligned with the visible layout.
-	end = trimEndForDaySeparators(active, start, end, pageSize)
+	end = trimEndForDaySeparators(active, start, end, 2*pageSize)
 	row := 0
 	var prevDate string
 	for i := start; i < end; i++ {
@@ -2745,7 +2757,7 @@ func (m Model) handleModalSummaryClick(mx int) Model {
 		return m
 	}
 
-	lineX := mx - modalContentXOffset
+	lineX := mx - m.alertsPopupLayout().BodyX
 	var segs []summarySegment
 	if m.activeTab == TabAlerts {
 		segs = m.alertSummarySegments()

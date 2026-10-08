@@ -17,6 +17,215 @@ import (
 // presence of this sequence in modal-adjacent rows.
 const faintSGR = "\x1b[2"
 
+func TestConfirmationPopups_ShareBoundsAndKeepHints(t *testing.T) {
+	m := newSizedModel(t, fieldEditTestIssues(), 40, 12)
+	m.claimTargetID = "zz-target"
+	m.claimTargetTitle = strings.Repeat("long title ", 8)
+	for _, out := range []string{m.renderQuitConfirm(), m.renderClaimConfirm(), m.renderTimeTravelPrompt()} {
+		assertPopupBounds(t, out, 40, 11)
+		if !strings.Contains(strings.ToLower(ansi.Strip(out)), "esc") {
+			t.Fatalf("cancel hint missing:\n%s", ansi.Strip(out))
+		}
+	}
+	m.width = 8
+	m.height = 3
+	for _, out := range []string{m.renderQuitConfirm(), m.renderClaimConfirm(), m.renderTimeTravelPrompt()} {
+		assertPopupBounds(t, out, 8, 2)
+	}
+}
+
+func TestHelpPopup_BoundsAndFooter(t *testing.T) {
+	for _, size := range []PopupSize{{40, 12}, {120, 80}} {
+		m := newSizedModel(t, fieldEditTestIssues(), size.Width, size.Height)
+		out := m.renderHelpOverlay()
+		assertPopupBounds(t, out, size.Width, size.Height-1)
+		popupFindRow(t, out, "Esc")
+		popupFindRow(t, out, ";")
+		rows := strings.Split(ansi.Strip(out), "\n")
+		if !strings.Contains(rows[len(rows)-3], "Esc") {
+			t.Fatal("help footer not in reserved footer row")
+		}
+	}
+}
+
+func TestAlertsPopup_BoundsAndFooter(t *testing.T) {
+	m := modalMouseModel(t)
+	m.width = 40
+	m.height = 12
+	out := m.renderAlertsPanel()
+	assertPopupBounds(t, out, 40, 11)
+	popupFindRow(t, out, "(4)")
+	popupFindRow(t, out, "esc")
+	m.activeTab = TabNotifications
+	out = m.renderAlertsPanel()
+	assertPopupBounds(t, out, 40, 11)
+	popupFindRow(t, out, "(0)")
+	popupFindRow(t, out, "esc")
+}
+
+func TestAlertsPopup_RenderedRowRoutesClick(t *testing.T) {
+	m := modalMouseModel(t)
+	out := m.renderAlertsPanel()
+	y, _ := popupFindRow(t, out, "stale b")
+	startRow := (m.height - 1 - len(strings.Split(out, "\n"))) / 2
+	updated, _ := m.Update(tea.MouseClickMsg{X: 20, Y: startRow + y, Button: tea.MouseLeft})
+	got := updated.(Model)
+	if got.alertsCursor != 1 {
+		t.Fatalf("clicked rendered stale b, cursor=%d", got.alertsCursor)
+	}
+}
+
+func TestLegacyDialogPopups_FitNarrowTerminal(t *testing.T) {
+	agent := NewAgentPromptModal("/test/AGENTS.md", "AGENTS.md", DefaultTheme())
+	agent.SetSize(42, 18)
+	out := agent.View()
+	assertPopupBounds(t, out, 42, 18)
+	for _, label := range []string{"Yes, add it", "No thanks", "Don't ask again"} {
+		popupFindRow(t, out, label)
+	}
+	update := NewUpdateModal("v1.0.0", "", DefaultTheme())
+	update.SetSize(42, 18)
+	for _, state := range []UpdateState{UpdateStateConfirm, UpdateStateDownloading, UpdateStateVerifying, UpdateStateInstalling, UpdateStateSuccess, UpdateStateError} {
+		update.state = state
+		update.errorMessage = "failed"
+		update.successMessage = "updated"
+		out = update.View()
+		assertPopupBounds(t, out, 42, 18)
+	}
+	agent.SetSize(0, 0)
+	update.SetSize(0, 0)
+	if agent.View() != "" || update.View() != "" {
+		t.Fatal("zero budget rendered legacy popup")
+	}
+}
+
+func TestBQLPopup_BoundedQueryErrorAndHistory(t *testing.T) {
+	m := NewBQLQueryModal(DefaultTheme())
+	m.SetSize(32, 12)
+	m.input.SetValue("status:open")
+	m.SetError("bad query")
+	m.AddToHistory("priority:P2")
+	out := m.View()
+	assertPopupBounds(t, strings.TrimLeft(out, "\n"), 32, 12)
+	if len(strings.Split(out, "\n")) > 12 {
+		t.Fatal("BQL host placement overflowed height")
+	}
+	popupFindRow(t, out, "status:open")
+	popupFindRow(t, out, "bad query")
+	popupFindRow(t, out, "history")
+	popupFindRow(t, out, "esc")
+	if m.Value() != "status:open" || m.histIdx != -1 {
+		t.Fatal("rendering changed query or history")
+	}
+	m.SetSize(0, 0)
+	if m.View() != "" {
+		t.Fatal("zero budget rendered BQL")
+	}
+}
+
+func TestEditPopupResize_PreservesCursorAndFits(t *testing.T) {
+	m := newSizedModel(t, fieldEditTestIssues(), 120, 32)
+	mustSelectTarget(t, &m)
+	m.requestFieldEdit()
+	m.fieldSelect.MoveDown()
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 36, Height: 12})
+	got := updated.(Model)
+	if got.fieldSelect.SelectedField() != "priority" || got.activeModal != ModalFieldSelect {
+		t.Fatal("resize changed edit selection or modal")
+	}
+	assertPopupBounds(t, got.fieldSelect.View(), 36, 11)
+	popupFindRow(t, got.fieldSelect.View(), "esc")
+}
+
+func TestPopupResize_AllWidgetModalsKeepStateAndFit(t *testing.T) {
+	for _, modal := range []ModalType{ModalFieldPicker, ModalFieldInput, ModalLongformEdit, ModalRecipePicker, ModalSettings, ModalSettingsMenu, ModalRepoPicker, ModalLabelPicker, ModalAgentPrompt, ModalCassSession, ModalUpdate, ModalBQLQuery} {
+		t.Run(fmt.Sprint(modal), func(t *testing.T) {
+			m := newSizedModel(t, fieldEditTestIssues(), 120, 32)
+			m.fieldPicker = NewStatusPickerModal("open", m.theme)
+			m.fieldPicker.MoveDown()
+			m.fieldInput = NewFieldInputModal("title", "Title", "typed draft", m.theme)
+			m.longformEdit = NewLongformEditModal("description", "Description", "original", m.theme)
+			m.longformEdit.textarea.SetValue("dirty draft")
+			m.longformEdit.escArmed = true
+			m.agentPromptModal = NewAgentPromptModal("/test/AGENTS.md", "AGENTS.md", m.theme)
+			m.cassModal = NewCassSessionModal("bead", cass.CorrelationResult{}, m.theme)
+			m.updateModal = NewUpdateModal("v1.0.0", "", m.theme)
+			m.bqlQuery = NewBQLQueryModal(m.theme)
+			m.bqlQuery.input.SetValue("status:open")
+			m.openModal(modal)
+			view := func(m Model) string {
+				switch modal {
+				case ModalFieldPicker:
+					return m.fieldPicker.View()
+				case ModalFieldInput:
+					return m.fieldInput.View()
+				case ModalLongformEdit:
+					return m.longformEdit.View()
+				case ModalRecipePicker:
+					return m.recipePicker.View()
+				case ModalSettings:
+					return m.settingsModal.View()
+				case ModalSettingsMenu:
+					return m.settingsMenu.View()
+				case ModalRepoPicker:
+					return m.repoPicker.View()
+				case ModalLabelPicker:
+					return m.labelPicker.View()
+				case ModalAgentPrompt:
+					return m.agentPromptModal.View()
+				case ModalCassSession:
+					return m.cassModal.View()
+				case ModalUpdate:
+					return m.updateModal.View()
+				case ModalBQLQuery:
+					return m.bqlQuery.View()
+				}
+				return ""
+			}
+			for _, size := range []PopupSize{{36, 12}, {8, 3}, {0, 0}, {80, 24}} {
+				updated, _ := m.Update(tea.WindowSizeMsg{Width: size.Width, Height: size.Height})
+				m = updated.(Model)
+				out := view(m)
+				assertPopupBounds(t, strings.TrimLeft(out, "\n"), size.Width, max(0, size.Height-1))
+				if size.Width == 0 && out != "" {
+					t.Fatal("zero-size message left popup visible")
+				}
+				if m.activeModal != modal || m.fieldPicker.cursor != 1 || m.fieldInput.Value() != "typed draft" || m.longformEdit.textarea.Value() != "dirty draft" || m.longformEdit.original != "original" || !m.longformEdit.escArmed || m.bqlQuery.Value() != "status:open" {
+					t.Fatal("resize changed interaction or draft state")
+				}
+			}
+		})
+	}
+}
+
+func TestPopupOpen_UsesBodyBudget(t *testing.T) {
+	m := newSizedModel(t, fieldEditTestIssues(), 36, 12)
+	m = m.handleAgentFileCheck(AgentFileCheckMsg{ShouldPrompt: true, FilePath: "/test/AGENTS.md", FileType: "AGENTS.md"})
+	assertPopupBounds(t, m.agentPromptModal.View(), 36, 11)
+	m.updateAvailable = true
+	m.updateTag = "v1.0.0"
+	m.showSelfUpdateModal()
+	assertPopupBounds(t, m.updateModal.View(), 36, 11)
+}
+
+func TestNotificationsPopup_ShortWindowShowsSelectedEvent(t *testing.T) {
+	for _, height := range []int{16, 24, 40} {
+		m := seedModel()
+		m.width = 60
+		m.height = height
+		seedManyNotifications(&m, 30)
+		m.activeTab = TabNotifications
+		m.openModal(ModalAlerts)
+		for cursor := 0; cursor < 30; cursor++ {
+			m.notificationsCursor = cursor
+			out := m.renderAlertsPanel()
+			if !strings.Contains(ansi.Strip(out), "▸") {
+				t.Fatalf("selected notification %d disappeared at height %d:\n%s", cursor, height, ansi.Strip(out))
+			}
+		}
+	}
+}
+
 // TestAlertsModalOccludesDetailPane is a regression guard for bt-l5xu and
 // bt-v8he: the shared alerts/notifications modal must occlude the underlying
 // detail pane (bt-l5xu, no bleed-through of body text) AND render at a
@@ -27,6 +236,7 @@ const faintSGR = "\x1b[2"
 // Pre-bt-l5xu: panel capped at 80, bg leaked along the modal's flanks.
 // bt-l5xu fix: panel sized to m.width-4 — solved leak, lost pop-up shape.
 // bt-v8he fix: panel re-capped at 100, OverlayCenterDimBackdrop applies
+//
 //	Faint to all bg cells so they recede visually instead of being absent.
 //
 // Verifications:
@@ -549,11 +759,11 @@ func TestOverlay_MidGlyphCutDoesNotShortenRow(t *testing.T) {
 	// Modal occupies rows 1..3 (startRow = (5-3)/2 = 1). Place the emoji-cut
 	// rows where the modal will actually slice them so the bug surfaces.
 	bgLines := []string{
-		"xxxxxxxxxxxxxxxxxxxx",     // row 0: control (not sliced)
-		"xxxx🌟xxxxxxxxxxxxxx",     // row 1: emoji at cells 4-5 (left cut col 5)
-		"xxxxxxxxxxxxxx🌟xxxx",     // row 2: emoji at cells 14-15 (right cut col 15)
+		"xxxxxxxxxxxxxxxxxxxx", // row 0: control (not sliced)
+		"xxxx🌟xxxxxxxxxxxxxx",  // row 1: emoji at cells 4-5 (left cut col 5)
+		"xxxxxxxxxxxxxx🌟xxxx",  // row 2: emoji at cells 14-15 (right cut col 15)
 		"xxxx🌟xxxxxxxx🌟xxxx",   // row 3: emojis at BOTH cut columns
-		"xxxxxxxxxxxxxxxxxxxx",     // row 4: control (not sliced)
+		"xxxxxxxxxxxxxxxxxxxx", // row 4: control (not sliced)
 	}
 	bg := strings.Join(bgLines, "\n")
 

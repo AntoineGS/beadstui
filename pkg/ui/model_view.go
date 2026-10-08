@@ -437,44 +437,7 @@ func spliceDebugDims(s string, width, height int) string {
 // composites it via OverlayCenterDimBackdrop in View() so the backdrop
 // dims uniformly with the other modals (bt-yly4).
 func (m Model) renderQuitConfirm() string {
-	t := m.theme
-
-	textStyle := lipgloss.NewStyle().
-		Foreground(t.Base.GetForeground())
-
-	keyStyle := lipgloss.NewStyle().
-		Foreground(t.Primary).
-		Bold(true)
-
-	// Two centered body lines: key hint + cancel hint.
-	lineQuit := keyStyle.Render("esc") + textStyle.Render(" / ") + keyStyle.Render("y") + textStyle.Render(" to quit")
-	lineCancel := textStyle.Render("press any other key to cancel")
-
-	// Width sized to fit the longer body line plus breathing room. Title
-	// "Quit?" is short enough that body width drives the panel width.
-	innerW := lipgloss.Width(lineCancel)
-	if w := lipgloss.Width(lineQuit); w > innerW {
-		innerW = w
-	}
-	// Side padding inside the borders so text doesn't kiss the rules.
-	const sidePad = 4
-	panelWidth := innerW + 2 + sidePad // 2 for borders, sidePad for inner spacing
-
-	pad := strings.Repeat(" ", sidePad/2)
-	body := pad + centerLine(lineQuit, innerW) + pad + "\n" +
-		pad + centerLine(lineCancel, innerW) + pad
-
-	// Surround body with one blank line above and below for breathing.
-	content := "\n" + body + "\n"
-
-	return RenderTitledPanel(content, PanelOpts{
-		Title:       "Quit?",
-		Width:       panelWidth,
-		CenterTitle: true,
-		BorderColor: t.Blocked,
-		TitleColor:  t.Blocked,
-		Focused:     true,
-	})
+	return RenderPopup([]string{"Quit beadstui?"}, PopupOpts{Title: "Quit?", Theme: m.theme, Accent: m.theme.Blocked, Available: &PopupSize{m.width, max(0, m.height-1)}, Footer: []string{"esc / y to quit; any other key cancels", "esc/y quit; other cancel"}})
 }
 
 // centerLine pads s with spaces on both sides so its visible width
@@ -1063,17 +1026,15 @@ func (m Model) helpOverlayBodyLinesForCols(groups []helpGroup, n int) []string {
 	return bodyLines
 }
 
-// helpOverlayChrome is the fixed rows the ? overlay reserves outside the
-// scrollable body: top border (1), interior footer line (1), bottom border (1).
-const helpOverlayChrome = 3
-
 // helpOverlayAvailBody returns the scrollable body height for the ? overlay.
 func (m Model) helpOverlayAvailBody() int {
-	avail := m.height - 1 - helpOverlayChrome
-	if avail < 1 {
-		avail = 1
-	}
-	return avail
+	opts := m.helpPopupOpts()
+	opts.Height = max(0, m.height-1)
+	return MeasurePopup(nil, opts).BodyHeight
+}
+
+func (m Model) helpPopupOpts() PopupOpts {
+	return PopupOpts{Title: "shortcuts", Theme: m.theme, Available: &PopupSize{m.width, max(0, m.height-1)}, Footer: []string{"; per-view  -  Esc / q to close", "; Esc/q close"}}
 }
 
 // helpScrollMax is the maximum helpScroll offset for the current dimensions.
@@ -1154,7 +1115,7 @@ func (m Model) renderHelpMini() string {
 			}
 		}
 	}
-	leftColW := keyW + 2 + leftDescW // key + "  " + desc
+	leftColW := min(keyW+2+leftDescW, max(1, (m.width-8)/2))
 
 	const colGap = "  " // 2-space gap between columns
 
@@ -1169,6 +1130,7 @@ func (m Model) renderHelpMini() string {
 		}
 		leftCell := keyStyle.Render(strings.Repeat(" ", kpad)+lr.left) +
 			descStyle.Render("  "+lr.right)
+		leftCell = ansi.Truncate(leftCell, leftColW, "")
 		// Pad left cell to leftColW so the right column aligns vertically.
 		if w := lipgloss.Width(leftCell); w < leftColW {
 			leftCell += strings.Repeat(" ", leftColW-w)
@@ -1182,6 +1144,7 @@ func (m Model) renderHelpMini() string {
 			}
 			rightCell := keyStyle.Render(strings.Repeat(" ", kpad2)+rr.left) +
 				descStyle.Render("  "+rr.right)
+			rightCell = ansi.Truncate(rightCell, leftColW, "")
 			lines = append(lines, leftCell+colGap+rightCell)
 		} else {
 			lines = append(lines, leftCell)
@@ -1191,43 +1154,10 @@ func (m Model) renderHelpMini() string {
 	// Nudge line: communicates the tier relationship (grow terminal → full sheet).
 	nudge := dimStyle.Render("↓ expand   ·   ; per-view")
 
-	// Footer: last interior line, centered. CAPITAL "Esc" matches the full sheet
-	// footer and the existing TestHelpOverlayScroll smoke-string expectation.
-	footer := dimStyle.Render("Esc ── q ── close")
-
-	// Box inner width: driven by widest grid line, nudge, or footer.
-	innerWidth := lipgloss.Width(nudge)
-	for _, l := range lines {
-		if w := lipgloss.Width(l); w > innerWidth {
-			innerWidth = w
-		}
-	}
-	if fw := lipgloss.Width(footer); fw > innerWidth {
-		innerWidth = fw
-	}
-	if innerWidth < 10 {
-		innerWidth = 10
-	}
-	if cap := m.width - 2; cap > 10 && innerWidth > cap {
-		innerWidth = cap
-	}
-
-	// Assemble interior: grid lines + centered nudge + centered footer.
-	allLines := make([]string, 0, len(lines)+2)
-	allLines = append(allLines, lines...)
-	allLines = append(allLines, centerLine(nudge, innerWidth))
-	allLines = append(allLines, centerLine(footer, innerWidth))
-	interior := strings.Join(allLines, "\n")
-
-	boxed := RenderTitledPanel(interior, PanelOpts{
-		Title:       "shortcuts",
-		Width:       innerWidth + 2,
-		CenterTitle: true,
-		BorderColor: t.Secondary,
-		TitleColor:  t.Secondary,
-	})
-
-	return boxed
+	lines = append(lines, nudge)
+	opts := m.helpPopupOpts()
+	opts.MinBodyRows = len(lines)
+	return RenderPopup(lines, opts)
 }
 
 // renderHelpOverlay renders the ? help card (mini or full sheet) as a single
@@ -1237,7 +1167,6 @@ func (m Model) renderHelpMini() string {
 // RenderTitledPanel wraps the modal; View() composites the returned card centered
 // over the dimmed background via OverlayCenterDimBackdrop (it does not Place here).
 func (m *Model) renderHelpOverlay() string {
-	t := m.theme
 	bodyLines := m.helpOverlayBodyLines()
 
 	// Mini tier: when the full body overflows the available height, render the
@@ -1270,55 +1199,14 @@ func (m *Model) renderHelpOverlay() string {
 
 	// Footer: cross-ref + close hint. Must contain ";" and "Esc"; must NOT
 	// contain "shortcuts" (FOOTER WORDING CAVEAT, bt-dx7k.1).
-	footerStyle := lipgloss.NewStyle().Foreground(t.Secondary).Italic(true)
 	footerText := "; per-view  -  Esc / q to close"
 	if maxScroll > 0 {
 		pct := scroll * 100 / maxScroll
 		footerText = fmt.Sprintf("; per-view  -  j/k scroll %d%%  -  Esc / q close", pct)
 	}
-	footer := footerStyle.Render(footerText)
-
-	// Box inner width: max visible width across windowed body lines and footer,
-	// capped at m.width - 2 so the box never overflows the terminal.
-	innerWidth := lipgloss.Width(footer)
-	for _, line := range window {
-		if w := lipgloss.Width(line); w > innerWidth {
-			innerWidth = w
-		}
-	}
-	if innerWidth < 10 {
-		innerWidth = 10
-	}
-	maxInner := m.width - 2
-	if maxInner < 10 {
-		maxInner = 10
-	}
-	if innerWidth > maxInner {
-		innerWidth = maxInner
-	}
-	boxWidth := innerWidth + 2 // +2 for left/right border characters
-
-	// Interior: windowed body + a centered footer line, joined for RenderTitledPanel.
-	// Centering matches the mini's footer/nudge so the close hint sits mid-box,
-	// not flush-left (bt-dx7k.1 dogfood). Build a fresh slice so appending the
-	// footer never aliases the bodyLines backing array.
-	allLines := make([]string, 0, len(window)+1)
-	allLines = append(allLines, window...)
-	allLines = append(allLines, centerLine(footer, innerWidth))
-	interior := strings.Join(allLines, "\n")
-
-	boxed := RenderTitledPanel(interior, PanelOpts{
-		Title:       "shortcuts",
-		Width:       boxWidth,
-		CenterTitle: true,
-		BorderColor: t.Secondary,
-		TitleColor:  t.Secondary,
-	})
-
-	// Return the bare card; View() composites it centered over the dimmed
-	// background via OverlayCenterDimBackdrop so the help floats over the current
-	// view like the other modals rather than replacing it (bt-dx7k.1 dogfood).
-	return boxed
+	opts := m.helpPopupOpts()
+	opts.Footer = []string{footerText, "; Esc/q close"}
+	return RenderPopup(window, opts)
 }
 
 func (m Model) renderLabelHealthDetail(lh analysis.LabelHealth) string {
@@ -1798,28 +1686,13 @@ func (m Model) renderTimeTravelPrompt() string {
 	exampleStyle := lipgloss.NewStyle().
 		Foreground(t.Secondary)
 
-	keyStyle := lipgloss.NewStyle().
-		Foreground(t.Primary).
-		Bold(true)
-
-	textStyle := lipgloss.NewStyle().
-		Foreground(t.Base.GetForeground())
-
-	const promptWidth = 64
-	const leadPad = "   " // 3 spaces of left padding (matches old Padding(1,3))
-
+	opts := PopupOpts{Title: "Time-Travel Mode", Theme: t, Available: &PopupSize{m.width, max(0, m.height-1)}, Width: 64, MinBodyRows: 3, Footer: []string{"Enter to compare, Esc to cancel", "Enter compare Esc cancel"}}
+	l := MeasurePopup(nil, opts)
+	m.timeTravelInput.SetWidth(max(1, l.BodyWidth-lipgloss.Width(m.timeTravelInput.Prompt)))
 	contentLines := []string{
-		"", // top breathing room
-		leadPad + subtitleStyle.Render("Compare current state with a historical revision"),
-		"",
-		leadPad + m.timeTravelInput.View(),
-		"",
-		leadPad + exampleStyle.Render("Examples: HEAD~5, main, v1.0.0, 2024-01-01, abc123"),
-		"",
-		leadPad + textStyle.Render("Press ") + keyStyle.Render("Enter") +
-			textStyle.Render(" to compare, ") + keyStyle.Render("Esc") +
-			textStyle.Render(" to cancel"),
-		"", // bottom breathing room
+		subtitleStyle.Render("Compare current state with a historical revision"),
+		m.timeTravelInput.View(),
+		exampleStyle.Render("Examples: HEAD~5, main, v1.0.0, 2024-01-01, abc123"),
 	}
 
 	// Plain-text title (no emoji): VS16 emoji presentation makes runewidth
@@ -1827,9 +1700,5 @@ func (m Model) renderTimeTravelPrompt() string {
 	// terminal actually renders, so the top border ends up one cell wider
 	// than the content rows. Other modals (Alerts!, Notifications, Select
 	// Recipe) all use plain titles — this matches them.
-	return RenderTitledPanel(strings.Join(contentLines, "\n"), PanelOpts{
-		Title:   "Time-Travel Mode",
-		Width:   promptWidth,
-		Focused: true,
-	})
+	return RenderPopup(contentLines, opts)
 }

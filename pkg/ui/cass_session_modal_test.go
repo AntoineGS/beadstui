@@ -9,6 +9,35 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/cass"
 )
 
+func TestSessionPopup_SelectedHeaderAndCopyFeedback(t *testing.T) {
+	result := cass.CorrelationResult{TopSessions: []cass.ScoredResult{{SearchResult: cass.SearchResult{Agent: "short", Timestamp: time.Now(), Snippet: "first snippet"}}, {SearchResult: cass.SearchResult{Agent: "longer-agent", Timestamp: time.Now(), Snippet: "second snippet"}}}}
+	m := NewCassSessionModal("bead", result, DefaultTheme())
+	m.SetSize(42, 18)
+	m.selected = 1
+	m.copied = true
+	m.copiedAt = time.Now()
+	out := m.View()
+	assertPopupBounds(t, out, 42, 18)
+	_, row := popupFindRow(t, out, "longer-agent")
+	if !strings.Contains(row, ">") || !strings.Contains(row, "[2]") {
+		t.Fatal("selected session header not visible")
+	}
+	popupFindRow(t, out, "Copied!")
+	popupFindRow(t, out, "Esc")
+	m.SetSize(0, 0)
+	if m.View() != "" {
+		t.Fatal("zero budget rendered session popup")
+	}
+}
+
+func TestSessionPopup_TinySnippetBudgetDoesNotPanic(t *testing.T) {
+	m := NewCassSessionModal("bead", cass.CorrelationResult{}, DefaultTheme())
+	m.SetSize(10, 18)
+	if got := m.formatSnippet("界面 long snippet"); got == "" {
+		t.Fatal("expected bounded snippet fallback")
+	}
+}
+
 // testTheme is defined in history_test.go and reused here
 
 func TestNewCassSessionModal(t *testing.T) {
@@ -236,8 +265,8 @@ func TestCassSessionModal_SetSize(t *testing.T) {
 
 	// Set small terminal size
 	modal.SetSize(60, 30)
-	if modal.width != 50 { // min is 50
-		t.Errorf("Width should be constrained to min 50, got %d", modal.width)
+	if modal.width != 60 {
+		t.Errorf("Width should retain actual narrow budget 60, got %d", modal.width)
 	}
 
 	// Set large terminal size
@@ -248,11 +277,8 @@ func TestCassSessionModal_SetSize(t *testing.T) {
 
 	// Set medium terminal size
 	modal.SetSize(100, 40)
-	if modal.width != 90 { // 100 - 10 = 90, but max is 80
-		// maxWidth = 100-10 = 90, but max is 80
-		if modal.width != 80 {
-			t.Errorf("Width should be 80 (capped), got %d", modal.width)
-		}
+	if modal.width != 80 {
+		t.Errorf("Width should be 80 (capped), got %d", modal.width)
 	}
 }
 

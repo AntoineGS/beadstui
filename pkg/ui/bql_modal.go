@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -11,14 +10,15 @@ import (
 
 // BQLQueryModal is the modal overlay for entering BQL queries.
 type BQLQueryModal struct {
-	input   textinput.Model
-	width   int
-	height  int
-	theme   Theme
-	err     string   // Parse error message (shown inline)
-	history []string // Recent queries (session-scoped)
-	histIdx int      // -1 = current input, 0+ = history index
-	saved   string   // Saved input when navigating history
+	input     textinput.Model
+	width     int
+	height    int
+	theme     Theme
+	err       string   // Parse error message (shown inline)
+	history   []string // Recent queries (session-scoped)
+	histIdx   int      // -1 = current input, 0+ = history index
+	saved     string   // Saved input when navigating history
+	popupSize *PopupSize
 }
 
 // NewBQLQueryModal creates a new BQL query input modal.
@@ -39,11 +39,13 @@ func NewBQLQueryModal(theme Theme) BQLQueryModal {
 func (m *BQLQueryModal) SetSize(w, h int) {
 	m.width = w
 	m.height = h
-	inputWidth := w - 10 // padding for panel border
-	if inputWidth < 20 {
-		inputWidth = 20
-	}
-	m.input.SetWidth(inputWidth)
+	m.popupSize = &PopupSize{w, h}
+	l := MeasurePopup(nil, m.popupOpts())
+	m.input.SetWidth(max(1, l.BodyWidth-lipgloss.Width(m.input.Prompt)))
+}
+
+func (m BQLQueryModal) popupOpts() PopupOpts {
+	return PopupOpts{Title: "BQL Query", Theme: m.theme, Available: m.popupSize, Width: max(1, popupAvailableSize(m.popupSize).Width-4), Footer: []string{"enter: apply | esc: cancel | up/down: history", "enter apply esc cancel ↑/↓ history", "enter esc ↑/↓ history"}}
 }
 
 // Value returns the current input value.
@@ -132,38 +134,18 @@ func (m BQLQueryModal) Update(msg tea.Msg) (BQLQueryModal, tea.Cmd) {
 
 // View renders the BQL query modal.
 func (m BQLQueryModal) View() string {
-	var sb strings.Builder
-
-	// Input line
-	sb.WriteString(m.input.View())
-	sb.WriteString("\n")
-
-	// Error line (if any)
+	lines := []string{m.input.View()}
 	if m.err != "" {
 		errStyle := lipgloss.NewStyle().Foreground(ColorDanger)
-		sb.WriteString(errStyle.Render(fmt.Sprintf("  %s", m.err)))
-		sb.WriteString("\n")
+		lines = append(lines, errStyle.Render(m.err))
 	}
-
-	// Help hint
-	hint := lipgloss.NewStyle().Foreground(ColorMuted)
-	sb.WriteString(hint.Render("  enter: apply | esc: cancel | up/down: history"))
-
-	content := sb.String()
-
-	// Wrap in a titled panel
-	panelWidth := m.width - 4
-	if panelWidth < 30 {
-		panelWidth = 30
+	panel := RenderPopup(lines, m.popupOpts())
+	if panel == "" {
+		return ""
 	}
-
-	panel := RenderTitledPanel(content, PanelOpts{
-		Title: "BQL Query",
-		Width: panelWidth,
-	})
 
 	// Center the panel vertically
-	topPad := (m.height - lipgloss.Height(panel)) / 3
+	topPad := (popupAvailableSize(m.popupSize).Height - lipgloss.Height(panel)) / 3
 	if topPad < 0 {
 		topPad = 0
 	}

@@ -8,6 +8,55 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+func TestUpdateModal_AllStatePopupsBounded(t *testing.T) {
+	for _, tc := range []struct {
+		state UpdateState
+		label string
+	}{{UpdateStateConfirm, "Update Available"}, {UpdateStateDownloading, "Downloading"}, {UpdateStateVerifying, "Verifying"}, {UpdateStateInstalling, "Installing"}, {UpdateStateSuccess, "Update Complete!"}, {UpdateStateError, "Update Failed"}} {
+		t.Run(tc.label, func(t *testing.T) {
+			m := NewUpdateModal("v1.0.0", "", DefaultTheme())
+			m.SetSize(42, 18)
+			m.state = tc.state
+			m.errorMessage = "failed"
+			m.successMessage = "updated"
+			m.startTime = time.Now()
+			out := m.View()
+			assertPopupBounds(t, out, 42, 18)
+			popupFindRow(t, out, tc.label)
+			if tc.state == UpdateStateConfirm {
+				popupFindRow(t, out, "Cancel")
+				popupFindRow(t, out, "Enter")
+			}
+		})
+	}
+}
+
+func TestUpdatePopup_ShortConfirmationShowsFocusedAction(t *testing.T) {
+	for _, focus := range []int{0, 1} {
+		for _, height := range []int{11, 7, 6} {
+			m := NewUpdateModal("v1.0.0", "", DefaultTheme())
+			m.SetSize(42, height)
+			m.confirmFocus = focus
+			out := m.View()
+			assertPopupBounds(t, out, 42, height)
+			if height == 6 {
+				if !strings.Contains(out, "Terminal too small") {
+					t.Fatalf("essential actions hidden without fallback:\n%s", out)
+				}
+				continue
+			}
+			label := "> Update"
+			if focus == 1 {
+				label = "> Cancel"
+			}
+			popupFindRow(t, out, label)
+			popupFindRow(t, out, "Current version")
+			popupFindRow(t, out, "New version")
+			popupFindRow(t, out, "Enter")
+		}
+	}
+}
+
 // ============================================================================
 // NewUpdateModal tests
 // ============================================================================
@@ -495,13 +544,13 @@ func TestUpdateModal_SetSize(t *testing.T) {
 	}
 
 	m.SetSize(40, 20)
-	if m.width != 50 { // Min 50
-		t.Errorf("expected width 50 (min), got %d", m.width)
+	if m.width != 40 {
+		t.Errorf("expected actual narrow budget 40, got %d", m.width)
 	}
 
 	m.SetSize(65, 30)
-	if m.width != 55 { // 65-10 = 55
-		t.Errorf("expected width 55, got %d", m.width)
+	if m.width != 65 {
+		t.Errorf("expected actual budget 65, got %d", m.width)
 	}
 }
 

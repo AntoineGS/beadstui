@@ -399,11 +399,7 @@ func (m Model) notifActiveKinds() []string {
 // alertsPanelHeight returns the fixed outer height of the alerts panel
 // (including borders). Capped at ~70% of terminal height.
 func (m Model) alertsPanelHeight() int {
-	h := m.height * 7 / 10
-	if h < 12 {
-		h = 12
-	}
-	return h
+	return m.alertsPopupLayout().Height
 }
 
 // alertsPanelWidth returns the outer width of the shared alerts/notifications
@@ -426,33 +422,56 @@ func (m Model) alertsPanelHeight() int {
 // the content. bt-v8he restores the pop-up aesthetic by capping width here and
 // pushing the occlusion guarantee into the compositor (dimmed backdrop).
 func (m Model) alertsPanelWidth() int {
-	const cap = 100
-	w := m.width - 4
-	if w > cap {
-		w = cap
+	return m.alertsPopupLayout().Width
+}
+
+func (m Model) alertsPopupOpts() PopupOpts {
+	opts := PopupOpts{Theme: m.theme, Available: &PopupSize{m.width, max(0, m.height-1)}, Width: min(100, max(1, m.width-4)), Height: max(12, m.height*7/10), MinBodyRows: 8, Title: "Alerts!", RightLabel: fmt.Sprintf("(%d)", len(m.visibleAlerts())), Accent: m.theme.Blocked}
+	if m.activeTab == TabNotifications {
+		opts.Title = "Notifications"
+		opts.RightLabel = fmt.Sprintf("(%d)", len(m.visibleNotifications()))
+		opts.Accent = m.theme.Primary
+		opts.MinBodyRows = 8
 	}
-	if w < 40 {
-		w = 40
+	opts.Footer = m.alertsPopupFooter()
+	return opts
+}
+
+func (m Model) alertsPopupLayout() PopupLayout { return MeasurePopup(nil, m.alertsPopupOpts()) }
+
+func (m Model) alertsPopupFooter() []string {
+	if m.activeTab == TabAlerts {
+		return []string{
+			"←/→/PgUp/PgDn: page  Home/End: ends  s/t/p/o/a: filter (⇧:prev)  r: reset  enter: open  c: clear (⇧:all)  esc: close",
+			"←/→: page  g/G: ends  s/t/p/o/a: filter  r: reset  enter: open  c: clear  esc",
+			"←/→: page  s/t/p/o/a: filter  enter  c: clear  esc",
+			"←/→ s/t/p/o/a enter c esc",
+		}
 	}
-	return w
+	dismiss := "d: show dismissed"
+	if m.notifShowDismissed {
+		dismiss = "d: hide dismissed"
+	}
+	return []string{
+		fmt.Sprintf("j/k: nav  ←/→/PgUp/PgDn: page  Home/End: ends  enter: open  t: filter  c: dismiss  C: all  %s  esc: close", dismiss),
+		fmt.Sprintf("j/k: nav  ←/→: page  enter: open  t: filter  c/C: dismiss  %s  esc: close", dismiss),
+		"j/k  ←/→/PgUp/PgDn: page  enter  t: filter  c/C  d  esc",
+		"j/k ←/→ page enter t c/C d esc",
+	}
 }
 
 // alertsVisibleLines returns the number of alert items that fit in one page,
 // accounting for all panel chrome so the content never overflows.
 // Chrome: summary(1) + blank(1) + above+filter(1) + detail-reserve(1)
-//         + below+page(1) + blank(1) + footer(1) = 7 lines
+//   - below+page(1) + blank(1) + footer(1) = 7 lines
+//
 // detail-reserve is 1 because the selected row expands to show the issue
 // title or first Details entry (bt-46p6.17's inline alert-type definition
 // was removed by bt-xyjd; explanations now live behind the ? help modal,
 // bt-i20z, instead of cluttering every alert).
 // Panel borders consume 2 of the outer height.
 func (m Model) alertsVisibleLines() int {
-	innerHeight := m.alertsPanelHeight() - 2 // subtract top/bottom border
-	lines := innerHeight - 7                 // subtract chrome
-	if lines < 3 {
-		lines = 3
-	}
-	return lines
+	return max(1, m.alertsPopupLayout().BodyHeight-5)
 }
 
 // alertsPageSize is the number of alert rows per page on the alerts tab: the
@@ -466,14 +485,11 @@ func (m Model) alertsPageSize() int {
 	return n
 }
 
-// notifPageSize is the number of notification rows per page: the visible-line
-// budget minus one row reserved for the cursor-summary expand line.
+// notifPageSize is the number of events per page, reserving day separators.
 func (m Model) notifPageSize() int {
-	n := m.alertsVisibleLines() - 1
-	if n < 2 {
-		n = 2
-	}
-	return n
+	// Each event may need a day separator. Reserve one additional row for
+	// selected-summary expansion and four for summary/above/below chrome.
+	return max(1, (m.alertsPopupLayout().BodyHeight-5)/2)
 }
 
 // pageJumpCursor returns the cursor index at the TOP of the page `delta`
@@ -535,12 +551,10 @@ func fitModalHint(width int, candidates ...string) string {
 func (m Model) renderAlertsTab() string {
 	t := m.theme
 
-	panelWidth := m.alertsPanelWidth()
-
 	visibleAlerts := m.visibleAlerts()
 
 	// Inner content width (panel width minus borders and padding)
-	innerWidth := panelWidth - 4 // 2 border + 2 padding
+	innerWidth := m.alertsPopupLayout().BodyWidth
 
 	// Build issue title lookup for detail line
 	issueTitles := make(map[string]string)
@@ -776,25 +790,6 @@ func (m Model) renderAlertsTab() string {
 		}
 	}
 
-	// Footer: centered help text (with breathing room above)
-	helpStyle := lipgloss.NewStyle().Foreground(t.Muted).Italic(true)
-	// Longest to shortest; fitModalHint picks the first that fits the inner
-	// width so the page keys (bt-p4p8.1) never overflow at 60-80 cols.
-	helpText := helpStyle.Render(fitModalHint(innerWidth,
-		"←/→/PgUp/PgDn: page  Home/End: ends  s/t/p/o/a: filter (⇧:prev)  r: reset  enter: open  c: clear (⇧:all)",
-		"←/→/PgUp/PgDn: page  Home/End: ends  s/t/p/o/a: filter  r: reset  enter: open  c: clear",
-		"←/→: page  g/G: ends  s/t/p/o/a: filter  r: reset  enter: open  c: clear",
-		"←/→: page  s/t/p/o/a: filter  r: reset  enter  c: clear",
-		"←/→: page  s/t/p/o/a  enter  c",
-	))
-	helpW := lipgloss.Width(helpText)
-	helpPad := (innerWidth - helpW) / 2
-	if helpPad < 0 {
-		helpPad = 0
-	}
-	sb.WriteString("\n\n")
-	sb.WriteString(strings.Repeat(" ", helpPad) + helpText)
-
 	// Panel frame applied by renderAlertsPanel (bt-46p6.10).
 	return sb.String()
 }
@@ -925,8 +920,7 @@ func formatNotificationRow(e events.Event, width int) string {
 // shared modal frame is applied in renderAlertsPanel.
 func (m Model) renderNotificationsTab() string {
 	t := m.theme
-	panelWidth := m.alertsPanelWidth()
-	innerWidth := panelWidth - 4
+	innerWidth := m.alertsPopupLayout().BodyWidth
 
 	active := m.visibleNotifications()
 
@@ -943,7 +937,7 @@ func (m Model) renderNotificationsTab() string {
 		if hPad < 0 {
 			hPad = 0
 		}
-		inner := m.alertsPanelHeight() - 2
+		inner := m.alertsPopupLayout().BodyHeight
 		if inner < 1 {
 			inner = 1
 		}
@@ -1033,7 +1027,7 @@ func (m Model) renderNotificationsTab() string {
 	// before the very first row of the page so users always know which day
 	// they are anchored on. Each separator consumes a row from the page
 	// budget; trim `end` so events + separators still fit within pageSize.
-	end = trimEndForDaySeparators(active, start, end, pageSize)
+	end = trimEndForDaySeparators(active, start, end, 2*pageSize)
 
 	rowsWritten := 0
 	var prevDate string
@@ -1074,7 +1068,7 @@ func (m Model) renderNotificationsTab() string {
 	// Pad item rows to pageSize for visual stability — the page indicator
 	// below lands at the same row regardless of how many items are on this
 	// page (matches alerts tab's padding at renderAlertsTab).
-	for i := rowsWritten; i < pageSize; i++ {
+	for i := rowsWritten; i < 2*pageSize+1; i++ {
 		sb.WriteString("\n")
 	}
 
@@ -1095,35 +1089,6 @@ func (m Model) renderNotificationsTab() string {
 	}
 	sb.WriteString(leftPart + strings.Repeat(" ", gap) + rightPart)
 
-	// Footer: centered help text (matches alerts-tab layout at the bottom).
-	// `d` toggles dismissed-event visibility (bt-46p6.13); the label flips
-	// to reflect the next action so users know what the toggle does.
-	hintStyle := mutedStyle.Italic(true)
-	dismissToggleLabel := "d: show dismissed"
-	if m.notifShowDismissed {
-		dismissToggleLabel = "d: hide dismissed"
-	}
-	// r (reset) is intentionally undocumented here: the hint must fit the
-	// 96-col inner width, and unfiltering is already discoverable (cycle t
-	// to "all", or click the active chip).
-	// Longest to shortest; fitModalHint picks the first that fits so the page
-	// keys (bt-p4p8.1) never overflow at 60-80 cols.
-	hintText := hintStyle.Render(fitModalHint(innerWidth,
-		fmt.Sprintf("j/k: nav  ←/→/PgUp/PgDn: page  Home/End: ends  enter: open  t: filter  c: dismiss  C: all  %s  esc: close", dismissToggleLabel),
-		fmt.Sprintf("j/k: nav  ←/→: page  g/G: ends  enter: open  t: filter  c: dismiss  C: all  %s  esc: close", dismissToggleLabel),
-		fmt.Sprintf("j/k: nav  ←/→: page  enter: open  t: filter  c/C: dismiss  %s  esc: close", dismissToggleLabel),
-		"j/k  ←/→/PgUp/PgDn: page  enter: open  t: filter  c/C: dismiss  d  esc",
-		"j/k  ←/→/PgUp/PgDn: page  enter  t: filter  c/C  d  esc",
-		"j/k  ←/→: page  enter  t  c/C  d  esc",
-	))
-	hintW := lipgloss.Width(hintText)
-	hintPad := (innerWidth - hintW) / 2
-	if hintPad < 0 {
-		hintPad = 0
-	}
-	sb.WriteString("\n\n")
-	sb.WriteString(strings.Repeat(" ", hintPad) + hintText)
-
 	return sb.String()
 }
 
@@ -1131,22 +1096,11 @@ func (m Model) renderNotificationsTab() string {
 // notifications modal (bt-46p6.10). Title + count live in the panel border
 // (no in-body tab strip); dispatches body to the active tab.
 func (m Model) renderAlertsPanel() string {
-	t := m.theme
-	panelWidth := m.alertsPanelWidth()
-
-	var title, rightLabel string
-	titleColor := t.Blocked
-	if m.activeTab == TabAlerts {
-		title = "Alerts!"
-		rightLabel = fmt.Sprintf("(%d)", len(m.visibleAlerts()))
-	} else {
-		title = "Notifications"
-		titleColor = t.Primary
-		// Use visibleNotifications so the count honors the active-repo filter,
-		// matching alerts' len(m.visibleAlerts()) behavior (bt-46p6.10).
-		rightLabel = fmt.Sprintf("(%d)", len(m.visibleNotifications()))
+	opts := m.alertsPopupOpts()
+	l := MeasurePopup(nil, opts)
+	if l.Compact || l.Height == 0 {
+		return RenderPopup(nil, opts)
 	}
-
 	var body string
 	if m.activeTab == TabAlerts {
 		body = m.renderAlertsTab()
@@ -1154,14 +1108,8 @@ func (m Model) renderAlertsPanel() string {
 		body = m.renderNotificationsTab()
 	}
 
-	return RenderTitledPanel(padContentLines(body, 1), PanelOpts{
-		Title:       title,
-		RightLabel:  rightLabel,
-		Width:       panelWidth,
-		Height:      m.alertsPanelHeight(),
-		BorderColor: titleColor,
-		TitleColor:  titleColor,
-	})
+	opts.MinBodyRows = l.BodyHeight
+	return RenderPopup(strings.Split(body, "\n"), opts)
 }
 
 // alertTypeLabel returns a short human-readable label for an alert type.

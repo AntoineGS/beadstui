@@ -493,6 +493,9 @@ func (m Model) handleAgentFileCheck(msg AgentFileCheckMsg) Model {
 	if msg.ShouldPrompt && msg.FilePath != "" {
 		m.openModal(ModalAgentPrompt)
 		m.agentPromptModal = NewAgentPromptModal(msg.FilePath, msg.FileType, m.theme)
+		if m.ready {
+			m.agentPromptModal.SetSize(max(0, m.width), max(0, m.height-1))
+		}
 		m.focused = focusAgentPrompt
 	}
 	return m

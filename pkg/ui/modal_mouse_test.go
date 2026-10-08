@@ -207,8 +207,8 @@ func summaryChipClick(t *testing.T, m Model, value string) tea.MouseClickMsg {
 	for _, seg := range segs {
 		if seg.value == value {
 			return tea.MouseClickMsg{
-				X:      startCol + modalContentXOffset + (seg.start+seg.end)/2,
-				Y:      startRow + modalSummaryRow + m.alertsHeaderRows(),
+				X:      startCol + m.alertsPopupLayout().BodyX + (seg.start+seg.end)/2,
+				Y:      startRow + m.alertsPopupLayout().BodyY + m.alertsHeaderRows(),
 				Button: tea.MouseLeft,
 			}
 		}
@@ -285,8 +285,8 @@ func TestAlertsModal_ClickSummaryGapIsNoOp(t *testing.T) {
 	startRow := (m.height - 1 - m.alertsPanelHeight()) / 2
 	// Middle of the " • " separator after the first chip.
 	msg := tea.MouseClickMsg{
-		X:      startCol + modalContentXOffset + segs[0].end + 1,
-		Y:      startRow + modalSummaryRow + m.alertsHeaderRows(),
+		X:      startCol + m.alertsPopupLayout().BodyX + segs[0].end + 1,
+		Y:      startRow + m.alertsPopupLayout().BodyY + m.alertsHeaderRows(),
 		Button: tea.MouseLeft,
 	}
 	got, _ := m.handleMouseClick(msg)

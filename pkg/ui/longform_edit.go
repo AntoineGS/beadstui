@@ -29,7 +29,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -151,6 +150,7 @@ type LongformEditModal struct {
 
 	theme         Theme
 	width, height int
+	popupSize     *PopupSize
 }
 
 // NewLongformEditModal creates a fresh long-form edit modal for field,
@@ -198,21 +198,13 @@ func (m LongformEditModal) panelTitle() string {
 // backdrop reads as a frame around it, matching repo_picker.go's sizing
 // convention (computeBoxWidth/visibleCount).
 func (m LongformEditModal) panelDims() (w, h int) {
-	w = int(float64(m.width) * 0.9)
-	if w < 40 {
-		w = 40
-	}
-	if maxW := m.width - 2; w > maxW {
-		w = maxW
-	}
-	h = int(float64(m.height) * 0.85)
-	if h < 8 {
-		h = 8
-	}
-	if maxH := m.height; h > maxH {
-		h = maxH
-	}
-	return w, h
+	l := MeasurePopup(nil, m.popupOpts())
+	return l.Width, l.Height
+}
+
+func (m LongformEditModal) popupOpts() PopupOpts {
+	size := popupAvailableSize(m.popupSize)
+	return PopupOpts{Title: m.panelTitle(), Theme: m.theme, Available: m.popupSize, Width: max(40, size.Width*9/10), Height: max(8, size.Height*85/100), MinBodyRows: 2, Footer: []string{"ctrl+s commit  E $EDITOR  esc back/discard", "ctrl+s save E editor esc back"}}
 }
 
 // SetSize updates the modal's layout budget and re-flows the inner textarea.
@@ -222,17 +214,10 @@ func (m LongformEditModal) panelDims() (w, h int) {
 // handleWindowSize, which does not touch any field-edit modal).
 func (m *LongformEditModal) SetSize(w, h int) {
 	m.width, m.height = w, h
-	pw, ph := m.panelDims()
-	taWidth := pw - 4 // borders(2) + side breathing(2)
-	if taWidth < 10 {
-		taWidth = 10
-	}
-	taHeight := ph - 5 // borders(2) + label line(1) + hint line(1) + blank(1)
-	if taHeight < 3 {
-		taHeight = 3
-	}
-	m.textarea.SetWidth(taWidth)
-	m.textarea.SetHeight(taHeight)
+	m.popupSize = &PopupSize{w, h}
+	l := MeasurePopup(nil, m.popupOpts())
+	m.textarea.SetWidth(max(1, l.BodyWidth))
+	m.textarea.SetHeight(max(1, l.BodyHeight-1))
 }
 
 // Update forwards msg to the textarea. Mirrors FieldInputModal.Update -
@@ -249,28 +234,13 @@ func (m LongformEditModal) Update(msg tea.Msg) (LongformEditModal, tea.Cmd) {
 // in Model.View().
 func (m LongformEditModal) View() string {
 	t := m.theme
-	pw, ph := m.panelDims()
-
 	labelStyle := lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
-	hintStyle := lipgloss.NewStyle().Foreground(t.Secondary).Italic(true)
 
 	lines := []string{
 		labelStyle.Render(m.label + ":"),
 		m.textarea.View(),
-		"",
-		hintStyle.Render("ctrl+s commit  E $EDITOR  esc back/discard"),
 	}
-	content := strings.Join(lines, "\n")
-
-	return RenderTitledPanel(content, PanelOpts{
-		Title:       m.panelTitle(),
-		Width:       pw,
-		Height:      ph,
-		CenterTitle: true,
-		BorderColor: t.Primary,
-		TitleColor:  t.Primary,
-		Focused:     true,
-	})
+	return RenderPopup(lines, m.popupOpts())
 }
 
 // ---------------------------------------------------------------------------

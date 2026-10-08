@@ -8,7 +8,41 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
+
+func TestRepoPopup_RenderedRowMatchesHitTest(t *testing.T) {
+	m := NewRepoPickerModel([]string{"short", "界面-project", "last-project"}, DefaultTheme())
+	m.SetSize(48, 16)
+	m.SetCursor(2)
+	out := m.View()
+	assertPopupBounds(t, out, 48, 16)
+	w, h := m.Dimensions()
+	if w != ansi.StringWidth(strings.Split(out, "\n")[0]) || h != len(strings.Split(out, "\n")) {
+		t.Fatal("dimensions disagree with render")
+	}
+	y, row := popupFindRow(t, out, "last-project")
+	if i, ok := m.ItemAtPanelY(y); !ok || i != 2 {
+		t.Fatalf("rendered y=%d maps to %d,%v", y, i, ok)
+	}
+	if !strings.Contains(row, ">") {
+		t.Fatal("shared selection cue missing")
+	}
+	y, _ = popupFindRow(t, out, "enter")
+	if _, ok := m.ItemAtPanelY(y); ok {
+		t.Fatal("footer is clickable")
+	}
+	m.SetSize(6, 3)
+	out = m.View()
+	assertPopupBounds(t, out, 6, 3)
+	if _, ok := m.ItemAtPanelY(1); ok || m.IsSearchRow(1) {
+		t.Fatal("compact popup has clickable rows")
+	}
+	m.SetSize(0, 0)
+	if m.View() != "" {
+		t.Fatal("zero budget rendered picker")
+	}
+}
 
 func TestRepoPickerSelectionAndToggle(t *testing.T) {
 	repos := []string{"api", "web", "lib"}
@@ -82,15 +116,15 @@ func TestRepoPickerItemAtPanelY(t *testing.T) {
 	m := NewRepoPickerModel(repos, DefaultTheme())
 	m.SetSize(60, 20)
 
-	// Layout: row 0 top border, row 1 search input, row 2 blank, row 3+ repos.
-	if idx, ok := m.ItemAtPanelY(3); !ok || idx != 0 {
-		t.Errorf("row 3: got (%d, %v), want (0, true)", idx, ok)
+	// Shared frame: border, breathing, search, blank, then project rows.
+	if idx, ok := m.ItemAtPanelY(4); !ok || idx != 0 {
+		t.Errorf("row 4: got (%d, %v), want (0, true)", idx, ok)
 	}
-	if idx, ok := m.ItemAtPanelY(4); !ok || idx != 1 {
-		t.Errorf("row 4: got (%d, %v), want (1, true)", idx, ok)
+	if idx, ok := m.ItemAtPanelY(5); !ok || idx != 1 {
+		t.Errorf("row 5: got (%d, %v), want (1, true)", idx, ok)
 	}
-	if idx, ok := m.ItemAtPanelY(5); !ok || idx != 2 {
-		t.Errorf("row 5: got (%d, %v), want (2, true)", idx, ok)
+	if idx, ok := m.ItemAtPanelY(6); !ok || idx != 2 {
+		t.Errorf("row 6: got (%d, %v), want (2, true)", idx, ok)
 	}
 
 	// Chrome rows above and below the repo block.
@@ -103,8 +137,8 @@ func TestRepoPickerItemAtPanelY(t *testing.T) {
 	if _, ok := m.ItemAtPanelY(2); ok {
 		t.Error("row 2 (blank) should not map to a repo")
 	}
-	if _, ok := m.ItemAtPanelY(6); ok {
-		t.Error("row 6 (blank after repos) should not map to a repo")
+	if _, ok := m.ItemAtPanelY(7); ok {
+		t.Error("row 7 (blank after repos) should not map to a repo")
 	}
 
 	// Empty repo list is always a no-op.
@@ -144,7 +178,7 @@ func TestRepoPickerDimensions(t *testing.T) {
 	if w < 30 {
 		t.Errorf("Dimensions width: got %d, want >= 30 (floor)", w)
 	}
-	expectedH := len(repos) + repoPickerVerticalChrome
+	expectedH := len(repos) + 10 // shared borders, breathing rows, search/page and footer
 	if h != expectedH {
 		t.Errorf("Dimensions height: got %d, want %d", h, expectedH)
 	}
@@ -153,8 +187,8 @@ func TestRepoPickerDimensions(t *testing.T) {
 	empty := NewRepoPickerModel([]string{}, DefaultTheme())
 	empty.SetSize(80, 20)
 	_, eh := empty.Dimensions()
-	if eh != 1+repoPickerVerticalChrome {
-		t.Errorf("empty picker height: got %d, want %d", eh, 1+repoPickerVerticalChrome)
+	if eh != 11 {
+		t.Errorf("empty picker height: got %d, want 11", eh)
 	}
 }
 
@@ -195,9 +229,9 @@ func TestRepoPickerVisibleCountScalesWithHeight(t *testing.T) {
 	}{
 		{8, 1, "extremely tiny: fallback to bg-chrome, floored to 1"},
 		{12, 1, "tiny: 75%*12=9, minus 8 chrome = 1"},
-		{20, 7, "small: 75%*20=15, minus 8 chrome = 7"},
-		{30, 14, "medium: 75%*30=22, minus 8 chrome = 14"},
-		{50, 29, "tall: 75%*50=37, minus 8 chrome = 29"},
+		{20, 5, "small: 15 total minus 10 shared chrome"},
+		{30, 12, "medium: 22 total minus 10 shared chrome"},
+		{50, 27, "tall: 37 total minus 10 shared chrome"},
 		{80, 30, "huge: 75%*80=60, minus 8 chrome = 52, clamp at repoPickerMaxVisible (30)"},
 	}
 	for _, tc := range tests {
