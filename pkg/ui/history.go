@@ -2493,7 +2493,11 @@ func (h *HistoryModel) renderBeadLine(idx int, hist correlation.BeadHistory, wid
 	// Event count badge (bv-7k8p) - shows lifecycle events if any
 	eventBadge := ""
 	if len(hist.Events) > 0 {
-		eventBadge = renderCompactEventBadge(len(hist.Events), t)
+		eventStyle := t.Text.Metadata
+		if selected && h.focused == historyFocusList {
+			eventStyle = t.Text.Selected
+		}
+		eventBadge = renderCompactEventBadge(len(hist.Events), eventStyle)
 	}
 
 	// Calculate space for event badge
@@ -2531,17 +2535,18 @@ func (h *HistoryModel) renderBeadLine(idx int, hist correlation.BeadHistory, wid
 	}
 
 	// Build line
-	idStyle := t.Text.Metadata.Width(idDisplayWidth)
+	idStyle := t.Text.Metadata
 	countStyle := t.Text.Metadata.Align(lipgloss.Right)
 	titleStyle := t.Text.Body
 
 	if selected && h.focused == historyFocusList {
-		idStyle = t.Text.Selected.Width(idDisplayWidth)
+		idStyle = t.Text.Selected
 		countStyle = t.Text.Selected.Align(lipgloss.Right)
 		titleStyle = t.Text.Selected
 	}
 
-	parts := []string{titleStyle.Render(indicator) + statusIcon + " " + idStyle.Render(hist.BeadID)}
+	idText := hist.BeadID + strings.Repeat(" ", max(0, idDisplayWidth-lipgloss.Width(hist.BeadID)))
+	parts := []string{titleStyle.Render(indicator+statusIcon+" ") + idStyle.Render(idText)}
 
 	if title != "" {
 		parts = append(parts, titleStyle.Render(title))
@@ -2550,7 +2555,7 @@ func (h *HistoryModel) renderBeadLine(idx int, hist correlation.BeadHistory, wid
 	if showCount {
 		countPart := countStyle.Render(commitCount)
 		if eventBadge != "" {
-			countPart = countPart + " " + eventBadge
+			countPart = countPart + titleStyle.Render(" ") + eventBadge
 		}
 		parts = append(parts, countPart)
 	}
@@ -2684,14 +2689,11 @@ func (h *HistoryModel) renderFileTreeLine(idx int, node *FileTreeNode, width int
 		}
 	}
 
-	line := fmt.Sprintf("%s%s%s%s %s",
-		indent,
-		nameStyle.Render(indicator),
-		icon,
-		nameStyle.Render(name),
-		countStyle.Render(countStr),
-	)
-
+	rowStyle := t.Text.Body
+	if selected && h.fileTreeFocus {
+		rowStyle = t.Text.Selected
+	}
+	line := rowStyle.Render(indent+indicator+icon) + nameStyle.Render(name) + rowStyle.Render(" ") + countStyle.Render(countStr)
 	return line
 }
 
@@ -3547,12 +3549,10 @@ func (h *HistoryModel) renderEventsSection(events []correlation.BeadEvent, width
 }
 
 // renderCompactEventBadge renders a compact event count badge for list items (bv-7k8p)
-func renderCompactEventBadge(eventCount int, t Theme) string {
+func renderCompactEventBadge(eventCount int, badgeStyle lipgloss.Style) string {
 	if eventCount == 0 {
 		return ""
 	}
-
-	badgeStyle := t.Text.Metadata
 
 	return badgeStyle.Render(fmt.Sprintf("%s%d", activeGlyphs.Bolt, eventCount))
 }
@@ -3622,13 +3622,7 @@ func (h *HistoryModel) renderGitCommitLine(idx int, commit CommitListEntry, widt
 		countStyle = t.Text.Selected
 	}
 
-	line := fmt.Sprintf("%s%s %s %s",
-		msgStyle.Render(indicator),
-		shaStyle.Render(commit.ShortSHA),
-		msgStyle.Render(msg),
-		countStyle.Render(beadCount),
-	)
-
+	line := msgStyle.Render(indicator) + shaStyle.Render(commit.ShortSHA) + msgStyle.Render(" ") + msgStyle.Render(msg) + msgStyle.Render(" ") + countStyle.Render(beadCount)
 	return line
 }
 
@@ -3702,7 +3696,7 @@ func (h *HistoryModel) renderGitDetailPanel(width, height int) string {
 		if isSelected {
 			idStyle = t.Text.Selected
 		}
-		beadLine := fmt.Sprintf("%s%s %s %s", indicator, statusIcon, idStyle.Render(beadID), beadStyle.Render(title))
+		beadLine := beadStyle.Render(indicator+statusIcon+" ") + idStyle.Render(beadID) + beadStyle.Render(" ") + beadStyle.Render(title)
 		lines = append(lines, beadLine)
 	}
 
@@ -3846,7 +3840,7 @@ func (h *HistoryModel) renderCommitMiddlePanel(width, height int) string {
 			msg = msg[:maxMsgLen-1] + "…"
 		}
 
-		line := fmt.Sprintf("%s%s %s", indicator, shaStyle.Render(commit.ShortSHA), msgStyle.Render(msg))
+		line := msgStyle.Render(indicator) + shaStyle.Render(commit.ShortSHA) + msgStyle.Render(" ") + msgStyle.Render(msg)
 		lines = append(lines, line)
 	}
 
@@ -3941,7 +3935,7 @@ func (h *HistoryModel) renderGitBeadListPanel(width, height int) string {
 			title = title[:maxLen-1] + "…"
 		}
 
-		beadLine := fmt.Sprintf("%s%s %s", indicator, statusIcon, beadStyle.Render(title))
+		beadLine := beadStyle.Render(indicator+statusIcon+" ") + beadStyle.Render(title)
 		lines = append(lines, beadLine)
 	}
 

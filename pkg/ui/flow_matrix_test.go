@@ -5,10 +5,90 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"fmt"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/ui"
 )
+
+func TestFlowDetailColumnsTextRoleInvariant(t *testing.T) {
+	for _, wide := range []bool{false, true} {
+		t.Run(fmt.Sprintf("wide_%t", wide), func(t *testing.T) {
+			labels := []string{"center"}
+			for i := 0; i < 7; i++ {
+				name := fmt.Sprintf("out-%d", i)
+				if wide {
+					name += strings.Repeat("界", 45)
+				}
+				labels = append(labels, name)
+			}
+			for i := 0; i < 7; i++ {
+				labels = append(labels, fmt.Sprintf("in-%d", i))
+			}
+			matrix := make([][]int, len(labels))
+			for i := range matrix {
+				matrix[i] = make([]int, len(labels))
+			}
+			for i := 1; i <= 7; i++ {
+				matrix[0][i] = 2
+				matrix[i+7][0] = 1
+			}
+			flow := &analysis.CrossLabelFlow{Labels: labels, FlowMatrix: matrix, TotalCrossLabelDeps: 21}
+			var baseline []int
+			for _, styled := range []bool{false, true} {
+				theme := ui.DefaultTheme()
+				role := lipgloss.NewStyle().Bold(false).Italic(false).Underline(false)
+				if styled {
+					role = role.Foreground(theme.Warning).Background(theme.Primary).Underline(true)
+				}
+				theme.Text.Body, theme.Text.Heading, theme.Text.Metadata = role, role, role
+				m := ui.NewFlowMatrixModel(theme)
+				m.SetSize(200, 30)
+				m.SetData(flow, nil)
+				if m.SelectedLabel() != "center" {
+					t.Fatal("bidirectional fixture did not select center")
+				}
+				var positions []int
+				for _, line := range strings.Split(ansi.Strip(m.View()), "\n") {
+					sep := strings.Index(line, "│")
+					if sep < 0 {
+						continue
+					}
+					detailStart := ansi.StringWidth(line[:sep+len("│")]) + 1
+					for _, marker := range []string{"← BLOCKED BY", "in-0", "+1 more"} {
+						idx := strings.LastIndex(line, marker)
+						if idx > sep {
+							positions = append(positions, ansi.StringWidth(line[:idx]))
+							offset := 63
+							if marker == "in-0" {
+								offset += 8
+							}
+							if marker == "+1 more" {
+								offset += 2
+							}
+							if got := ansi.StringWidth(line[:idx]); got != detailStart+offset {
+								t.Errorf("styled=%t marker=%s right-column position=%d, want %d", styled, marker, got, detailStart+offset)
+							}
+						}
+					}
+				}
+				if len(positions) != 3 {
+					t.Fatalf("expected header/entry/more right-column positions, got %v", positions)
+				}
+				if !styled {
+					baseline = positions
+				} else {
+					for i := range baseline {
+						if baseline[i] != positions[i] {
+							t.Errorf("Body cosmetics moved right column: plain=%v styled=%v", baseline, positions)
+						}
+					}
+				}
+			}
+		})
+	}
+}
 
 func TestFlowTextRole(t *testing.T) {
 	theme := ui.DefaultTheme()

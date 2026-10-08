@@ -4,16 +4,94 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/seanmartinsmith/beadstui/pkg/cass"
 	"github.com/seanmartinsmith/beadstui/pkg/correlation"
 	"github.com/seanmartinsmith/beadstui/pkg/projects"
 )
+
+func TestHistorySelectedOrdinaryCellsTextRole(t *testing.T) {
+	for _, attributes := range []bool{false, true} {
+		t.Run(fmt.Sprintf("attributes_%t", attributes), func(t *testing.T) {
+			theme := DefaultTheme()
+			theme.Text.Selected = lipgloss.NewStyle().Foreground(theme.Warning).Background(theme.Primary).Bold(false).Italic(attributes).Underline(attributes)
+			theme.Text.Metadata = lipgloss.NewStyle().Foreground(theme.Muted).Background(theme.BgDark)
+			report := createTestHistoryReport()
+			hist := report.Histories["bv-1"]
+			hist.Events = []correlation.BeadEvent{{BeadID: "bv-1", Timestamp: time.Now()}}
+			report.Histories["bv-1"] = hist
+			h := NewHistoryModel(report, theme)
+			h.SetSize(180, 40)
+			h.commitList = []CommitListEntry{{SHA: hist.Commits[0].SHA, ShortSHA: hist.Commits[0].ShortSHA, Message: hist.Commits[0].Message, BeadIDs: []string{"bv-1"}}}
+			for i, item := range h.histories {
+				if item.BeadID == "bv-1" {
+					h.selectedBead = i
+				}
+			}
+			expected := uv.NewStyledString(theme.Text.Selected.Render("x")).Lines(ansi.GraphemeWidth)[0][0].Style
+			expectedSpace := uv.NewStyledString(theme.Text.Selected.Render(" ")).Lines(ansi.GraphemeWidth)[0][0].Style
+			assertSpan := func(name, rendered, endText string) {
+				t.Helper()
+				for _, line := range strings.Split(rendered, "\n") {
+					plain := ansi.Strip(line)
+					start := strings.Index(plain, "▸")
+					end := strings.LastIndex(plain, endText)
+					if start < 0 || end < start {
+						continue
+					}
+					startCell := ansi.StringWidth(plain[:start])
+					endCell := ansi.StringWidth(plain[:end+len(endText)])
+					cells := uv.NewStyledString(line).Lines(ansi.GraphemeWidth)[0]
+					for x := startCell; x < endCell; x++ {
+						style := cells[x].Style
+						want := expected
+						if cells[x].Content == " " {
+							want = expectedSpace
+						}
+						if !reflect.DeepEqual(style.Bg, want.Bg) || style.Attrs != want.Attrs || style.Underline != want.Underline {
+							t.Errorf("%s cell %d (%q) lost selected background/attributes: %+v", name, x, cells[x].Content, style)
+						}
+					}
+					return
+				}
+				t.Fatalf("%s selected populated span not found ending %q", name, endText)
+			}
+			h.focused = historyFocusList
+			assertSpan("events", h.renderBeadLine(h.selectedBead, h.histories[h.selectedBead], 100), fmt.Sprintf("%s1", activeGlyphs.Bolt))
+			commit := *h.SelectedGitCommit()
+			assertSpan("git", h.renderGitCommitLine(0, commit, 100), fmt.Sprintf("[%d]", len(commit.BeadIDs)))
+			h.focused = historyFocusMiddle
+			assertSpan("middle commit", h.renderCommitMiddlePanel(100, 20), hist.Commits[0].Message)
+			assertSpan("middle bead", h.renderGitBeadListPanel(100, 20), report.Histories[commit.BeadIDs[0]].Title)
+			h.focused = historyFocusDetail
+			assertSpan("related bead", h.renderGitDetailPanel(100, 20), report.Histories[commit.BeadIDs[0]].Title)
+			h.fileTreeFocus = true
+			node := &FileTreeNode{Name: "nested.go", Path: "pkg/nested.go", Level: 2, ChangeCount: 3}
+			h.fileFilter = node.Path
+			row := h.renderFileTreeLine(0, node, 100)
+			assertSpan("file tree", row, "(3)")
+			cells := uv.NewStyledString(row).Lines(ansi.GraphemeWidth)[0]
+			for x := 0; x < node.Level*2; x++ {
+				if !reflect.DeepEqual(cells[x].Style.Bg, expectedSpace.Bg) || cells[x].Style.Attrs != expectedSpace.Attrs || cells[x].Style.Underline != expectedSpace.Underline {
+					t.Errorf("file tree indent cell %d lost selection", x)
+				}
+			}
+			nameCell := ansi.StringWidth(ansi.Strip(row)[:strings.Index(ansi.Strip(row), node.Name)])
+			filtered := uv.NewStyledString(theme.Text.Selected.Foreground(theme.Closed).Render("x")).Lines(ansi.GraphemeWidth)[0][0].Style
+			if !reflect.DeepEqual(cells[nameCell].Style.Fg, filtered.Fg) {
+				t.Error("active file filter lost semantic foreground")
+			}
+		})
+	}
+}
 
 func TestHistoryTextRole(t *testing.T) {
 	theme := DefaultTheme()
@@ -51,7 +129,8 @@ func TestHistoryPlainSelectedTextRole(t *testing.T) {
 			t.Errorf("selected text %q lost background/false attributes", text)
 		}
 	}
-	if !strings.Contains(row, theme.Text.Selected.Width(12).Render(h.histories[0].BeadID)) {
+	idText := h.histories[0].BeadID + strings.Repeat(" ", max(0, 12-lipgloss.Width(h.histories[0].BeadID)))
+	if !strings.Contains(row, theme.Text.Selected.Render(idText)) {
 		t.Error("selected ID lost role")
 	}
 	if !strings.Contains(h.renderListPanel(80, 20), theme.Text.Heading.Render("BEADS WITH HISTORY")) {

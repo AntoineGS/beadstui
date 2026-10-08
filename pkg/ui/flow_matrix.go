@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
@@ -479,10 +480,13 @@ func (m FlowMatrixModel) renderLabelRow(stat labelFlowStats, selected bool, barW
 		labelColor = m.theme.Subtext // Gray for no impact
 	}
 
-	labelStyle := m.theme.Text.Body.Foreground(labelColor).Width(labelWidth)
+	rowStyle := m.theme.Text.Body
 	if selected {
-		labelStyle = m.theme.Text.Selected.Foreground(labelColor).Width(labelWidth)
+		rowStyle = m.theme.Text.Selected
 	}
+	labelStyle := rowStyle.Foreground(labelColor)
+	label = ansi.Truncate(label, labelWidth, "…")
+	label += strings.Repeat(" ", max(0, labelWidth-ansi.StringWidth(label)))
 
 	// Bar visualization
 	barFilled := 0
@@ -507,18 +511,11 @@ func (m FlowMatrixModel) renderLabelRow(stat labelFlowStats, selected bool, barW
 	countStr := fmt.Sprintf("%3d", stat.OutgoingCount)
 
 	// Assemble row
-	row := fmt.Sprintf("%s %s%s %s",
-		labelStyle.Render(fmt.Sprintf("%-*s", labelWidth, label)),
-		barStyle.Render(bar),
-		emptyStyle.Render(barEmpty),
-		countStr)
+	row := labelStyle.Render(label) + rowStyle.Render(" ") + barStyle.Render(bar) + emptyStyle.Render(barEmpty) + rowStyle.Render(" "+countStr)
 
 	// Selection highlight
 	if selected {
-		selectStyle := m.theme.Text.Selected.Width(totalWidth)
-		row = selectStyle.Render(row)
-	} else {
-		row = m.theme.Text.Body.Render(row)
+		row += rowStyle.Render(strings.Repeat(" ", max(0, totalWidth-ansi.StringWidth(row))))
 	}
 
 	return row
@@ -571,7 +568,14 @@ func (m FlowMatrixModel) renderDetailPanel(width int) string {
 	b.WriteString("\n")
 
 	// Two-column layout for blocks/blocked by
-	halfWidth := (width - 4) / 2
+	halfWidth := max(0, (width-4)/2)
+	// Text roles add ANSI sequences, and labels may contain wide graphemes.
+	// Clip each column and pad by display cells, never by Go string length.
+	columns := func(left, right string) string {
+		left = ansi.Truncate(left, halfWidth, "…")
+		right = ansi.Truncate(right, max(0, width-halfWidth-2), "…")
+		return left + strings.Repeat(" ", max(0, halfWidth-ansi.StringWidth(left))) + "  " + right + "\n"
+	}
 
 	// BLOCKS section
 	blocksHeader := m.theme.Text.Heading.
@@ -582,7 +586,7 @@ func (m FlowMatrixModel) renderDetailPanel(width int) string {
 		Foreground(m.theme.InProgress).
 		Render(fmt.Sprintf("← BLOCKED BY (%d)", stat.IncomingCount))
 
-	b.WriteString(fmt.Sprintf("%-*s  %s\n", halfWidth, blocksHeader, blockedByHeader))
+	b.WriteString(columns(blocksHeader, blockedByHeader))
 
 	// List entries
 	maxEntries := 6
@@ -608,7 +612,7 @@ func (m FlowMatrixModel) renderDetailPanel(width int) string {
 			rightStr = "  " + miniBar + " " + m.theme.Text.Body.Render(fmt.Sprintf("%s (%d)", inLabels[i], count))
 		}
 
-		b.WriteString(fmt.Sprintf("%-*s  %s\n", halfWidth, leftStr, rightStr))
+		b.WriteString(columns(leftStr, rightStr))
 	}
 
 	if len(outLabels) > maxEntries || len(inLabels) > maxEntries {
@@ -621,7 +625,7 @@ func (m FlowMatrixModel) renderDetailPanel(width int) string {
 		if len(inLabels) > maxEntries {
 			rightMore = fmt.Sprintf("  +%d more", len(inLabels)-maxEntries)
 		}
-		b.WriteString(fmt.Sprintf("%-*s  %s\n", halfWidth, moreStyle.Render(leftMore), moreStyle.Render(rightMore)))
+		b.WriteString(columns(moreStyle.Render(leftMore), moreStyle.Render(rightMore)))
 	}
 
 	b.WriteString("\n")
