@@ -1502,16 +1502,27 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			if len(m.data.issues) == 0 {
 				return m, nil
 			}
-			// Update labels in case they changed
-			labelExtraction := analysis.ExtractLabels(m.data.issues)
+			// Labels and counts follow the project scope (bt-obw) but not the
+			// status/BQL/recipe/label filters: counts that shifted with the
+			// label filter would hide the labels the user is choosing between.
+			labelExtraction := analysis.ExtractLabels(m.workspacePrefilter(m.data.issues))
 			labelCounts := extractLabelCounts(labelExtraction.Stats)
-			m.labelPicker.SetLabels(labelExtraction.Labels, labelCounts)
-			// Set active labels so the picker opens to the current filter
+			labels := labelExtraction.Labels
+			var activeLabels []string
 			if m.filter.labelFilter != "" {
-				m.labelPicker.SetActiveLabels(strings.Split(m.filter.labelFilter, ","))
-			} else {
-				m.labelPicker.SetActiveLabels(nil)
+				activeLabels = strings.Split(m.filter.labelFilter, ",")
 			}
+			// Keep applied labels absent from the scope listed, so they stay
+			// visible and Enter does not silently drop them from the filter.
+			for _, l := range activeLabels {
+				if _, ok := labelCounts[l]; !ok {
+					labelCounts[l] = 0
+					labels = append(labels, l)
+				}
+			}
+			m.labelPicker.SetLabels(labels, labelCounts)
+			// Set active labels so the picker opens to the current filter
+			m.labelPicker.SetActiveLabels(activeLabels)
 			m.labelPicker.Reset()
 			m.labelPicker.SetSize(m.width, m.height-1)
 			m.openModal(ModalLabelPicker)
