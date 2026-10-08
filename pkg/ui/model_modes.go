@@ -13,6 +13,7 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/correlation"
 	"github.com/seanmartinsmith/beadstui/pkg/loader"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/plugin"
 	"github.com/seanmartinsmith/beadstui/pkg/projects"
 )
 
@@ -196,6 +197,25 @@ func (m Model) showRepoColumn() bool {
 func (m *Model) SetActiveRepos(repos map[string]bool) {
 	m.activeRepos = repos
 	m.updateListDelegate()
+}
+
+// SetPluginHost attaches the plugin host and registers its badge, section
+// and field providers. The caller starts and stops the host.
+func (m *Model) SetPluginHost(h *plugin.Host) {
+	m.pluginHost = h
+	m.pluginFields = h.FieldPrefixes
+	m.pluginActions = h
+	h.Register(m.slotRegistry)
+}
+
+// PluginHost returns the plugin host, or nil when none is set.
+func (m Model) PluginHost() *plugin.Host {
+	return m.pluginHost
+}
+
+// SetPopupMode makes bt quit after a plugin action asks to (--popup).
+func (m *Model) SetPopupMode(on bool) {
+	m.popupMode = on
 }
 
 // historyContext builds the HistoryContext snapshot used by the History
@@ -476,6 +496,8 @@ func (m Model) FocusState() string {
 		return "update_modal"
 	case focusMemories:
 		return "memories"
+	case focusPluginPrompt:
+		return "plugin_prompt"
 	default:
 		return "unknown"
 	}

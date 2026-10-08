@@ -44,6 +44,7 @@ type writeKind int
 const (
 	writeClaim writeKind = iota
 	writeFieldEdit
+	writePluginAction // Field holds the action label; never settles on reload
 )
 
 // pendingWrite tracks one in-flight write (bt-oiaj.13). Field/Target are
@@ -59,6 +60,9 @@ type pendingWrite struct {
 	Field     string
 	Target    string
 	StartedAt time.Time
+	// SpinnerCleared hides the row spinner while the entry still guards the
+	// bead: a plugin action whose plugin already pushed state for it.
+	SpinnerCleared bool
 }
 
 // label names pw for the timeout annunciator's toast copy (settlePendingWrites).
@@ -291,6 +295,7 @@ func lastNonEmptyLine(s string) string {
 // while writes remain pending and self-cancelling otherwise. Generalizes
 // handleClaimSpinnerTick (bt-oiaj.10).
 func (m Model) handleWriteSpinnerTick() (Model, tea.Cmd) {
+	m.expirePluginActions(time.Now())
 	if len(m.pendingWrites) == 0 {
 		m.writeSpinnerActive = false
 		return m, nil
@@ -308,8 +313,10 @@ func (m *Model) pendingWriteIDs() map[string]bool {
 		return nil
 	}
 	ids := make(map[string]bool, len(m.pendingWrites))
-	for id := range m.pendingWrites {
-		ids[id] = true
+	for id, pw := range m.pendingWrites {
+		if !pw.SpinnerCleared {
+			ids[id] = true
+		}
 	}
 	return ids
 }
@@ -405,6 +412,10 @@ func (m *Model) settlePendingWrites() {
 	changed := false
 	now := time.Now()
 	for id, pw := range m.pendingWrites {
+		if pw.Kind == writePluginAction {
+			// Ended by the action's result; expirePluginActions is the net.
+			continue
+		}
 		if iss, ok := m.data.issueMap[id]; ok && writeSettled(pw, iss) {
 			delete(m.pendingWrites, id)
 			changed = true

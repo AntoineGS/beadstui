@@ -174,6 +174,10 @@ The most common knobs are the Dolt-connection and freshness vars below. For the 
 | `BT_FRESHNESS_STALE_S` | `120` | Seconds before data shows stale |
 | `BT_FRESHNESS_WARN_S` | `30` | Seconds before stale warning |
 
+### Plugins
+
+bt can run out-of-process plugins, configured under `plugins:` in `~/.config/bt/config.yaml`, that add row badges, detail sections, BQL fields and bead actions. `P` opens the plugin action menu and `bt plugins` lists what is configured. See [docs/plugins.md](docs/plugins.md) for the protocol and configuration.
+
 ## Robot mode
 
 The `bt robot <subcmd>` family emits deterministic JSON to stdout. This is how AI agents interact with bt - no TUI, just structured data.

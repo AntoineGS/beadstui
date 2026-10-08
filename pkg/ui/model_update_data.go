@@ -408,6 +408,7 @@ func (m Model) handleSnapshotReady(msg SnapshotReadyMsg) (Model, tea.Cmd) {
 		cmds = append(cmds, WaitForBackgroundWorkerMsgCmd(m.data.backgroundWorker))
 	}
 
+	m.syncPluginsWithHash(msg.Snapshot.DataHash)
 	return m, tea.Batch(cmds...)
 }
 
@@ -468,6 +469,7 @@ func (m Model) handleDataSourceReload(msg DataSourceReloadMsg) (Model, tea.Cmd) 
 	cmds = append(cmds, m.setInlineTransientStatus(
 		fmt.Sprintf("Reloaded %d issues", len(msg.Issues)), 3*time.Second))
 	cmds = append(cmds, WaitForPhase2Cmd(m.data.analysis))
+	m.syncPlugins()
 	return m, tea.Batch(cmds...)
 }
 
@@ -985,5 +987,6 @@ func (m Model) handleFileChanged(msg FileChangedMsg) (Model, tea.Cmd) {
 		cmds = append(cmds, WatchFileCmd(m.data.watcher))
 	}
 	cmds = append(cmds, WaitForPhase2Cmd(m.data.analysis))
+	m.syncPlugins()
 	return m, tea.Batch(cmds...)
 }

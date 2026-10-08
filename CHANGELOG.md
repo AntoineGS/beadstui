@@ -6,6 +6,17 @@ For architectural decisions, see `docs/adr/`. For issue tracking, use `bd list`.
 
 ---
 
+## 2026-10-07 - Plugins: out-of-process extensions over JSON-RPC
+
+**bt can now run plugins: separate executables, configured in `~/.config/bt/config.yaml`, that add badges, detail sections, BQL fields and actions on beads. They feed the slots registry added earlier the same day.**
+
+- **feat: `pkg/plugin` host.** JSON-RPC 2.0 over stdio (protocol version 1), manifest validation, `beads.sync` snapshots, `state.set`/`state.clear`, restart at 1s/5s/25s, and a 2s shutdown grace. Plugins never run in `bt robot` or `--as-of`.
+- **feat: plugin actions.** `P` opens an action menu on the selected bead in the list, board, tree and epics views; actions also bind configurable keys (`keys:` overrides, `none` disables). `ui.confirm` and `ui.select` prompts, toasts, a pending spinner on list rows, and `--popup` to let an action quit bt.
+- **feat: `bt plugins [--json]`.** Lists configured plugins with enabled state, command, resolved binary and key overrides.
+- **docs: `docs/plugins.md`.** Configuration, lifecycle and protocol reference.
+
+---
+
 ## 2026-10-07 - Slots: one registry for row badges, detail sections and BQL fields
 
 **Badges on rows, sections in the detail pane and BQL fields were each hard-coded where they render, in four separate row renderers and one inline detail builder. This adds `pkg/ui/slots`, a registry that built-in features and future extensions both use, as the first step toward plugin support.**

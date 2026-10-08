@@ -65,6 +65,7 @@ var (
 	flagProfileJSON       bool
 	flagForceFullAnalysis bool
 	flagAllowHooks        bool
+	flagPopup             bool
 
 	// Search flags
 	flagSearch        string
@@ -122,6 +123,7 @@ func init() {
 	f.BoolVar(&flagProfileJSON, "profile-json", false, "Output profile in JSON format (use with --profile-startup)")
 	f.BoolVar(&flagForceFullAnalysis, "force-full-analysis", false, "Compute all metrics regardless of graph size (may be slow for large graphs)")
 	f.BoolVar(&flagAllowHooks, "allow-hooks", false, "Bypass trust check on .bt/hooks.yaml hooks (use only for trusted CI environments)")
+	f.BoolVar(&flagPopup, "popup", false, "Quit after a plugin action asks to (for terminal popups)")
 	f.StringVar(&flagExportMD, "export-md", "", "Export issues to a Markdown file (e.g., report.md)")
 
 	// Search flags on root.
@@ -543,6 +545,11 @@ func runRootTUI(cmd *cobra.Command) {
 		m.SetActiveRepos(map[string]bool{appCtx.currentProjectDB: true})
 	}
 
+	if host := loadPluginHost(&appCtx, flagPopup); host != nil {
+		m.SetPluginHost(host)
+	}
+	m.SetPopupMode(flagPopup)
+
 	// Debug render mode.
 	if flagDebugRender != "" {
 		output := m.RenderDebugView(flagDebugRender, flagDebugWidth, flagDebugHeight)
@@ -833,6 +840,11 @@ func runTUIProgram(m ui.Model) error {
 	if coalescer != nil {
 		coalescer.SetSender(p.Send)
 		coalescer.RunFlushPump(coalesceStop)
+	}
+	if h := m.PluginHost(); h != nil {
+		h.SetSender(p.Send)
+		h.Start()
+		defer h.Stop()
 	}
 	// Mouse input is enabled per-view via tea.View.MouseMode = tea.MouseModeCellMotion
 	// (see pkg/ui/model_view.go). bt-d8d1 wires MouseClickMsg into Update.

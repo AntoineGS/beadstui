@@ -79,6 +79,9 @@ type AppKeys struct {
 	// LongformEdit (bt-oiaj.6, Slice C) backs the textarea sub-modal
 	// (description/design/comment/append-notes/acceptance).
 	LongformEdit LongformEditKeys
+
+	// PluginSelect backs the plugin select prompt and the plugin action menu.
+	PluginSelect PluginSelectKeys
 }
 
 // NewAppKeys returns the default keymap for every view. Wire into NewModel.
@@ -122,5 +125,8 @@ func NewAppKeys() AppKeys {
 
 		// Long-form field-edit Map (bt-oiaj.6, Slice C)
 		LongformEdit: NewLongformEditKeys(),
+
+		// Plugin prompt Map
+		PluginSelect: NewPluginSelectKeys(),
 	}
 }

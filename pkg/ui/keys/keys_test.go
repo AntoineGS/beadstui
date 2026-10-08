@@ -53,6 +53,9 @@ func allMaps() map[string]help.KeyMap {
 
 		// Long-form field-edit Map (bt-oiaj.6, Slice C)
 		"LongformEdit": NewLongformEditKeys(),
+
+		// Plugin prompt Map
+		"PluginSelect": NewPluginSelectKeys(),
 	}
 }
 
