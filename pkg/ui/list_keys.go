@@ -10,6 +10,20 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
 
+// openSelectedDetail takes the user to the selected bead's details: it
+// focuses the detail pane in split view and opens the detail view otherwise
+// (bt-cg6).
+func (m *Model) openSelectedDetail() {
+	if m.isSplitView {
+		m.focused = focusDetail
+		return
+	}
+	m.showDetails = true
+	m.focused = focusDetail
+	m.viewport.GotoTop() // Reset scroll position for new issue
+	m.updateViewportContent()
+}
+
 // handleListKeys handles keyboard input when the main list is focused and
 // not in filter-typing mode (the dispatcher's filter-state guard at
 // model_update_input.go:822 prevents this from running while
@@ -27,12 +41,7 @@ func (m Model) handleListKeys(msg tea.KeyMsg) Model {
 	k := m.keys.ListNormal
 	switch {
 	case key.Matches(msg, k.Enter):
-		if !m.isSplitView {
-			m.showDetails = true
-			m.focused = focusDetail
-			m.viewport.GotoTop() // Reset scroll position for new issue
-			m.updateViewportContent()
-		}
+		m.openSelectedDetail()
 	case key.Matches(msg, k.EpicCard):
 		// Open the tier-2 focus card when the cursor is on an epic; on a
 		// non-epic it's a no-op with a hint (bt-gfxhz.3).
