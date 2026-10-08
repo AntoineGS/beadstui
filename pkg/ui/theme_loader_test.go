@@ -3,8 +3,181 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
+
+func TestTextRolesFieldOverrides(t *testing.T) {
+	var overlay ThemeFile
+	if err := yaml.Unmarshal([]byte(`text:
+  title: {foreground: auto, background: primary, bold: false}
+  metadata: {italic: false, underline: true}
+  nonexistent: {bold: true}
+`), &overlay); err != nil {
+		t.Fatal(err)
+	}
+	base := &ThemeFile{Text: defaultTextRoleConfigs()}
+	mergeTheme(base, &overlay)
+	if base.Text.Title.Bold == nil || *base.Text.Title.Bold {
+		t.Fatal("explicit false did not disable title bold")
+	}
+	if base.Text.Metadata.Underline == nil || !*base.Text.Metadata.Underline {
+		t.Fatal("valid underline override was lost")
+	}
+	if base.Text.Body.Foreground != "text" {
+		t.Fatal("unspecified body role did not inherit")
+	}
+}
+
+func TestTextRolesInvalidFieldsAreIndependent(t *testing.T) {
+	for _, invalid := range []string{
+		"foreground: typo", "foreground: [text]", "background: auto",
+		"bold: absolutely", "italic: [false]", "underline: {bad: true}",
+		"foreground: none", "foreground: '#ffffff'", "foreground: null",
+		"bold: 'false'", "bold: null", "foreground: ''",
+	} {
+		t.Run(invalid, func(t *testing.T) {
+			var overlay ThemeFile
+			input := "text:\n  title:\n    " + invalid + "\n    background: secondary\n"
+			if strings.HasPrefix(invalid, "background:") {
+				input = "text:\n  title:\n    " + invalid + "\n    italic: true\n"
+			}
+			if err := yaml.Unmarshal([]byte(input), &overlay); err != nil {
+				t.Fatal(err)
+			}
+			base := &ThemeFile{Text: defaultTextRoleConfigs()}
+			mergeTheme(base, &overlay)
+			if strings.HasPrefix(invalid, "background:") {
+				if base.Text.Title.Background != "primary" || base.Text.Title.Italic == nil || !*base.Text.Title.Italic {
+					t.Fatal("bad field erased a valid neighbor or inherited background")
+				}
+			} else {
+				if base.Text.Title.Background != "secondary" || base.Text.Title.Foreground != "auto" || base.Text.Title.Bold == nil || !*base.Text.Title.Bold {
+					t.Fatal("bad field erased valid or inherited fields")
+				}
+			}
+		})
+	}
+}
+
+func TestTextRolesLayerPrecedence(t *testing.T) {
+	t.Chdir(t.TempDir())
+	user := withThemeConfigHome(t)
+	t.Setenv("BT_THEME", "dracula")
+	if err := os.MkdirAll(filepath.Dir(user), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(".bt", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(user, []byte("text:\n  title: {bold: false}\n  metadata: {italic: true}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(".bt/theme.yaml", []byte("text:\n  metadata: {italic: false, underline: true}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tf := range []*ThemeFile{LoadTheme(), LoadThemeNamed("matcha-dark-sea")} {
+		if tf.Text.Title.Bold == nil || *tf.Text.Title.Bold || tf.Text.Metadata.Italic == nil || *tf.Text.Metadata.Italic || tf.Text.Metadata.Underline == nil || !*tf.Text.Metadata.Underline {
+			t.Fatal("named/user/project precedence lost false or inherited fields")
+		}
+		if tf.Text.Body.Foreground != "text" {
+			t.Fatal("embedded role was lost")
+		}
+	}
+}
+
+func TestTextRolesParseAllRolesAndFields(t *testing.T) {
+	for _, name := range []string{"title", "heading", "body", "metadata", "badge", "selected", "callout"} {
+		t.Run(name, func(t *testing.T) {
+			var overlay ThemeFile
+			input := "text:\n  " + name + ": {foreground: warning, background: none, bold: false, italic: true, underline: true, unknown: [bad]}\n"
+			if err := yaml.Unmarshal([]byte(input), &overlay); err != nil {
+				t.Fatal(err)
+			}
+			base := &ThemeFile{Text: defaultTextRoleConfigs()}
+			mergeTheme(base, &overlay)
+			roles := map[string]TextRoleConfig{
+				"title": base.Text.Title, "heading": base.Text.Heading, "body": base.Text.Body,
+				"metadata": base.Text.Metadata, "badge": base.Text.Badge,
+				"selected": base.Text.Selected, "callout": base.Text.Callout,
+			}
+			got := roles[name]
+			if got.Foreground != "warning" || got.Background != "none" || got.Bold == nil || *got.Bold || got.Italic == nil || !*got.Italic || got.Underline == nil || !*got.Underline {
+				t.Fatalf("role fields did not merge: %+v", got)
+			}
+		})
+	}
+}
+
+func TestTextRolesNonMappingNodes(t *testing.T) {
+	for _, node := range []string{"null", "plain", "[text]", "true"} {
+		t.Run(node, func(t *testing.T) {
+			var overlay ThemeFile
+			if err := yaml.Unmarshal([]byte("text:\n  title: "+node+"\n  body: {underline: true}\n"), &overlay); err != nil {
+				t.Fatal(err)
+			}
+			base := &ThemeFile{Text: defaultTextRoleConfigs()}
+			mergeTheme(base, &overlay)
+			if base.Text.Title.Foreground != "auto" || base.Text.Title.Background != "primary" || !*base.Text.Title.Bold || !*base.Text.Body.Underline {
+				t.Fatal("invalid role erased defaults or a valid neighboring role")
+			}
+		})
+	}
+}
+
+func TestTextRolesProgrammaticMergeValidationAndOwnership(t *testing.T) {
+	base := &ThemeFile{Text: defaultTextRoleConfigs()}
+	bold := false
+	overlay := &ThemeFile{Text: TextRoleConfigs{Title: TextRoleConfig{
+		Foreground: "typo", Background: "auto", Bold: &bold,
+	}}}
+	mergeTheme(base, overlay)
+	bold = true
+	if base.Text.Title.Foreground != "auto" || base.Text.Title.Background != "primary" || *base.Text.Title.Bold {
+		t.Fatal("merge accepted invalid references or retained an overlay pointer")
+	}
+	other := defaultTextRoleConfigs()
+	*base.Text.Body.Italic = true
+	if *other.Body.Italic || *base.Text.Metadata.Italic {
+		t.Fatal("default attributes share mutable pointers")
+	}
+}
+
+func TestTextRolesSupportedColorReferences(t *testing.T) {
+	tokens := []string{"bg", "bg_dark", "bg_subtle", "bg_highlight", "text", "subtext", "muted", "primary", "secondary", "info", "success", "warning", "danger", "text_secondary", "bg_contrast", "border", "highlight"}
+	for _, token := range tokens {
+		var overlay ThemeFile
+		if err := yaml.Unmarshal([]byte("text:\n  body: {foreground: "+token+", background: "+token+"}\n"), &overlay); err != nil {
+			t.Fatal(err)
+		}
+		base := &ThemeFile{Text: defaultTextRoleConfigs()}
+		mergeTheme(base, &overlay)
+		if base.Text.Body.Foreground != token || base.Text.Body.Background != token {
+			t.Errorf("supported token %q was lost", token)
+		}
+	}
+}
+
+func TestTextRolesEmbeddedAndFallbackDefaults(t *testing.T) {
+	for _, roles := range []TextRoleConfigs{loadEmbeddedTheme().Text, defaultTextRoleConfigs()} {
+		for _, tc := range []struct {
+			role   TextRoleConfig
+			fg, bg string
+			bold   bool
+		}{
+			{roles.Title, "auto", "primary", true}, {roles.Heading, "primary", "none", true},
+			{roles.Body, "text", "none", false}, {roles.Metadata, "subtext", "none", false},
+			{roles.Badge, "auto", "secondary", true}, {roles.Selected, "auto", "highlight", true},
+			{roles.Callout, "auto", "bg_highlight", true},
+		} {
+			if tc.role.Foreground != tc.fg || tc.role.Background != tc.bg || tc.role.Bold == nil || *tc.role.Bold != tc.bold || tc.role.Italic == nil || *tc.role.Italic || tc.role.Underline == nil || *tc.role.Underline {
+				t.Fatalf("incorrect defaults for %s/%s: %+v", tc.fg, tc.bg, tc.role)
+			}
+		}
+	}
+}
 
 func TestLoadTheme_EmbeddedDefaults(t *testing.T) {
 	// Isolate from the developer's real ~/.config/bt/theme.yaml. LoadTheme

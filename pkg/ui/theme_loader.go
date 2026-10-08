@@ -18,6 +18,7 @@ package ui
 
 import (
 	"embed"
+	"fmt"
 	"image/color"
 	"os"
 	"path/filepath"
@@ -105,6 +106,136 @@ type ThemeColors struct {
 	Highlight *AdaptiveHex `yaml:"highlight"`
 }
 
+// TextRoleConfig holds optional overrides for one semantic text role.
+type TextRoleConfig struct {
+	Foreground string `yaml:"foreground"`
+	Background string `yaml:"background"`
+	Bold       *bool  `yaml:"bold"`
+	Italic     *bool  `yaml:"italic"`
+	Underline  *bool  `yaml:"underline"`
+}
+
+// UnmarshalYAML ignores invalid cosmetic fields independently so a typo does
+// not discard valid neighboring overrides or prevent the theme from loading.
+func (c *TextRoleConfig) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		key, value := n.Content[i], n.Content[i+1]
+		if key.Kind != yaml.ScalarNode || key.Tag != "!!str" || value.Kind != yaml.ScalarNode {
+			continue
+		}
+		switch key.Value {
+		case "foreground", "background":
+			if value.Tag != "!!str" || !validTextColorReference(value.Value, key.Value == "background") {
+				continue
+			}
+			var reference string
+			if err := value.Decode(&reference); err != nil {
+				return fmt.Errorf("decode text role: %w", err)
+			}
+			if key.Value == "foreground" {
+				c.Foreground = reference
+			} else {
+				c.Background = reference
+			}
+		case "bold", "italic", "underline":
+			if value.Tag != "!!bool" {
+				continue
+			}
+			var attribute bool
+			if err := value.Decode(&attribute); err != nil {
+				return fmt.Errorf("decode text role: %w", err)
+			}
+			switch key.Value {
+			case "bold":
+				c.Bold = &attribute
+			case "italic":
+				c.Italic = &attribute
+			case "underline":
+				c.Underline = &attribute
+			}
+		}
+	}
+	return nil
+}
+
+func validTextColorReference(value string, background bool) bool {
+	switch value {
+	case "bg", "bg_dark", "bg_subtle", "bg_highlight", "text", "subtext", "muted",
+		"primary", "secondary", "info", "success", "warning", "danger",
+		"text_secondary", "bg_contrast", "border", "highlight":
+		return true
+	case "auto":
+		return !background
+	case "none":
+		return background
+	default:
+		return false
+	}
+}
+
+func mergeTextRole(base *TextRoleConfig, overlay TextRoleConfig) {
+	if validTextColorReference(overlay.Foreground, false) {
+		base.Foreground = overlay.Foreground
+	}
+	if validTextColorReference(overlay.Background, true) {
+		base.Background = overlay.Background
+	}
+	for _, pair := range []struct {
+		dst **bool
+		src *bool
+	}{
+		{&base.Bold, overlay.Bold}, {&base.Italic, overlay.Italic},
+		{&base.Underline, overlay.Underline},
+	} {
+		if pair.src != nil {
+			value := *pair.src
+			*pair.dst = &value
+		}
+	}
+}
+
+// TextRoleConfigs is the fixed set of supported semantic text roles.
+type TextRoleConfigs struct {
+	Title    TextRoleConfig `yaml:"title"`
+	Heading  TextRoleConfig `yaml:"heading"`
+	Body     TextRoleConfig `yaml:"body"`
+	Metadata TextRoleConfig `yaml:"metadata"`
+	Badge    TextRoleConfig `yaml:"badge"`
+	Selected TextRoleConfig `yaml:"selected"`
+	Callout  TextRoleConfig `yaml:"callout"`
+}
+
+func mergeTextRoles(base *TextRoleConfigs, overlay TextRoleConfigs) {
+	mergeTextRole(&base.Title, overlay.Title)
+	mergeTextRole(&base.Heading, overlay.Heading)
+	mergeTextRole(&base.Body, overlay.Body)
+	mergeTextRole(&base.Metadata, overlay.Metadata)
+	mergeTextRole(&base.Badge, overlay.Badge)
+	mergeTextRole(&base.Selected, overlay.Selected)
+	mergeTextRole(&base.Callout, overlay.Callout)
+}
+
+// defaultTextRoleConfigs mirrors defaults/theme.yaml, including plain attributes.
+// Keep both defaults in sync so themes built without embedded YAML agree.
+func defaultTextRoleConfigs() TextRoleConfigs {
+	role := func(foreground, background string, bold bool) TextRoleConfig {
+		italic, underline := false, false
+		return TextRoleConfig{foreground, background, &bold, &italic, &underline}
+	}
+	return TextRoleConfigs{
+		Title:    role("auto", "primary", true),
+		Heading:  role("primary", "none", true),
+		Body:     role("text", "none", false),
+		Metadata: role("subtext", "none", false),
+		Badge:    role("auto", "secondary", true),
+		Selected: role("auto", "highlight", true),
+		Callout:  role("auto", "bg_highlight", true),
+	}
+}
+
 // ThemeFile is the top-level YAML structure.
 type ThemeFile struct {
 	// Theme names a vendored btop palette to use as the base (bt-o6xx1).
@@ -116,8 +247,9 @@ type ThemeFile struct {
 	// detects it (bt-zelhm); a bt-native theme declares it. When set, bt never
 	// synthesizes a hue the palette does not already have, and separates every
 	// role by lightness instead.
-	Mono   bool        `yaml:"mono"`
-	Colors ThemeColors `yaml:"colors"`
+	Mono   bool            `yaml:"mono"`
+	Colors ThemeColors     `yaml:"colors"`
+	Text   TextRoleConfigs `yaml:"text"`
 }
 
 // colorDefaults holds the light/dark hex defaults for a color token.
@@ -543,11 +675,11 @@ func ApplyThemeToThemeStruct(t *Theme, tf *ThemeFile) {
 func loadEmbeddedTheme() *ThemeFile {
 	data, err := defaultThemeFS.ReadFile("defaults/theme.yaml")
 	if err != nil {
-		return &ThemeFile{}
+		return &ThemeFile{Text: defaultTextRoleConfigs()}
 	}
 	var tf ThemeFile
 	if err := yaml.Unmarshal(data, &tf); err != nil {
-		return &ThemeFile{}
+		return &ThemeFile{Text: defaultTextRoleConfigs()}
 	}
 	return &tf
 }
@@ -570,6 +702,7 @@ func mergeTheme(base, overlay *ThemeFile) {
 	// monochrome, which stays true of that palette even if a user overlay then
 	// paints a token on top of it.
 	base.Mono = base.Mono || overlay.Mono
+	mergeTextRoles(&base.Text, overlay.Text)
 
 	bc := &base.Colors
 	oc := &overlay.Colors

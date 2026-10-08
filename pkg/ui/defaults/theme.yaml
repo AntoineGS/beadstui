@@ -22,6 +22,19 @@
 # over the named theme, so you can pick a palette and tweak two tokens.
 theme: matcha-dark-sea
 
+# Semantic text roles. These mirror defaultTextRoleConfigs in theme_loader.go.
+# Partial user/project overrides inherit omitted fields; false disables an
+# attribute. Foregrounds accept palette tokens or auto (contrast selection);
+# backgrounds accept palette tokens or none (no explicit background).
+text:
+  title:    { foreground: auto, background: primary, bold: true, italic: false, underline: false }
+  heading:  { foreground: primary, background: none, bold: true, italic: false, underline: false }
+  body:     { foreground: text, background: none, bold: false, italic: false, underline: false }
+  metadata: { foreground: subtext, background: none, bold: false, italic: false, underline: false }
+  badge:    { foreground: auto, background: secondary, bold: true, italic: false, underline: false }
+  selected: { foreground: auto, background: highlight, bold: true, italic: false, underline: false }
+  callout:  { foreground: auto, background: bg_highlight, bold: true, italic: false, underline: false }
+
 colors:
   # Base palette
   bg:           { dark: "#1d1f21", light: "#ffffff" }
