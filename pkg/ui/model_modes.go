@@ -183,6 +183,7 @@ func (m *Model) SetActiveRepos(repos map[string]bool) {
 // and field providers. The caller starts and stops the host.
 func (m *Model) SetPluginHost(h *plugin.Host) {
 	m.pluginHost = h
+	m.pluginFields = h.FieldPrefixes
 	h.Register(m.slotRegistry)
 }
 

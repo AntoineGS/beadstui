@@ -1,10 +1,12 @@
 package ui
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/seanmartinsmith/beadstui/pkg/bql"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/plugin"
 	"github.com/seanmartinsmith/beadstui/pkg/ui/slots"
@@ -48,6 +50,114 @@ func TestSyncPluginsOnlyOnHashChange(t *testing.T) {
 	m.syncPlugins()
 	if m.pluginSyncHash == first {
 		t.Fatal("hash did not change after an issue changed")
+	}
+}
+
+func TestSnapshotReuseWorkerHashForPluginSync(t *testing.T) {
+	m := newSizedModel(t, pluginTestIssues(), 120, 40)
+	h := plugin.NewHost(plugin.Options{})
+	defer h.Stop()
+	m.SetPluginHost(h)
+
+	snap := NewSnapshotBuilder(pluginTestIssues()).Build()
+	snap.DataHash = "worker-hash"
+	updated, _ := m.Update(SnapshotReadyMsg{Snapshot: snap, SentAt: time.Now()})
+	if got := updated.(Model).pluginSyncHash; got != "worker-hash" {
+		t.Fatalf("pluginSyncHash = %q, want the snapshot's DataHash", got)
+	}
+}
+
+// exampleFields answers example.state from a map the test changes.
+type exampleFields map[string]string
+
+func (f exampleFields) Fields() []string { return []string{"example.state"} }
+
+func (f exampleFields) Value(issue *model.Issue, _ string) (string, bool) {
+	v, ok := f[issue.ID]
+	return v, ok
+}
+
+func bqlTestIssues() []model.Issue {
+	now := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
+	var out []model.Issue
+	for i, id := range []string{"proj-1", "proj-2", "proj-3", "proj-4"} {
+		out = append(out, model.Issue{ID: id, Title: id, Status: model.StatusOpen, Priority: i, CreatedAt: now, UpdatedAt: now})
+	}
+	return out
+}
+
+func applyTestBQL(t *testing.T, m *Model, query string) {
+	t.Helper()
+	q, err := bql.Parse(query)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if err := bql.ValidateWithFields(q, m.bqlFields()); err != nil {
+		t.Fatalf("ValidateWithFields: %v", err)
+	}
+	m.filter.activeBQLExpr = q
+	m.applyBQL(q, query)
+}
+
+func listIDs(m Model) []string {
+	var ids []string
+	for _, it := range m.list.VisibleItems() {
+		ids = append(ids, it.(IssueItem).Issue.ID)
+	}
+	return ids
+}
+
+func selectedID(m Model) string {
+	if it, ok := m.list.SelectedItem().(IssueItem); ok {
+		return it.Issue.ID
+	}
+	return ""
+}
+
+func TestStateChangedRerunsPluginBQL(t *testing.T) {
+	m := newSizedModel(t, bqlTestIssues(), 200, 50)
+	h := plugin.NewHost(plugin.Options{})
+	defer h.Stop()
+	m.SetPluginHost(h)
+	m.pluginFields = func() []string { return []string{"example."} }
+	fields := exampleFields{"proj-1": "waiting", "proj-2": "waiting"}
+	m.slotRegistry.AddFields(fields)
+
+	applyTestBQL(t, &m, "example.state = waiting")
+	if got := listIDs(m); !reflect.DeepEqual(got, []string{"proj-1", "proj-2"}) {
+		t.Fatalf("initial list = %v", got)
+	}
+	m.list.Select(1)
+	if selectedID(m) != "proj-2" {
+		t.Fatalf("selected %q, want proj-2", selectedID(m))
+	}
+
+	fields["proj-1"] = "running"
+	fields["proj-3"] = "waiting"
+	updated, _ := m.Update(plugin.StateChangedMsg{})
+	got := updated.(Model)
+	if ids := listIDs(got); !reflect.DeepEqual(ids, []string{"proj-2", "proj-3"}) {
+		t.Fatalf("list after state change = %v, want [proj-2 proj-3]", ids)
+	}
+	if selectedID(got) != "proj-2" {
+		t.Fatalf("selection moved to %q, want proj-2", selectedID(got))
+	}
+}
+
+func TestStateChangedLeavesOtherBQLAlone(t *testing.T) {
+	m := newSizedModel(t, bqlTestIssues(), 200, 50)
+	h := plugin.NewHost(plugin.Options{})
+	defer h.Stop()
+	m.SetPluginHost(h)
+	m.pluginFields = func() []string { return []string{"example."} }
+
+	applyTestBQL(t, &m, "priority < 2")
+	before := listIDs(m)
+	// Make the data disagree with the applied filter: a re-run would drop proj-1.
+	m.data.issues[0].Priority = 3
+	updated, _ := m.Update(plugin.StateChangedMsg{})
+	if after := listIDs(updated.(Model)); !reflect.DeepEqual(after, before) {
+		t.Fatalf("query without a plugin field was re-run: %v -> %v", before, after)
 	}
 }
 

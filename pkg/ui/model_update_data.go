@@ -408,7 +408,7 @@ func (m Model) handleSnapshotReady(msg SnapshotReadyMsg) (Model, tea.Cmd) {
 		cmds = append(cmds, WaitForBackgroundWorkerMsgCmd(m.data.backgroundWorker))
 	}
 
-	m.syncPlugins()
+	m.syncPluginsWithHash(msg.Snapshot.DataHash)
 	return m, tea.Batch(cmds...)
 }
 

@@ -14,7 +14,7 @@ import (
 )
 
 func TestPluginBeadDB(t *testing.T) {
-	global := pluginBeadDB("proj", true)
+	global := pluginBeadDB("proj", "global")
 	if got := global(&model.Issue{ID: "x-1", SourceRepo: "other"}); got != "other" {
 		t.Fatalf("global mode with SourceRepo = %q, want other", got)
 	}
@@ -22,14 +22,34 @@ func TestPluginBeadDB(t *testing.T) {
 		t.Fatalf("global mode without SourceRepo = %q, want proj", got)
 	}
 
-	project := pluginBeadDB("proj", false)
+	project := pluginBeadDB("proj", "project")
 	if got := project(&model.Issue{ID: "x-1", SourceRepo: "column"}); got != "proj" {
 		t.Fatalf("project mode = %q, want proj (SourceRepo is not the database there)", got)
 	}
 
-	unknown := pluginBeadDB("", false)
+	unknown := pluginBeadDB("", "project")
 	if got := unknown(&model.Issue{ID: "x-1", SourceRepo: "legacy"}); got != "legacy" {
 		t.Fatalf("no project DB = %q, want the SourceRepo fallback", got)
+	}
+}
+
+func TestPluginWorkspaceBeadsKeepTheirRepo(t *testing.T) {
+	table := bdroute.FromWorkspace([]workspace.LoadResult{
+		{Prefix: "api", AbsPath: "/src/api"},
+		{Prefix: "web", AbsPath: "/src/web"},
+	})
+	db := pluginBeadDB("proj", "workspace")
+	c := &pluginRepoCache{db: db, resolve: table.Resolve, now: time.Now, entries: map[string]pluginRepoEntry{}}
+
+	api, web := &model.Issue{ID: "api-1"}, &model.Issue{ID: "web-2"}
+	if db(api) == db(web) {
+		t.Fatalf("api-1 and web-2 share database %q", db(api))
+	}
+	if got := c.repo(api); got != "/src/api" {
+		t.Fatalf("api-1 repo = %q, want /src/api", got)
+	}
+	if got := c.repo(web); got != "/src/web" {
+		t.Fatalf("web-2 repo = %q, want /src/web", got)
 	}
 }
 

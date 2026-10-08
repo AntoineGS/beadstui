@@ -769,6 +769,7 @@ type Model struct {
 	slotRegistry       *slots.Registry // row badge, section and BQL field providers; built-ins registered in NewModel
 	pluginHost         *plugin.Host    // nil when no plugin is configured
 	pluginSyncHash     string          // data hash last sent to pluginHost
+	pluginFields       func() []string // active plugins' BQL field prefixes; set by SetPluginHost, replaceable in tests
 	popupMode          bool            // --popup: quit after a plugin action asks to
 	labelDashboard     LabelDashboardModel
 	velocityComparison VelocityComparisonModel // bv-125

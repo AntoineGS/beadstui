@@ -2,6 +2,7 @@ package main
 
 import (
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,7 +46,8 @@ func buildPluginHost(ctx *appContext, configs []plugin.Config, popup bool) *plug
 	if !enabled {
 		return nil
 	}
-	db := pluginBeadDB(detectCurrentProjectDB(), isGlobalSource(ctx))
+	scope := pluginScope(ctx)
+	db := pluginBeadDB(detectCurrentProjectDB(), scope.Mode)
 	repos := &pluginRepoCache{
 		db:      db,
 		resolve: ctx.routeTable.Resolve,
@@ -55,7 +57,7 @@ func buildPluginHost(ctx *appContext, configs []plugin.Config, popup bool) *plug
 	return plugin.NewHost(plugin.Options{
 		Configs:   configs,
 		BTVersion: version.Version,
-		Scope:     pluginScope(ctx),
+		Scope:     scope,
 		Popup:     popup,
 		DB:        db,
 		Repo:      repos.repo,
@@ -87,13 +89,22 @@ func pluginScope(ctx *appContext) plugin.Scope {
 	return plugin.Scope{Mode: "project"}
 }
 
-// pluginBeadDB returns the database a bead belongs to. In global mode
-// SourceRepo is the database name; elsewhere it is only a bd column, so the
-// project's own database wins.
-func pluginBeadDB(projectDB string, global bool) func(*model.Issue) string {
+// pluginBeadDB returns the database a bead belongs to for scope mode. In
+// global mode SourceRepo is the database name. In workspace mode beads carry
+// no SourceRepo, so the ID prefix before the first "-" names the repo, the
+// same key bdroute.FromWorkspace resolves. Elsewhere SourceRepo is only a bd
+// column, so the project's own database wins.
+func pluginBeadDB(projectDB, mode string) func(*model.Issue) string {
 	return func(i *model.Issue) string {
-		if global && i.SourceRepo != "" {
-			return i.SourceRepo
+		switch mode {
+		case "global":
+			if i.SourceRepo != "" {
+				return i.SourceRepo
+			}
+		case "workspace":
+			if prefix, _, ok := strings.Cut(i.ID, "-"); ok && prefix != "" {
+				return prefix
+			}
 		}
 		if projectDB != "" {
 			return projectDB
@@ -109,7 +120,9 @@ type pluginRepoEntry struct {
 
 // pluginRepoCache resolves a database's checkout path once. Known paths are
 // kept for the session; unknown ones are retried after pluginRepoMissTTL.
-// It is called from the host's goroutines.
+// It is called from the host's goroutines. repo holds the mutex across
+// Resolve, which does file IO in global mode, so it must never be called
+// from the UI goroutine.
 type pluginRepoCache struct {
 	db      func(*model.Issue) string
 	resolve func(model.Issue) (bdroute.WriteTarget, error)

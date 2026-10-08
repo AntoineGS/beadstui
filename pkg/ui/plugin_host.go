@@ -16,12 +16,22 @@ import (
 type pluginSyncMsg struct{}
 
 // syncPlugins sends the issues to the plugin host when they changed since
-// the last sync. It is a no-op without a host.
+// the last sync. It is a no-op without a host. The data hash covers
+// updated_at, and bd bumps updated_at on metadata writes (verified
+// 2026-10-07), so metadata-only changes are detected too.
 func (m *Model) syncPlugins() {
+	m.syncPluginsWithHash("")
+}
+
+// syncPluginsWithHash is syncPlugins with the data hash already known, e.g.
+// from the worker's snapshot. An empty hash is computed here.
+func (m *Model) syncPluginsWithHash(hash string) {
 	if m.pluginHost == nil {
 		return
 	}
-	hash := analysis.ComputeDataHash(m.data.issues)
+	if hash == "" {
+		hash = analysis.ComputeDataHash(m.data.issues)
+	}
 	if hash == m.pluginSyncHash {
 		return
 	}
@@ -40,9 +50,9 @@ func (m Model) handlePluginMsg(msg tea.Msg) (Model, tea.Cmd, bool) {
 	case plugin.StateChangedMsg:
 		// pending actions are cleared in clearPluginPending
 		m.clearPluginPending(msg.Beads)
-		if m.pluginHost != nil && m.filter.activeBQLExpr != nil && strings.HasPrefix(m.filter.currentFilter, "bql:") {
+		if m.pluginFields != nil && m.filter.activeBQLExpr != nil && strings.HasPrefix(m.filter.currentFilter, "bql:") {
 			query := strings.TrimPrefix(m.filter.currentFilter, "bql:")
-			if queryMentionsPluginField(query, m.pluginHost.FieldPrefixes()) {
+			if queryMentionsPluginField(query, m.pluginFields()) {
 				m.reapplyBQLKeepingSelection(query)
 				return m, nil, true
 			}
