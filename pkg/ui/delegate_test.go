@@ -315,7 +315,7 @@ func TestIssueDelegate_QuickWinBoltStaysAtRightEdge(t *testing.T) {
 			item.IsQuickWin = true
 			item.IsBlocker = true
 			item.UnblocksCount = 3
-			d := IssueDelegate{Theme: DefaultTheme(), WorkspaceMode: true, Slots: waitRegistry()}
+			d := IssueDelegate{Theme: DefaultTheme(), ShowRepoBadges: true, Slots: waitRegistry()}
 			for _, width := range []int{1, 2, 12, 24, 50, 60, 61, 80, 81, 100, 101, 120, 121, 140, 141, 160} {
 				for _, selected := range []bool{false, true} {
 					l := list.New([]list.Item{item, item}, d, width, 2)
@@ -364,7 +364,7 @@ func TestIssueDelegate_QuickWinDoesNotShiftColumns(t *testing.T) {
 		item := newTestIssueItem("api-0hx")
 		item.RepoPrefix = "api"
 		item.Issue.Title = "TITLE " + strings.Repeat("long words ", 20)
-		d := IssueDelegate{Theme: DefaultTheme(), WorkspaceMode: true}
+		d := IssueDelegate{Theme: DefaultTheme(), ShowRepoBadges: true}
 		for _, width := range []int{30, 50, 80, 120, 160} {
 			item.IsQuickWin = false
 			ordinary := ansi.Strip(renderDelegateRow(t, d, item, width))

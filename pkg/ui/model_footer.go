@@ -288,8 +288,8 @@ type FooterData struct {
 	// (all/open/in_progress/blocked/closed/deferred/ready). Empty when a BQL
 	// query or recipe owns membership instead.
 	StatusFilter string
-	// SearchQuery is the "/" slot content — the active fuzzy/BQL query (or search
-	// mode when no query text yet). Empty renders the /- placeholder.
+	// SearchQuery is the "/" slot content for BQL membership. Empty hides it;
+	// Issues search queries and modes belong to the Issues pane instead.
 	SearchQuery string
 	// RecipeName is the active recipe chip; empty renders no recipe chip.
 	RecipeName string
@@ -465,16 +465,8 @@ func (m *Model) populateLens(fd *FooterData) {
 		fd.StatusFilter = cf
 	}
 
-	// The "/" slot carries the fuzzy-search query when a Bubbles filter is
-	// active and no BQL query already claimed the slot. Falls back to the search
-	// mode label when there is no query text yet (so /semantic still surfaces).
-	if fd.SearchQuery == "" && m.list.FilterState() != list.Unfiltered {
-		if q := strings.TrimSpace(m.list.FilterValue()); q != "" {
-			fd.SearchQuery = q
-		} else if fd.SearchMode != "" {
-			fd.SearchQuery = fd.SearchMode
-		}
-	}
+	// Bubbles search filters only Issues and is displayed in that pane, not in
+	// this global scope/status lens. BQL retains its existing membership slot.
 
 	// Order bucket: explicit (non-default) sort only.
 	fd.OrderLabel = lensSortLabel(m.filter.sortMode)
@@ -1154,7 +1146,7 @@ func (fd FooterData) Render() string {
 	}
 
 	reductions := []func(){
-		func() { lensLvl = lensNoPlace }, // 1. lens placeholders (lb:- , /-)
+		func() { lensLvl = lensNoPlace }, // 1. label placeholder (lb:-)
 		func() { dropTier(3) },           // 2. daemon / degraded badges
 		func() { // 3. triad drops whole; total survives via countBadge. A
 			// detail/memories center override is the most protected content
@@ -1163,8 +1155,8 @@ func (fd FooterData) Render() string {
 				statsSection = ""
 			}
 		},
-		func() { hintsCompact = true },      // 4. hint labels: "? help · ; keys" -> "? ;"
-		func() { lensLvl = lensStatusOnly }, // 5. lens filter words drop; status + scope remain
+		func() { hintsCompact = true },          // 4. hint labels: "? help · ; keys" -> "? ;"
+		func() { lensLvl = lensStatusOnly },     // 5. lens filter words drop; status + scope remain
 		func() { countBadge = countBadgeShort }, // 6. "4921 issues" -> "4921"
 		func() { lensLvl = lensScopeOnly },      // 7. scope survives alone
 		func() { // 8. last resort: a selection center-override yields

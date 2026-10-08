@@ -3,10 +3,10 @@ package ui
 // Footer Zone 1 — the "lens" (bt-2vshd). The footer's left zone reads as a
 // sentence: where am I -> what's filtered -> how it's ordered.
 //
-//	scope · st:<status> · lb:<label> · /<query> · recipe:<name> · by:<order>
+//	scope · st:<status> · lb:<label> · /<bql> · recipe:<name> · by:<order>
 //
 // Scope is leftmost and always survives; the filter/order chips degrade away
-// under width pressure with placeholders (lb:- , /-) dropping first. Two tiers
+// under width pressure with the label placeholder (lb:-) dropping first. Two tiers
 // render from one grammar: the ascii tier uses the doc's verbatim text prefixes
 // (st: / lb: / / / by:), the Nerd Font tier swaps those prefixes for the glyph
 // table's icons (Tag / Search / Sort, and folder/globe on scope). The status
@@ -27,8 +27,8 @@ import (
 type lensLevel int
 
 const (
-	lensFull       lensLevel = iota // scope · st: · lb:(-) · /(-) · recipe · by:
-	lensNoPlace                     // same, minus the lb:- / /- space-holders
+	lensFull       lensLevel = iota // scope · st: · lb:(-) · /bql · recipe · by:
+	lensNoPlace                     // same, minus the lb:- space-holder
 	lensStatusOnly                  // scope · <bare status word> (drops lb / / / recipe / by / the st: prefix)
 	lensScopeOnly                   // scope alone
 )
@@ -104,8 +104,8 @@ func lensBareStatus(status string) string {
 }
 
 // lensFilterChips builds the status/label/search/recipe/order chips for the
-// full and no-placeholder levels. placeholders controls whether the label and
-// search space-holders (lb:- , /-) render when those dimensions are inactive.
+// full and no-placeholder levels. placeholders controls whether the label
+// space-holder (lb:-) renders when that dimension is inactive.
 func lensFilterChips(fd FooterData, ascii, placeholders bool) []string {
 	g := activeGlyphs
 	var chips []string
@@ -135,12 +135,9 @@ func lensFilterChips(fd FooterData, ascii, placeholders bool) []string {
 		chips = append(chips, lensChip("lb:", g.Tag, "-", ascii))
 	}
 
-	// Search / BQL query.
-	switch {
-	case fd.SearchQuery != "":
+	// BQL membership query only; Issues search and its idle hint stay local.
+	if fd.SearchQuery != "" {
 		chips = append(chips, lensChip("/", g.Search, fd.SearchQuery, ascii))
-	case placeholders:
-		chips = append(chips, lensChip("/", g.Search, "-", ascii))
 	}
 
 	// Recipe joins the bucket only while active (no space-holder).

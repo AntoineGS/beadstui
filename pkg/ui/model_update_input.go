@@ -1651,24 +1651,11 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 // view. The value is the number of terminal rows of chrome rendered above
 // the first item (bt-58yw).
 //
-// Chrome layers, top to bottom (post bt-fxbl unification):
-//  1. RenderTitledPanel top border (always 1 row).
-//  2. renderSearchRow (always 1 row — bt-fxbl made this fixed-height across
-//     all FilterStates so the chrome below never shifts; rendered via
-//     m.renderSearchRow, measured via lipgloss.Height for defense in depth
-//     against future styling that could wrap).
-//  3. renderSplitView column header (the `TYPE PRI STATUS…` strip, 1 row;
-//     clipped to listInnerWidth so it never wraps, bt-i138).
-//
-// Note: there is no longer a Bubbles "phantom title row" — bt-fxbl set
-// l.SetShowFilter(false) in NewModel, which (combined with
-// SetShowTitle(false)) skips Bubbles' titleView path entirely in
-// list.View() at bubbles/v2/list/list.go:1048. This collapses what used
-// to be 4 chrome layers into 3.
+// Only the panel top border and clipped column header precede the items.
+// Our conditional search row is below the list; Bubbles' titleView is disabled.
 func (m Model) splitViewListChromeHeight() int {
 	const panelTopBorder = 1
 	offset := panelTopBorder
-	offset += lipgloss.Height(m.renderSearchRow(m.list.Width()))
 	offset += lipgloss.Height(m.splitViewHeader())
 	return offset
 }
@@ -1678,9 +1665,7 @@ func (m Model) splitViewListChromeHeight() int {
 // Since bt-r5v9k the single-pane list renders through the same bordered issues
 // panel (renderIssuesPanel) as the split view and the on-demand "2" fullscreen,
 // so its chrome geometry is now identical to splitViewListChromeHeight: a panel
-// top border, then the fixed-height search row (bt-fxbl), then the column
-// header strip. It previously had NO panel top border and measured the search
-// row at bodyWidth()-2; both changed when the border landed.
+// top border, then the column header strip. Search lives at the pane bottom.
 func (m Model) singlePaneListChromeHeight() int {
 	return m.splitViewListChromeHeight()
 }
@@ -1762,7 +1747,7 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if !m.isSplitView {
+	if m.fullscreen != fullscreenNone || !m.isSplitView {
 		// Single-pane list layout (bt-bxu6u): the whole body is the list, with
 		// no detail pane to the right. This branch fires both when the terminal
 		// is narrower than SplitViewThreshold (auto-collapsed) and when the
@@ -1770,7 +1755,7 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (Model, tea.Cmd) {
 		// false and clicks used to be a dead no-op here. The showDetails
 		// sub-case renders a full-screen detail viewport instead of the list
 		// (model_view ViewList branch), so there is no row to hit-test there.
-		if m.showDetails {
+		if m.fullscreen == fullscreenDetails || (m.fullscreen == fullscreenNone && m.showDetails) {
 			return m, nil
 		}
 		// Clicks past the body (into the shortcuts sidebar, when shown) are not
@@ -1778,12 +1763,7 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (Model, tea.Cmd) {
 		if mouse.X >= m.bodyWidth() {
 			return m, nil
 		}
-		// Single-pane now renders a panel top border like split view (bt-r5v9k),
-		// so the search row sits at Y=1 (was Y=0 in the old borderless layout)
-		// and the first list item below the column header
-		// (singlePaneListChromeHeight).
-		const singlePaneSearchRowY = 1
-		return m.clickListPane(mouse, singlePaneSearchRowY, m.singlePaneListChromeHeight())
+		return m.clickListPane(mouse, m.singlePaneListChromeHeight())
 	}
 
 	// Split-view layout: listInnerWidth on the left, detail on the right.
@@ -1791,10 +1771,7 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (Model, tea.Cmd) {
 	// left boundary of the detail pane is roughly listInnerWidth + 4.
 	listBoundary := m.list.Width() + 4
 	if mouse.X < listBoundary {
-		// Split view renders a panel top border at Y=0, so the search row is at
-		// Y=1 and the first list item below the column header.
-		const searchRowY = 1
-		return m.clickListPane(mouse, searchRowY, m.splitViewListChromeHeight())
+		return m.clickListPane(mouse, m.splitViewListChromeHeight())
 	}
 	// Detail pane click: focus it.
 	if m.focused != focusDetail {
@@ -1809,17 +1786,15 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (Model, tea.Cmd) {
 
 // clickListPane handles a left-click that landed inside the list pane: the only
 // pane in single-pane layout, or the left pane in split view. The layouts
-// differ only in vertical geometry — split view renders a panel top border
-// above the search row that single-pane omits — so the caller passes searchRowY
-// (the filter row) and rowOffset (the first list item). Sharing this keeps the
-// row-selection and filter-reopen gestures byte-identical across both layouts
+// share the same bordered panel geometry. rowOffset is the first list item.
+// Sharing this keeps row-selection and filter-reopen gestures identical across layouts
 // (bt-bxu6u; the geometry was split-view-only under bt-d8d1).
-func (m Model) clickListPane(mouse tea.Mouse, searchRowY, rowOffset int) (Model, tea.Cmd) {
+func (m Model) clickListPane(mouse tea.Mouse, rowOffset int) (Model, tea.Cmd) {
 	if m.focused != focusList {
 		m.focused = focusList
 	}
 	// Click on the search row reopens the filter input for editing (bt-49nn).
-	// A click at searchRowY anywhere in the list pane routes to filter reopen
+	// A click on the visible row above pagination routes to filter reopen
 	// instead of selecting a row. Mirrors the detail-pane "/" shortcut
 	// (bt-jwo3): preserves any existing FilterValue and just flips state to
 	// Filtering.
@@ -1832,7 +1807,7 @@ func (m Model) clickListPane(mouse tea.Mouse, searchRowY, rowOffset int) (Model,
 	// renders as "no matches" instead of "all visible". The keyboard `/` path
 	// goes through Update naturally; the click path now matches it (bt-r2ev
 	// Bug A).
-	if mouse.Y == searchRowY {
+	if m.showSearchRow() && mouse.Y == m.height-4 {
 		if m.list.FilterState() != list.Filtering {
 			// Capture cursor before filter-begin runs (bt-qka1); mirrors the
 			// keyboard "/" restore path in model.go Update. Bubbles' filter-
@@ -2154,6 +2129,21 @@ func (m Model) handleMouseWheel(msg tea.MouseWheelMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
+// issueListHeight reserves only the chrome rendered in the current Issues pane.
+func (m Model) issueListHeight(bodyHeight int) int {
+	listHeight := bodyHeight - 4 // Borders, column header, and pagination.
+	if m.showSearchRow() {
+		listHeight--
+	}
+	if m.showPeekStrip() {
+		listHeight -= peekStripHeight
+	}
+	if listHeight < 3 {
+		listHeight = 3
+	}
+	return listHeight
+}
+
 // applyListDetailSizing sizes m.list and m.viewport for the current ViewList
 // layout. An on-demand fullscreen pane (bt-530vn, any width) takes priority
 // over the width-driven split/single-pane layout (bt-9a3wv auto-collapse):
@@ -2178,18 +2168,7 @@ func (m *Model) applyListDetailSizing(bodyW, bodyHeight int) {
 		if innerWidth < 10 {
 			innerWidth = 10
 		}
-		listHeight := bodyHeight - 4
-		// The selection peek strip (bt-evuf.3) occupies rows below the list in
-		// the fullscreen-issues layout, so the list must give them up. Gated on
-		// the same predicate the renderer uses; if these two ever disagree the
-		// list overflows its panel and every row shifts.
-		if m.showPeekStrip() {
-			listHeight -= peekStripHeight
-		}
-		if listHeight < 3 {
-			listHeight = 3
-		}
-		m.list.SetSize(innerWidth, listHeight)
+		m.list.SetSize(innerWidth, m.issueListHeight(bodyHeight))
 		m.viewport = viewport.New(viewport.WithWidth(innerWidth), viewport.WithHeight(bodyHeight-2))
 		return
 	}
@@ -2201,11 +2180,7 @@ func (m *Model) applyListDetailSizing(bodyW, bodyHeight int) {
 	}
 	listInnerWidth := int(float64(availWidth) * m.splitPaneRatio)
 	detailInnerWidth := availWidth - listInnerWidth
-	listHeight := bodyHeight - 4
-	if listHeight < 3 {
-		listHeight = 3
-	}
-	m.list.SetSize(listInnerWidth, listHeight)
+	m.list.SetSize(listInnerWidth, m.issueListHeight(bodyHeight))
 	m.viewport = viewport.New(viewport.WithWidth(detailInnerWidth), viewport.WithHeight(bodyHeight-2))
 }
 

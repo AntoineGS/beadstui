@@ -5,12 +5,13 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
 // richLensFixture is a FooterData exercising every lens slot: cross-project
-// scope, an explicit status, a label filter, a placeholder search slot, and an
+// scope, an explicit status, a label filter, and an
 // explicit sort — plus the center counts and a bell, so the whole footer (not
 // just the lens) participates in the width sweep.
 func richLensFixture(width int) FooterData {
@@ -29,11 +30,11 @@ func richLensFixture(width int) FooterData {
 }
 
 // TestLensFullSentenceASCII locks the doc's verbatim ascii mockup form at a wide
-// width: scope · st:<status> · lb:<label> · /- · by:<order>.
+// width: scope · st:<status> · lb:<label> · by:<order>.
 func TestLensFullSentenceASCII(t *testing.T) {
 	setGlyphs(t, asciiGlyphs)
 	out := ansi.Strip(richLensFixture(160).Render())
-	for _, want := range []string{"bt", "st:open", "lb:area:tui", "/-", "by:updated"} {
+	for _, want := range []string{"bt", "st:open", "lb:area:tui", "by:updated"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("ascii lens missing %q in %q", want, out)
 		}
@@ -132,18 +133,21 @@ func TestLensSingleRowAllWidthsBothTiers(t *testing.T) {
 	}
 }
 
-// TestLensPlaceholdersDropBeforeStatus proves the doc's drop order: the lb:- /
-// /- space-holders are present at a wide width but are the first lens content to
+// TestLensPlaceholdersDropBeforeStatus proves the doc's drop order: the lb:-
+// space-holder is present at a wide width but is the first lens content to
 // go under pressure, while the status word and scope survive.
 func TestLensPlaceholdersDropBeforeStatus(t *testing.T) {
 	setGlyphs(t, asciiGlyphs)
-	// No label filter, no query -> both slots are placeholders at the full level.
+	// No label filter -> its slot is a placeholder at the full level.
 	fd := FooterData{ScopeLabel: "bt", StatusFilter: "open", TotalItems: 169}
 
 	fd.Width = 160
 	wide := ansi.Strip(fd.Render())
-	if !strings.Contains(wide, "lb:-") || !strings.Contains(wide, "/-") {
-		t.Fatalf("placeholders should hold space at a wide width: %q", wide)
+	if !strings.Contains(wide, "lb:-") {
+		t.Fatalf("label placeholder should hold space at a wide width: %q", wide)
+	}
+	if strings.Contains(wide, "/-") {
+		t.Fatalf("issues search placeholder must not appear in the global footer: %q", wide)
 	}
 
 	// A width that fits scope + status but not the placeholders: placeholders
@@ -172,14 +176,40 @@ func TestLensScopeSurvivesToScopeOnly(t *testing.T) {
 	}
 }
 
-// TestLensSearchAndBQLQuery proves both a fuzzy query and a BQL query surface in
-// the lens "/" slot (no filter state the lens cannot show).
-func TestLensSearchAndBQLQuery(t *testing.T) {
+// BQL membership retains its lens slot; Issues search is pane-local.
+func TestLensBQLQuery(t *testing.T) {
 	setGlyphs(t, asciiGlyphs)
 	fd := FooterData{Width: 160, ScopeLabel: "bt", StatusFilter: "open", SearchQuery: "dep graph", TotalItems: 12}
 	out := ansi.Strip(fd.Render())
 	if !strings.Contains(out, "/dep graph") {
-		t.Errorf("active search query should show in the lens: %q", out)
+		t.Errorf("BQL membership query should show in the lens: %q", out)
+	}
+}
+
+func TestFooterDoesNotEchoIssuesSearch(t *testing.T) {
+	setGlyphs(t, asciiGlyphs)
+	for _, mode := range []ViewMode{ViewList, ViewBoard, ViewTree, ViewMemories} {
+		for _, state := range []list.FilterState{list.Filtering, list.FilterApplied} {
+			for _, query := range []string{"", "unique-issues-query"} {
+				m := NewModel(singlePaneTestIssues(), nil, "", nil, nil)
+				m.width = 200
+				m.mode = mode
+				m.projectName = "bt"
+				m.filter.currentFilter = "open"
+				m.list.SetFilterText(query)
+				m.list.SetFilterState(state)
+				fd := m.footerData()
+				out := ansi.Strip(fd.Render())
+				for _, unwanted := range []string{"unique-issues-query", "/-", "/fuzzy"} {
+					if strings.Contains(out, unwanted) {
+						t.Errorf("mode=%v state=%v: footer echoes local search %q: %q", mode, state, unwanted, out)
+					}
+				}
+				if !strings.Contains(out, "bt") || !strings.Contains(out, "st:open") {
+					t.Errorf("scope and status should remain unchanged: %q", out)
+				}
+			}
+		}
 	}
 }
 

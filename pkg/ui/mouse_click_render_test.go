@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
@@ -103,7 +105,7 @@ func TestMouseClick_FormulaMatchesRender_WorkspaceMode(t *testing.T) {
 	}
 }
 
-// FilterApplied state: the search pill adds a row above the header.
+// FilterApplied state: bottom search must not shift the header or item rows.
 func TestMouseClick_FormulaMatchesRender_WithPill(t *testing.T) {
 	m := mouseTestModel(3, 200, 40, 60, 30)
 	m.list.SetFilterText("xaa")
@@ -171,5 +173,131 @@ func TestMouseClick_ResolvesFirstRowAcrossPages(t *testing.T) {
 	if got := clicked.list.Index(); got != expected {
 		t.Errorf("click at page-%d first visible Y=%d: expected index %d, got %d",
 			m.list.Paginator.Page, firstY, expected, got)
+	}
+}
+
+func TestIssuesSearchAtBottomOnlyWhileActive(t *testing.T) {
+	for _, width := range []int{80, 120, 200} {
+		for _, fullscreen := range []bool{false, true} {
+			for _, tc := range []struct {
+				name    string
+				state   list.FilterState
+				query   string
+				visible bool
+			}{
+				{"idle", list.Unfiltered, "", false},
+				{"editing empty", list.Filtering, "", true},
+				{"editing", list.Filtering, "title", true},
+				{"applied", list.FilterApplied, "title", true},
+				{"applied empty", list.FilterApplied, "", false},
+				{"no matches", list.FilterApplied, "absent", true},
+			} {
+				t.Run(fmt.Sprintf("%d/fullscreen=%t/%s", width, fullscreen, tc.name), func(t *testing.T) {
+					m := mouseTestModel(3, width, 30, 60, 20)
+					if width == 120 {
+						m.splitPaneRatio = 0.1 // Pagination must not wrap in a narrow split pane.
+					}
+					m.list.SetFilterText(tc.query)
+					m.list.SetFilterState(tc.state)
+					if fullscreen {
+						m.fullscreen = fullscreenIssues
+					}
+					updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 30})
+					m = updated.(Model)
+					panel := m.renderIssuesPanel(m.list.Width()+4, 29, true)
+					searchY := findRenderedItemY(panel, "Search:")
+					wantY := -1
+					wantHeight := 25 // 29-row panel minus borders, header, pagination.
+					if tc.visible {
+						wantY = 26 // Directly above pagination (27) and bottom border (28).
+						wantHeight--
+					}
+					if fullscreen {
+						wantHeight -= 4 // Selection peek strip.
+					}
+					if searchY != wantY {
+						t.Errorf("search row Y=%d, want %d", searchY, wantY)
+					}
+					if m.list.Height() != wantHeight {
+						t.Errorf("list height=%d, want %d", m.list.Height(), wantHeight)
+					}
+					if y := findRenderedItemY(panel, "T S P"); y != 1 {
+						t.Errorf("column header Y=%d, want 1", y)
+					}
+					if y := findRenderedItemY(panel, "Page "); y != 27 {
+						t.Errorf("pagination Y=%d, want 27", y)
+					}
+					if searchY >= 0 {
+						m.focused = focusDetail
+						got, _ := m.handleMouseClick(tea.MouseClickMsg{X: m.list.Width() - 1, Y: searchY, Button: tea.MouseLeft})
+						if got.list.FilterState() != list.Filtering || got.focused != focusList {
+							t.Errorf("click on bottom search did not focus editing: state=%v focus=%v", got.list.FilterState(), got.focused)
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestIssuesPaginationUsesSearchMatches(t *testing.T) {
+	for _, tc := range []struct {
+		query string
+		index int
+		want  string
+	}{
+		{"xaa", 0, "Page 1/1 (1-1 of 1)"},
+		{"absent", 0, "Page 1/1 (0-0 of 0)"},
+		{"title", 0, "Page 1/3 (1-24 of 60)"},
+		{"title", 30, "Page 2/3 (25-48 of 60)"},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			m := mouseTestModel(60, 200, 30, 60, 20)
+			m.list.SetFilterText(tc.query)
+			updated, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
+			m = updated.(Model)
+			m.list.Select(tc.index)
+			panel := stripANSI(m.renderIssuesPanel(m.list.Width()+4, 29, true))
+			if !strings.Contains(panel, tc.want) {
+				t.Errorf("pagination does not describe visible matches; want %q in\n%s", tc.want, panel)
+			}
+		})
+	}
+}
+
+func TestIssuesSearchResizesOnKeyboardTransitions(t *testing.T) {
+	for _, width := range []int{80, 200} {
+		m := NewModel([]model.Issue{{ID: "bd-xaa", Title: "title", Status: model.StatusOpen,
+			Description: strings.Repeat("A paragraph of detail content.\n\n", 100)}}, nil, "", nil, nil)
+		updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 30})
+		m = updated.(Model)
+		m.updateViewportContent()
+		m.viewport.SetYOffset(5)
+		beforeOffset := m.viewport.YOffset()
+		if beforeOffset != 5 {
+			t.Fatalf("precondition: expected scrollable details, offset=%d", beforeOffset)
+		}
+		for _, step := range []struct {
+			key        tea.KeyPressMsg
+			wantHeight int
+		}{
+			{tea.KeyPressMsg{Code: '/'}, 24},
+			{tea.KeyPressMsg{Code: tea.KeyEnter}, 25},
+			{tea.KeyPressMsg{Code: '/'}, 24},
+			{tea.KeyPressMsg{Code: tea.KeyEscape}, 25},
+			{tea.KeyPressMsg{Code: '/'}, 24},
+			{tea.KeyPressMsg{Code: 't', Text: "t"}, 24},
+			{tea.KeyPressMsg{Code: tea.KeyEnter}, 24},
+			{tea.KeyPressMsg{Code: tea.KeyEscape}, 25},
+		} {
+			updated, _ = m.Update(step.key)
+			m = updated.(Model)
+			if m.list.Height() != step.wantHeight {
+				t.Errorf("width=%d key=%s: list height=%d, want %d", width, step.key.String(), m.list.Height(), step.wantHeight)
+			}
+			if m.viewport.YOffset() != beforeOffset {
+				t.Errorf("filter visibility change reset detail scroll")
+			}
+		}
 	}
 }

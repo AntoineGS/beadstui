@@ -99,10 +99,9 @@ func TestHandleMouseClick_NonListModeIgnored(t *testing.T) {
 // computation accounts for all vertical chrome above the first list item
 // in split view (bt-58yw regression fix; bt-fxbl chrome unification).
 //
-// Post bt-fxbl chrome rows are:
+// Chrome above the list rows is:
 //  1. RenderTitledPanel top border
-//  2. renderSearchRow (always 1 row, bridges all FilterStates)
-//  3. renderSplitView column header row
+//  2. renderSplitView column header row
 //
 // The Bubbles phantom title row is gone — l.SetShowFilter(false) +
 // l.SetShowTitle(false) skips the titleView branch entirely in list.View().
@@ -235,8 +234,7 @@ func TestHandleMouseClick_BelowLastRenderedRow_Unfiltered_NoPageJump(t *testing.
 }
 
 // TestHandleMouseClick_SearchRowReopensFilter verifies clicking on the
-// always-present search row (chrome row Y=1, post bt-fxbl) transitions the
-// list to Filtering state regardless of starting state (bt-49nn). Without
+// bottom search row transitions an applied filter back to Filtering. Without
 // this, mouse-driven users have no way to re-edit a committed query short
 // of pressing `/` — the search bar is visible but inert to clicks.
 func TestHandleMouseClick_SearchRowReopensFilter(t *testing.T) {
@@ -255,11 +253,6 @@ func TestHandleMouseClick_SearchRowReopensFilter(t *testing.T) {
 			setup:     func(m *Model) { m.list.SetFilterText("first"); m.list.SetFilterState(list.FilterApplied) },
 			wantValue: "first",
 		},
-		{
-			name:      "Unfiltered -> Filtering",
-			setup:     func(m *Model) { /* default */ },
-			wantValue: "",
-		},
 	}
 
 	for _, tc := range cases {
@@ -273,8 +266,8 @@ func TestHandleMouseClick_SearchRowReopensFilter(t *testing.T) {
 			m.focused = focusList
 			tc.setup(&m)
 
-			// Search row is at Y=1 (chrome layer 2 of 3, post bt-fxbl).
-			msg := tea.MouseClickMsg{X: 10, Y: 1, Button: tea.MouseLeft}
+			// Panel bottom border is at 38, pagination at 37, search at 36.
+			msg := tea.MouseClickMsg{X: 10, Y: 36, Button: tea.MouseLeft}
 			got, _ := m.handleMouseClick(msg)
 
 			if state := got.list.FilterState(); state != list.Filtering {
@@ -417,18 +410,16 @@ func TestSplitViewChromeHeight_StableAcrossFilterStates(t *testing.T) {
 			hFiltering, hApplied)
 	}
 
-	// Sanity: chrome height is panel border (1) + search row (1) + column header (1) = 3.
-	const expectedChrome = 3
+	// Search is below the items, so only the border and column header precede them.
+	const expectedChrome = 2
 	if hUnfiltered != expectedChrome {
-		t.Errorf("expected chrome height %d (panel border + search row + column header), got %d",
+		t.Errorf("expected chrome height %d (panel border + column header), got %d",
 			expectedChrome, hUnfiltered)
 	}
 }
 
-// TestRenderSearchRow_AlwaysOneRow verifies the search row is fixed-height
-// (1 terminal row) across all FilterStates. This is the precondition for
-// the chrome stability above (bt-fxbl).
-func TestRenderSearchRow_AlwaysOneRow(t *testing.T) {
+// The search row is hidden when idle, and occupies one row while active.
+func TestRenderSearchRow_ConditionalOneRow(t *testing.T) {
 	issues := []model.Issue{
 		{ID: "bd-cc0", Title: "first", Status: model.StatusOpen},
 		{ID: "bd-cgh", Title: "second", Status: model.StatusOpen},
@@ -441,8 +432,9 @@ func TestRenderSearchRow_AlwaysOneRow(t *testing.T) {
 	m.list.SetSize(80, 30)
 
 	cases := []struct {
-		name  string
-		setup func()
+		name    string
+		setup   func()
+		visible bool
 	}{
 		{
 			name:  "Unfiltered",
@@ -454,11 +446,28 @@ func TestRenderSearchRow_AlwaysOneRow(t *testing.T) {
 				m.list.SetFilterText("first")
 				m.list.SetFilterState(list.Filtering)
 			},
+			visible: true,
+		},
+		{
+			name: "Filtering empty",
+			setup: func() {
+				m.list.ResetFilter()
+				m.list.SetFilterState(list.Filtering)
+			},
+			visible: true,
 		},
 		{
 			name: "FilterApplied with query",
 			setup: func() {
 				m.list.SetFilterText("first")
+				m.list.SetFilterState(list.FilterApplied)
+			},
+			visible: true,
+		},
+		{
+			name: "FilterApplied empty",
+			setup: func() {
+				m.list.SetFilterText("   ")
 				m.list.SetFilterState(list.FilterApplied)
 			},
 		},
@@ -468,8 +477,14 @@ func TestRenderSearchRow_AlwaysOneRow(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.setup()
 			row := m.renderSearchRow(m.list.Width())
+			if !tc.visible {
+				if row != "" {
+					t.Fatalf("inactive search should be hidden, got %q", row)
+				}
+				return
+			}
 			if row == "" {
-				t.Fatalf("renderSearchRow returned empty string in state %s — chrome height would shift", tc.name)
+				t.Fatalf("active search should be visible in state %s", tc.name)
 			}
 			// Use lipgloss.Height to count rows (defense in depth: a styled
 			// row that wrapped would count as >1).
@@ -517,9 +532,7 @@ func TestRenderSearchRow_ClipsToWidth(t *testing.T) {
 	}
 }
 
-// TestHandleMouseClick_SearchRowEntry_PreservesVisibleItems is the bt-r2ev
-// Bug A regression guard: clicking the search row to enter Filtering must
-// keep all underlying items visible (matching the keyboard `/` path).
+// Entering search through the keyboard must keep all underlying items visible.
 //
 // Pre-fix: the click path called m.list.SetFilterState(list.Filtering)
 // directly, bypassing Bubbles' filter-begin setup that populates
@@ -528,7 +541,7 @@ func TestRenderSearchRow_ClipsToWidth(t *testing.T) {
 // while filterState was Filtering. The fix forwards a synthetic "/"
 // KeyPressMsg through m.list.Update so Bubbles runs the same setup it
 // runs for the keyboard path.
-func TestHandleMouseClick_SearchRowEntry_PreservesVisibleItems(t *testing.T) {
+func TestKeyboardSearchEntry_PreservesVisibleItems(t *testing.T) {
 	issues := []model.Issue{
 		{ID: "bd-cc0", Title: "first", Status: model.StatusOpen},
 		{ID: "bd-cgh", Title: "second", Status: model.StatusOpen},
@@ -547,13 +560,13 @@ func TestHandleMouseClick_SearchRowEntry_PreservesVisibleItems(t *testing.T) {
 		t.Fatalf("precondition: expected %d visible items before click, got %d", len(issues), got)
 	}
 
-	// Click the search row at Y=1 with empty filter buffer.
-	msg := tea.MouseClickMsg{X: 10, Y: 1, Button: tea.MouseLeft}
-	got, _ := m.handleMouseClick(msg)
+	// The idle search row is hidden; use / to open an empty search.
+	updated, _ := m.Update(tea.KeyPressMsg{Code: '/'})
+	got := updated.(Model)
 
 	// State transitioned to Filtering (covered by bt-49nn test, but assert here too).
 	if state := got.list.FilterState(); state != list.Filtering {
-		t.Fatalf("expected FilterState=Filtering after search-row click, got %v", state)
+		t.Fatalf("expected FilterState=Filtering after /, got %v", state)
 	}
 	// Critical Bug A invariant: items must still be visible during empty Filtering.
 	if visible := len(got.list.VisibleItems()); visible != len(issues) {
@@ -586,10 +599,10 @@ func TestHandleMouseClick_ListPaneClick_CommitsActiveFilter(t *testing.T) {
 		{ID: "cass-z95i", Title: "third", Status: model.StatusOpen},
 	}
 
-	// Chrome is 3 rows (panel border + search row + column header), so
-	// row 0 renders at Y=3, row 1 at Y=4, row 2 at Y=5. A click far
+	// Chrome is 2 rows (panel border + column header), so
+	// row 0 renders at Y=2, row 1 at Y=3, row 2 at Y=4. A click far
 	// below (e.g. Y=20) lands in the gap between last row and footer.
-	const firstRowY = 3
+	const firstRowY = 2
 	const gapY = 20
 
 	cases := []struct {
@@ -672,23 +685,23 @@ func singlePaneTestIssues() []model.Issue {
 }
 
 // TestHandleMouseClick_SinglePaneChromeHeight pins the single-pane list chrome
-// to 3 rows (panel top border + search row + column header), so the first list
-// item is at Y=3 (bt-r5v9k). The single-pane list now renders through the same
+// to 2 rows (panel top border + column header), so the first list
+// item is at Y=2. The single-pane list renders through the same
 // bordered panel as split view, so this matches splitViewListChromeHeight.
 func TestHandleMouseClick_SinglePaneChromeHeight(t *testing.T) {
 	m := NewModel(singlePaneTestIssues(), nil, "", nil, nil)
 	m.width = 80
 	m.height = 30
 	m.list.SetSize(m.bodyWidth()-4, 24)
-	if got := m.singlePaneListChromeHeight(); got != 3 {
-		t.Fatalf("singlePaneListChromeHeight = %d, want 3 (border + search row + column header)", got)
+	if got := m.singlePaneListChromeHeight(); got != 2 {
+		t.Fatalf("singlePaneListChromeHeight = %d, want 2 (border + column header)", got)
 	}
 }
 
 // TestSinglePaneListRenderGeometry pins singlePaneListChromeHeight to the actual
 // bordered renderListWithHeader output (bt-r5v9k): the panel top border (with the
-// ²Issues badge) on line 0, the search row on line 1, the column header on line
-// 2, and the first list item on line 3 (== singlePaneListChromeHeight). If the
+// ²Issues badge) on line 0, the column header on line 1,
+// and the first list item on line 2 (== singlePaneListChromeHeight). If the
 // single-pane chrome ever shifts, this fails alongside the click math that
 // depends on it (bt-bxu6u).
 func TestSinglePaneListRenderGeometry(t *testing.T) {
@@ -708,15 +721,12 @@ func TestSinglePaneListRenderGeometry(t *testing.T) {
 	if !strings.Contains(lines[0], issuesPaneBadge) {
 		t.Fatalf("line 0 should be the panel top border carrying %q, got %q", issuesPaneBadge, lines[0])
 	}
-	if !strings.Contains(lines[1], "Search:") {
-		t.Fatalf("line 1 should be the search row, got %q", lines[1])
-	}
 	// Keyed on TITLE rather than TYPE: this asserts row geometry (which line
 	// the header occupies), and TITLE is the one label stable across the column
 	// vocabulary, which changed when type/pri/status fused into a chip
 	// (bt-evuf.2).
-	if !strings.Contains(lines[2], "TITLE") {
-		t.Fatalf("line 2 should be the column header, got %q", lines[2])
+	if !strings.Contains(lines[1], "TITLE") {
+		t.Fatalf("line 1 should be the column header, got %q", lines[1])
 	}
 	if !strings.Contains(lines[chrome], "cc0") {
 		t.Fatalf("first list item (cc0) should render on line %d (singlePaneListChromeHeight), got %q",
@@ -775,7 +785,7 @@ func TestHandleMouseClick_SinglePaneWideMaximizedSelectsRow(t *testing.T) {
 }
 
 // TestHandleMouseClick_SinglePaneSearchRowReopensFilter verifies a click on the
-// single-pane search row (Y=1, below the panel top border) reopens the filter
+// single-pane bottom search row reopens the filter
 // input, mirroring the split-view search-row click (bt-bxu6u; geometry updated
 // to the bordered layout in bt-r5v9k).
 func TestHandleMouseClick_SinglePaneSearchRowReopensFilter(t *testing.T) {
@@ -791,10 +801,12 @@ func TestHandleMouseClick_SinglePaneSearchRowReopensFilter(t *testing.T) {
 	if m.list.FilterState() == list.Filtering {
 		t.Fatalf("precondition: list should not start in Filtering state")
 	}
+	m.list.SetFilterText("first")
+	m.list.SetFilterState(list.FilterApplied)
 
-	got, _ := m.handleMouseClick(tea.MouseClickMsg{X: 5, Y: 1, Button: tea.MouseLeft})
+	got, _ := m.handleMouseClick(tea.MouseClickMsg{X: 5, Y: 26, Button: tea.MouseLeft})
 	if got.list.FilterState() != list.Filtering {
-		t.Fatalf("click on single-pane search row (Y=1) should reopen filter, got state %v",
+		t.Fatalf("click on single-pane search row (Y=26) should reopen filter, got state %v",
 			got.list.FilterState())
 	}
 }

@@ -490,32 +490,25 @@ func centerLine(s string, width int) string {
 	return strings.Repeat(" ", left) + s + strings.Repeat(" ", right)
 }
 
-// renderSearchRow returns the always-present, one-line search row that lives
-// directly above the list's column header (bt-fxbl). It bridges all three
-// filter states with a fixed-height row so the column header position never
-// shifts as the user types, commits, or clears the filter:
-//
-//   - Unfiltered:    discreet placeholder hint ("/  search   <count> beads")
-//   - Filtering:     live FilterInput rendered via m.list.FilterInput.View()
-//     (with our own prompt + cursor shown); count of running
-//     matches on the right.
-//   - FilterApplied: committed query + match count on the right (the original
-//     "search pill" behavior, bt-031h).
-//
-// Why we own this rather than letting Bubbles render its titleView: Bubbles'
-// built-in title row sits BELOW our column header strip, and during Filtering
-// it shows the FilterInput there — visibly shifting the column header by one
-// row relative to FilterApplied (where the pill renders ABOVE). Suppressing
-// Bubbles' titleView via SetShowFilter(false) + SetShowTitle(false) and
-// rendering this row ourselves above the column header makes chrome height
-// constant across states. Width is the row width to fill.
+// showSearchRow keeps the Issues-only search visible while editing or when a
+// nonempty query is applied. Idle search consumes no list space.
+func (m Model) showSearchRow() bool {
+	return m.list.FilterState() == list.Filtering ||
+		(m.list.FilterState() == list.FilterApplied && strings.TrimSpace(m.list.FilterInput.Value()) != "")
+}
+
+// renderSearchRow returns the one-line search row pinned above Issues pagination,
+// or an empty string when idle. We own it instead of Bubbles' titleView so search
+// never shifts the column header or first issue row.
 func (m Model) renderSearchRow(width int) string {
+	if !m.showSearchRow() || width <= 0 {
+		return ""
+	}
 	t := m.theme
 	state := m.list.FilterState()
 	totalItems := len(m.list.Items())
 	visibleItems := len(m.list.VisibleItems())
 
-	hintStyle := lipgloss.NewStyle().Foreground(t.Subtext).Italic(true)
 	labelStyle := lipgloss.NewStyle().Foreground(t.Muted)
 	queryStyle := lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
 	countStyle := lipgloss.NewStyle().Foreground(t.Muted)
@@ -535,17 +528,8 @@ func (m Model) renderSearchRow(width int) string {
 		}
 	case list.FilterApplied:
 		query := strings.TrimSpace(m.list.FilterInput.Value())
-		if query == "" {
-			// Edge: applied with empty query — fall through to placeholder.
-			left = labelStyle.Render("  Search: ") + hintStyle.Render("/")
-			right = countStyle.Render(fmt.Sprintf("  %d  ", totalItems))
-		} else {
-			left = labelStyle.Render("  Search: ") + queryStyle.Render(query)
-			right = countStyle.Render(fmt.Sprintf("  %d/%d matches  ", visibleItems, totalItems))
-		}
-	default: // list.Unfiltered
-		left = labelStyle.Render("  Search: ") + hintStyle.Render("/")
-		right = countStyle.Render(fmt.Sprintf("  %d  ", totalItems))
+		left = labelStyle.Render("  Search: ") + queryStyle.Render(query)
+		right = countStyle.Render(fmt.Sprintf("  %d/%d matches  ", visibleItems, totalItems))
 	}
 
 	leftWidth := lipgloss.Width(left)
@@ -555,7 +539,7 @@ func (m Model) renderSearchRow(width int) string {
 	// Overflow path: prefer keeping the typed query visible. Drop the right
 	// (count) first, then if still too wide clip the left to width. Without
 	// this, lipgloss wraps the row to 2 lines and breaks the 1-row chrome
-	// invariant in splitViewListChromeHeight (bt-m6cd).
+	// search-row height invariant (bt-m6cd).
 	if gap < 1 {
 		right = ""
 		rightWidth = 0
@@ -645,7 +629,7 @@ func (m Model) renderIssuesPanel(outerWidth, panelHeight int, focused bool) stri
 	header := m.splitViewHeader()
 
 	// Page info for list
-	totalItems := len(m.list.Items())
+	totalItems := len(m.list.VisibleItems())
 	currentIdx := m.list.Index()
 	listHeight := m.list.Height()
 	if listHeight == 0 {
@@ -670,6 +654,9 @@ func (m Model) renderIssuesPanel(outerWidth, panelHeight int, focused bool) stri
 	}
 
 	pageInfo := fmt.Sprintf("Page %d/%d (%d-%d of %d) ", currentPage, totalPages, startItem, endItem, totalItems)
+	// Keep pagination to one row so sizing and the bottom search click target
+	// agree even when the Issues pane is narrower than the full page summary.
+	pageInfo = ansi.Truncate(pageInfo, listInnerWidth, "")
 	pageStyle := lipgloss.NewStyle().
 		Foreground(t.Secondary).
 		Width(listInnerWidth).
@@ -677,12 +664,9 @@ func (m Model) renderIssuesPanel(outerWidth, panelHeight int, focused bool) stri
 
 	pageLine := pageStyle.Render(pageInfo)
 
-	// Combine search row + column header + list + page indicator. The search
-	// row (bt-fxbl) is always rendered above the column header so chrome
-	// height is fixed across all FilterStates. This also keeps the
-	// click-row math (splitViewListChromeHeight) deterministic.
+	// The header and first item stay fixed; search belongs at the pane bottom.
 	searchRow := m.renderSearchRow(listInnerWidth)
-	splitParts := []string{searchRow, header, m.list.View()}
+	splitParts := []string{header, m.list.View()}
 	// Selection peek strip (bt-evuf.3) sits between the list and the page
 	// indicator, so it reads as belonging to the list rather than to the panel
 	// chrome. Empty string when not part of this layout; the height it costs is
@@ -690,8 +674,24 @@ func (m Model) renderIssuesPanel(outerWidth, panelHeight int, focused bool) stri
 	if peek := m.renderPeekStrip(listInnerWidth); peek != "" {
 		splitParts = append(splitParts, peek)
 	}
-	splitParts = append(splitParts, pageLine)
 	listContent := lipgloss.JoinVertical(lipgloss.Left, splitParts...)
+	// Pin the bottom chrome even when the peek strip has no selection, or the
+	// caller temporarily has stale list dimensions. Clip only the item region.
+	contentHeight := panelHeight - 2 - lipgloss.Height(pageLine)
+	if searchRow != "" {
+		contentHeight -= lipgloss.Height(searchRow)
+	}
+	if contentHeight > 0 {
+		listContent = lipgloss.NewStyle().Height(contentHeight).MaxHeight(contentHeight).Render(listContent)
+	} else {
+		listContent = ""
+	}
+	splitParts = []string{listContent}
+	if searchRow != "" {
+		splitParts = append(splitParts, searchRow)
+	}
+	splitParts = append(splitParts, pageLine)
+	listContent = lipgloss.JoinVertical(lipgloss.Left, splitParts...)
 
 	// The badge is rendered as the right-side label (bt-fxbl precedent) —
 	// moves the title from top-left to top-right so the panel chrome doesn't

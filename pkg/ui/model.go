@@ -1251,15 +1251,15 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 	// Suppress Bubbles' built-in titleView entirely (bt-fxbl). Bubbles renders
 	// its FilterInput inside titleView during the Filtering state, which lands
 	// BELOW our column header — causing the column header to visibly shift as
-	// the user types/commits/clears. We render our own search row above the
-	// column header (renderSearchRow) so the position is stable across all
+	// the user types/commits/clears. We render our own search row at the pane
+	// bottom (renderSearchRow) so the header is stable across all
 	// FilterStates. SetShowFilter(false) keeps filtering working but stops
 	// the built-in render path; Bubbles' own docs note this is the intended
 	// hook for "render filtering UI differently".
 	l.SetShowFilter(false)
 	l.DisableQuitKeybindings()
 	// The Bubbles list ships a "Filter: " prompt; bt's affordance is a search
-	// bar (/), and the footer shows fuzzy/semantic/hybrid search modes — so the
+	// bar (/) local to the Issues pane — so the
 	// prompt text matches the user's mental model (bt-imcn).
 	l.FilterInput.Prompt = "Search: "
 	// Boot in fuzzy mode with the canonical filter composition: comma-OR
@@ -1773,6 +1773,7 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
+	searchWasVisible := m.showSearchRow()
 
 	// Snapshot modal state before any handler runs. Used below to prevent
 	// a modal-dismiss key (e.g. Esc) from being forwarded to the Bubbles
@@ -1996,6 +1997,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateViewportContent()
 			}
 		}
+	}
+
+	// Filtering can show or hide the bottom search row without a resize event.
+	// Resize only the list so the detail viewport keeps its scroll position.
+	if m.ready && m.showSearchRow() != searchWasVisible {
+		m.list.SetHeight(m.issueListHeight(m.height - 1))
 	}
 
 	// Update viewport if list selection changed in split view, or while a
