@@ -244,6 +244,25 @@ func TestPluginActionUnknownResult(t *testing.T) {
 	}
 }
 
+func TestPluginActionNotRunningResult(t *testing.T) {
+	fake := &fakePluginActions{actions: []plugin.Action{dispatchAction}, result: plugin.ActionResult{NotRunning: true}}
+	m := newPluginActionModel(t, fake)
+	id := selectedID(m)
+
+	m, cmd := sendMsg(m, keyRune('D'))
+	results := actionResults(cmd)
+	if len(results) != 1 {
+		t.Fatalf("results = %d, want 1", len(results))
+	}
+	m, _ = sendMsg(m, results[0])
+	if _, ok := m.pendingWrites[id]; ok {
+		t.Fatal("not-running result left the action pending")
+	}
+	if want := "example is not running; action not sent"; m.statusMsg != want || m.statusSeverity != SeverityNotice {
+		t.Fatalf("status = %q (%v), want notice %q", m.statusMsg, m.statusSeverity, want)
+	}
+}
+
 func TestPluginActionResultToastTone(t *testing.T) {
 	m := newPluginActionModel(t, &fakePluginActions{})
 	m, _ = sendMsg(m, pluginActionResultMsg{ID: "proj-1", Action: dispatchAction,

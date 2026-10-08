@@ -187,6 +187,8 @@ func (m Model) handlePluginActionResult(msg pluginActionResultMsg) (Model, tea.C
 
 	label := msg.Action.Label
 	switch {
+	case msg.Result.NotRunning:
+		m.setNotice(fmt.Sprintf("%s is not running; action not sent", msg.Action.Plugin))
 	case msg.Result.Unknown:
 		m.setFailure(fmt.Sprintf("%s on %s: result unknown", label, msg.ID))
 	case msg.Result.Toast != nil:

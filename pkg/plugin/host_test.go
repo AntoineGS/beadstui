@@ -247,8 +247,11 @@ func TestHostHangingInitFails(t *testing.T) {
 		t.Error("want one StatusMsg failed")
 	}
 	issue := openIssue("example-1")
-	if res := th.Invoke(context.Background(), Action{Plugin: "example", ID: "dispatch"}, &issue, "list"); !res.Unknown {
-		t.Errorf("Invoke on failed plugin = %+v, want Unknown", res)
+	if res := th.Invoke(context.Background(), Action{Plugin: "example", ID: "dispatch"}, &issue, "list"); !res.NotRunning || res.Unknown {
+		t.Errorf("Invoke on failed plugin = %+v, want NotRunning", res)
+	}
+	if res := th.Invoke(context.Background(), Action{Plugin: "other", ID: "dispatch"}, &issue, "list"); !res.NotRunning || res.Unknown {
+		t.Errorf("Invoke on unknown plugin = %+v, want NotRunning", res)
 	}
 }
 

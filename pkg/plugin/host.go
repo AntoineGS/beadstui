@@ -83,11 +83,13 @@ type Action struct {
 }
 
 // ActionResult is the outcome of Invoke. Unknown means the plugin timed out
-// or went away; the action is never replayed.
+// or went away; the action is never replayed. NotRunning means the plugin
+// was not active, so the action was never sent.
 type ActionResult struct {
-	Toast   *Toast
-	Dismiss bool
-	Unknown bool
+	Toast      *Toast
+	Dismiss    bool
+	Unknown    bool
+	NotRunning bool
 }
 
 // StateChangedMsg reports beads whose plugin state changed. It is sent at
@@ -323,13 +325,16 @@ func (h *Host) Statuses() []Status {
 // Invoke runs action a on issue and waits for the plugin's answer, at most
 // the invoke timeout. It may do IO: call it off the UI goroutine.
 func (h *Host) Invoke(ctx context.Context, a Action, issue *model.Issue, view string) ActionResult {
-	p := h.proc(a.Plugin)
-	if p == nil || issue == nil {
+	if issue == nil {
 		return ActionResult{Unknown: true}
+	}
+	p := h.proc(a.Plugin)
+	if p == nil {
+		return ActionResult{NotRunning: true}
 	}
 	s := p.activeSession()
 	if s == nil {
-		return ActionResult{Unknown: true}
+		return ActionResult{NotRunning: true}
 	}
 	ref := BeadRef{DB: h.store.db(issue), ID: issue.ID}
 	if h.opts.Repo != nil {
