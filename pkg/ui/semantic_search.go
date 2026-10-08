@@ -737,7 +737,11 @@ func (m *Model) updateSemanticIDs(items []list.Item) {
 }
 
 func (m *Model) updateListDelegate() {
-	m.list.SetDelegate(IssueDelegate{
+	m.list.SetDelegate(m.issueListDelegate())
+}
+
+func (m Model) issueListDelegate() IssueDelegate {
+	return IssueDelegate{
 		Theme:             m.theme,
 		ShowPriorityHints: m.ac.showPriorityHints,
 		PriorityHints:     m.ac.priorityHints,
@@ -745,7 +749,7 @@ func (m *Model) updateListDelegate() {
 		PendingClaims:     m.pendingWriteIDs(),
 		ClaimSpinner:      claimSpinnerFrame(m.writeSpinnerIdx),
 		Slots:             m.slotRegistry,
-	})
+	}
 }
 
 func (m *Model) applySemanticScores(term string) {

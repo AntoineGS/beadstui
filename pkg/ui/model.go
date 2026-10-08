@@ -208,7 +208,13 @@ func (m Model) shouldDeferRefresh() bool {
 }
 
 // openModal sets the active modal, closing any previously open modal.
-func (m *Model) openModal(t ModalType) { m.activeModal = t }
+func (m *Model) openModal(t ModalType) {
+	m.activeModal = t
+	if t == ModalHelp {
+		m.helpLegend = false
+		m.helpScroll = 0
+	}
+}
 
 // closeModal dismisses the currently active modal.
 func (m *Model) closeModal() { m.activeModal = ModalNone }
@@ -795,6 +801,7 @@ type Model struct {
 	showDetails              bool
 	fullscreen               fullscreenPane // bt-530vn: on-demand per-pane fullscreen (2/3 keys), any width
 	helpScroll               int            // Scroll offset for help overlay
+	helpLegend               bool           // Icon legend tab within the help overlay
 	ready                    bool
 	width                    int
 	height                   int

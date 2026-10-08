@@ -11,6 +11,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
@@ -1719,5 +1720,81 @@ func TestHelpOverlay_SingleBoxAesthetic(t *testing.T) {
 	// Four-box code would also have count==1 (Sidebar desc in one panel body, no "shortcuts" in panel titles).
 	if n := strings.Count(out, "shortcuts"); n != 2 {
 		t.Errorf("? overlay contains %d occurrences of %q, want exactly 2 (title border + Sidebar desc)", n, "shortcuts")
+	}
+}
+
+func TestHelpLegendAccessibleFromCompactAndFullHelp(t *testing.T) {
+	for _, size := range [][2]int{{50, 14}, {120, 40}} {
+		m := NewModel(nil, nil, "", nil, nil)
+		m.width, m.height = size[0], size[1]
+		m.openModal(ModalHelp)
+		m.focused = focusHelp
+		if out := ansi.Strip(m.renderHelpOverlay()); !strings.Contains(out, "legend") {
+			t.Errorf("size=%v: help does not advertise legend: %q", size, out)
+		}
+		m = m.handleHelpKeys(tea.KeyPressMsg{Code: 'l', Text: "l"})
+		if m.activeModal != ModalHelp {
+			t.Fatalf("size=%v: l dismissed help instead of opening legend", size)
+		}
+		first := ansi.Strip(m.renderHelpOverlay())
+		if !strings.Contains(first, "icon legend") || !strings.Contains(first, "ISSUE TYPES") {
+			t.Fatalf("size=%v: missing icon legend: %q", size, first)
+		}
+		if lipgloss.Width(first) > size[0] || lipgloss.Height(first) > size[1]-1 {
+			t.Errorf("size=%v: legend overflows terminal: %q", size, first)
+		}
+		m = m.handleHelpKeys(tea.KeyPressMsg{Code: 'G', Text: "G"})
+		last := ansi.Strip(m.renderHelpOverlay())
+		if first == last || !strings.Contains(last, "Enter") {
+			t.Errorf("size=%v: scrolling must reach the last legend entry: %q", size, last)
+		}
+		m = m.handleHelpKeys(tea.KeyPressMsg{Code: 'l', Text: "l"})
+		if m.helpScroll != 0 || strings.Contains(ansi.Strip(m.renderHelpOverlay()), "ISSUE TYPES") {
+			t.Errorf("size=%v: toggling back must restore shortcuts and reset scroll", size)
+		}
+		m = m.handleHelpKeys(tea.KeyPressMsg{Code: 'l', Text: "l"})
+		m = m.handleHelpKeys(tea.KeyPressMsg{Code: tea.KeyEscape})
+		m.openModal(ModalHelp)
+		if strings.Contains(ansi.Strip(m.renderHelpOverlay()), "ISSUE TYPES") {
+			t.Errorf("size=%v: reopening help must start on shortcuts", size)
+		}
+	}
+}
+
+func TestHelpLegendExplainsIssueAndChromeIndicators(t *testing.T) {
+	for _, glyphs := range []GlyphSet{asciiGlyphs, nerdfontGlyphs} {
+		setGlyphs(t, glyphs)
+		m := NewModel(nil, nil, "", nil, nil)
+		m.width, m.height = 120, 300
+		m.openModal(ModalHelp)
+		m = m.handleHelpKeys(tea.KeyPressMsg{Code: 'l', Text: "l"})
+		out := ansi.Strip(m.renderHelpOverlay())
+		for _, want := range []struct{ glyph, meaning string }{
+			{glyphs.TypeBug, "Bug"}, {glyphs.TypeFeature, "Feature"},
+			{glyphs.TypeTask, "Task"}, {glyphs.TypeEpic, "Epic"},
+			{glyphs.TypeChore, "Chore"}, {glyphs.TypeDefault, "Other issue type"},
+			{glyphs.StDeferred, "Deferred"}, {glyphs.StReview, "Review"},
+			{glyphs.GateHuman, "Human gate"}, {glyphs.GateCI, "CI gate"},
+			{glyphs.GatePR, "PR gate"}, {glyphs.GateBead, "Bead gate"},
+			{glyphs.Stale, "Stale issue"}, {glyphs.Overdue + "DUE", "Overdue"},
+			{glyphs.Bolt, "Quick win"}, {glyphs.Unlock + "N", "Unblocks N"},
+			{"↪N", "Unblocks N"}, {glyphs.Comment + "N", "Comments"},
+			{"done/total", "Epic progress"}, {"↑ / ↓", "Priority hint"},
+			{"0", "Critical"}, {"4", "Backlog"},
+			{glyphs.New, "New issue"}, {"~", "Modified issue"},
+			{glyphs.Pencil, "Author"}, {glyphs.Tag, "Labels"},
+			{glyphs.TriadReady, "Ready"}, {glyphs.DepChild, "Parent-child"},
+		} {
+			found := false
+			for _, line := range strings.Split(out, "\n") {
+				if strings.Contains(line, want.glyph) && strings.Contains(line, want.meaning) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("legend missing %q explanation for %q", want.meaning, want.glyph)
+			}
+		}
 	}
 }

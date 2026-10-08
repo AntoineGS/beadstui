@@ -33,6 +33,11 @@ reg.AddBadges(slots.BadgeFunc(func(issue *model.Issue) []slots.Badge {
   of the first line between the ID and the age.
 - The list shows badges only above 80 columns, as it did for the overdue/stale
   badge they replaced. Epic rows and lane headers in the epics view show none.
+- List badges live after the title in right-side columns. Column widths, including
+  the compact ID, are shared across the current page; empty cells are padded and
+  entirely empty optional columns disappear. Paging and filtering remeasure them.
+  At tight widths, lower-value metadata is hidden to protect title space. The
+  quick-win bolt retains its reserved right-edge cell.
 - `Badge.Since` adds a compact age ("WAIT 4m"). `Badge.Style` is for built-ins
   with a house style; other providers use `Tone`.
 
