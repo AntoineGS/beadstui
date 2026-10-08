@@ -123,9 +123,9 @@ func TestFilterKeySameForRecipeStartupAndApplied(t *testing.T) {
 	// so a later refresh must not jump the cursor.
 	r := &recipe.Recipe{Name: "triage"}
 	m := NewModel(mixedIssues(), r, "", nil, nil)
-	startup := m.filterKey()
+	startup := m.cursorKey()
 	m.filter.currentFilter = "recipe:" + r.Name
-	if got := m.filterKey(); got != startup {
+	if got := m.cursorKey(); got != startup {
 		t.Fatalf("filterKey changed from %q to %q for the same recipe", startup, got)
 	}
 }

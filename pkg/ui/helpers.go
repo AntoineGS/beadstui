@@ -109,6 +109,37 @@ func epicProgress(epicID string, allIssues []model.Issue) (done, total int) {
 	return
 }
 
+type epicProgressCount struct{ done, total int }
+
+// epicProgressIndex is epicProgress for every parent in one pass.
+func epicProgressIndex(allIssues []model.Issue) map[string]epicProgressCount {
+	out := make(map[string]epicProgressCount)
+	for i := range allIssues {
+		deps := allIssues[i].Dependencies
+		for j, dep := range deps {
+			if dep == nil || dep.Type != model.DepParentChild || parentSeen(deps[:j], dep.DependsOnID) {
+				continue
+			}
+			c := out[dep.DependsOnID]
+			c.total++
+			if allIssues[i].Status.IsClosed() {
+				c.done++
+			}
+			out[dep.DependsOnID] = c
+		}
+	}
+	return out
+}
+
+func parentSeen(deps []*model.Dependency, parentID string) bool {
+	for _, d := range deps {
+		if d != nil && d.Type == model.DepParentChild && d.DependsOnID == parentID {
+			return true
+		}
+	}
+	return false
+}
+
 // epicChildrenSorted returns the parent's children in natural-numeric order
 // (.0 → .13, with .9 before .10), so the detail-pane Epic Progress block
 // reads top-to-bottom in suffix order rather than the Dolt load order

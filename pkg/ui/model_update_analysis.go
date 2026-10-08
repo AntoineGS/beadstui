@@ -423,14 +423,14 @@ func (m Model) handlePhase2Ready(msg Phase2ReadyMsg) (Model, tea.Cmd) {
 // (bt-gcuv). GenerateRecommendations normalizes PageRank/Betweenness/etc.
 // against whatever issue set it's given, so a globally-built Analyzer would
 // surface "high impact" arrows for issues outside the active project
-// filter - building a fresh Analyzer over filteredIssuesForActiveView()
-// scopes the recommendations to what the user can actually see.
+// filter - building a fresh Analyzer over the visible set scopes the
+// recommendations to what the user can actually see.
 //
 // Callers must also refresh the list delegate (done here) since
 // IssueDelegate.PriorityHints is a snapshot taken at SetDelegate time, not
 // a live reference to m.ac.priorityHints.
 func (m *Model) recomputePriorityHints() {
-	issues := m.filteredIssuesForActiveView()
+	issues := m.visibleIssues()
 	analyzer := analysis.NewAnalyzer(issues)
 	recommendations := analyzer.GenerateRecommendations()
 	hints := make(map[string]*analysis.PriorityRecommendation, len(recommendations))

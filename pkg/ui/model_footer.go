@@ -457,10 +457,6 @@ func (m *Model) populateLens(fd *FooterData) {
 		fd.SearchQuery = cf[len("bql:"):]
 	case strings.HasPrefix(cf, "recipe:"):
 		fd.RecipeName = cf[len("recipe:"):]
-	case strings.HasPrefix(cf, "label:"):
-		// Legacy label-in-filter: the label shows via LabelFilterText already,
-		// and membership is otherwise unfiltered by status.
-		fd.StatusFilter = "all"
 	default:
 		fd.StatusFilter = cf
 	}

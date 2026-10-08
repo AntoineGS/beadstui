@@ -711,7 +711,14 @@ type FilterState struct {
 	recipeLoader  *recipe.Loader
 	bqlEngine     *bql.MemoryExecutor
 	activeBQLExpr *bql.Query // Parsed BQL expression (nil = no BQL filter active)
-	appliedKey    string     // filterKey of the list's current contents (bt-qc3)
+	appliedKey    string     // cursorKey of the list's current contents (bt-qc3)
+
+	// The visible set (bt-imh): every display and count reads these. Set by
+	// refreshVisible and reordered to list order by applyFilter.
+	visible    []model.Issue
+	visibleIDs map[string]struct{}
+	visibleKey string // FilterSpec.Key of visible
+	scopeCount int    // issues in project scope, ignoring primary and labels
 }
 
 // AnalysisCache holds derived data computed from graph analysis. Not filter state -
@@ -1625,10 +1632,8 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 		// Write-routing table (bt-scc35)
 		routeTable: routeTable,
 	}
-	if startFilter != "all" {
-		m.applyFilter()
-	}
-	m.filter.appliedKey = m.filterKey()
+	m.applyFilter()
+	m.filter.appliedKey = m.cursorKey()
 	m.refreshThemeConsumers()
 	return m
 }

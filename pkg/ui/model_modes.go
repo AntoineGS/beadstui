@@ -197,6 +197,7 @@ func (m Model) showRepoColumn() bool {
 func (m *Model) SetActiveRepos(repos map[string]bool) {
 	m.activeRepos = repos
 	m.updateListDelegate()
+	m.applyFilter()
 }
 
 // SetPluginHost attaches the plugin host and registers its badge, section

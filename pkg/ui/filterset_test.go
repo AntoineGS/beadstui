@@ -186,3 +186,121 @@ func TestFilterSpecKey(t *testing.T) {
 		t.Fatal("Without(DimWisps) must erase the wisp setting from the key")
 	}
 }
+
+func TestRecipeComposesWithLabelFilterInList(t *testing.T) {
+	m := NewModel(filterMatrixFixture(), nil, "", nil, nil)
+	r := &recipe.Recipe{Name: "p01", Filters: recipe.FilterConfig{Priority: []int{0, 1}}}
+	m.filter.labelFilter = "tests"
+	m.setActiveRecipe(r)
+	m.applyRecipe(r)
+	got := idsOf(m.FilteredIssues())
+	if len(got) != 2 || got[0] != "proja-1" || got[1] != "projb-1" {
+		t.Fatalf("recipe+label list = %v, want [proja-1 projb-1]", got)
+	}
+	if b := m.board.TotalCount(); b != 2 {
+		t.Fatalf("board total = %d, want 2 (list and board must agree)", b)
+	}
+}
+
+func TestBQLHidesWispsInList(t *testing.T) {
+	m := NewModel(filterMatrixFixture(), nil, "", nil, nil)
+	q := mustBQL(t, "status = open")
+	m.applyBQL(q, "status = open")
+	for _, iss := range m.FilteredIssues() {
+		if iss.ID == "proja-4" {
+			t.Fatal("BQL result included a hidden wisp")
+		}
+	}
+}
+
+func TestVisibleSetMatchesList(t *testing.T) {
+	m := NewModel(filterMatrixFixture(), nil, "", nil, nil)
+	m.SetFilter("open")
+	list := idsOf(m.FilteredIssues())
+	vis := idsOf(m.filter.visible)
+	if len(list) != len(vis) {
+		t.Fatalf("list %v != visible %v", list, vis)
+	}
+	for i := range list {
+		if list[i] != vis[i] {
+			t.Fatalf("list %v != visible %v", list, vis)
+		}
+	}
+	if len(m.filter.visibleIDs) != len(vis) {
+		t.Fatalf("visibleIDs has %d entries, want %d", len(m.filter.visibleIDs), len(vis))
+	}
+}
+
+func TestCanUseSnapshotRequiresMatchingCount(t *testing.T) {
+	issues := filterMatrixFixture() // 6 issues, one wisp
+	m := NewModel(issues, nil, "", nil, nil)
+	m.data.snapshot = &DataSnapshot{Issues: issues}
+	spec := FilterSpec{Status: "all"} // wisps hidden
+	if m.canUseSnapshot(spec, 5) {
+		t.Fatal("snapshot reused while hidden wisps make the visible set smaller")
+	}
+	if !m.canUseSnapshot(spec, 6) {
+		t.Fatal("snapshot not reused for an unfiltered, full-size visible set")
+	}
+	if m.canUseSnapshot(FilterSpec{Status: "open"}, 6) {
+		t.Fatal("snapshot reused under a status filter")
+	}
+}
+
+func TestWispToggleKeepsCursor(t *testing.T) {
+	m := newSizedModel(t, filterMatrixFixture(), 140, 40)
+	m.list.Select(2)
+	m.toggleWisps()
+	if got := m.list.Index(); got != 2 {
+		t.Fatalf("cursor after wisp toggle = %d, want 2", got)
+	}
+}
+
+func TestEpicProgressIndexMatchesEpicProgress(t *testing.T) {
+	issues := epicProgressFixture()
+	idx := epicProgressIndex(issues)
+	for _, iss := range issues {
+		if iss.IssueType != model.TypeEpic {
+			continue
+		}
+		done, total := epicProgress(iss.ID, issues)
+		if got := idx[iss.ID]; got.done != done || got.total != total {
+			t.Errorf("%s: index %+v, epicProgress (%d,%d)", iss.ID, got, done, total)
+		}
+	}
+}
+
+// A tree rebuilt from the visible set (not the snapshot) keeps its selection
+// on refresh, like BuildFromSnapshot does (bt-imh).
+func TestTreeRefreshUnderFilterKeepsSelection(t *testing.T) {
+	issues := []model.Issue{
+		{ID: "parent", Title: "Parent", Status: model.StatusOpen, IssueType: model.TypeTask},
+		{ID: "child", Title: "Child", Status: model.StatusOpen, IssueType: model.TypeTask,
+			Dependencies: []*model.Dependency{{DependsOnID: "parent", Type: model.DepParentChild}}},
+		{ID: "done", Title: "Done", Status: model.StatusClosed, IssueType: model.TypeTask},
+	}
+	m := newSizedModel(t, issues, 140, 40)
+	m.tree.SetBeadsDir(t.TempDir())
+	m.mode = ViewTree
+	m.SetFilter("open")
+	if !m.tree.SelectByID("child") {
+		t.Fatal("precondition: child not in tree")
+	}
+	m.applyFilter() // a refresh under the same filter
+	if sel := m.tree.SelectedIssue(); sel == nil || sel.ID != "child" {
+		t.Fatalf("tree selection after refresh = %v, want child", sel)
+	}
+}
+
+// cmd/bt sets the startup project scope through SetActiveRepos and never
+// calls applyFilter, so the setter itself must refresh the visible set.
+func TestSetActiveReposAppliesScope(t *testing.T) {
+	m := NewModel(filterMatrixFixture(), nil, "", nil, nil)
+	m.SetFilter("all")
+	m.EnableWorkspaceMode(WorkspaceInfo{Enabled: true, RepoCount: 2, RepoPrefixes: []string{"proja", "projb"}})
+	m.SetActiveRepos(map[string]bool{"proja": true})
+	got := idsOf(m.FilteredIssues())
+	if len(got) != 3 || got[0] != "proja-1" || got[2] != "proja-3" {
+		t.Fatalf("list after SetActiveRepos = %v, want proja-1..3", got)
+	}
+}

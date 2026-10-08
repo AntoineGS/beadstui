@@ -33,6 +33,11 @@ func assertRepoColumn(t *testing.T, m Model, want bool) {
 	if header := ansi.Strip(m.splitViewHeader()); strings.Contains(header, "REPO") != want {
 		t.Errorf("repo header visibility = %t, want %t: %q", strings.Contains(header, "REPO"), want, header)
 	}
+	// A scope with no enabled project lists nothing, so only the header can
+	// show the column then.
+	if len(m.list.Items()) == 0 {
+		return
+	}
 	if rows := ansi.Strip(m.list.View()); strings.Contains(rows, "[SE]") != want {
 		t.Errorf("repo badge visibility = %t, want %t: %q", strings.Contains(rows, "[SE]"), want, rows)
 	}
@@ -322,7 +327,7 @@ func TestRecomputePriorityHintsRespectsActiveRepos(t *testing.T) {
 	}
 
 	// bt-gcuv: filtering to proja must scope recommendations to proja only.
-	m.activeRepos = map[string]bool{"proja": true}
+	m.SetActiveRepos(map[string]bool{"proja": true})
 	m.recomputePriorityHints()
 
 	if _, ok := m.ac.priorityHints["projb-blocker"]; ok {
@@ -417,7 +422,7 @@ func TestPriorityHintsToggleUsesActiveRepoFilter(t *testing.T) {
 		RepoCount:    2,
 		RepoPrefixes: []string{"proja-", "projb-"},
 	})
-	m.activeRepos = map[string]bool{"proja": true}
+	m.SetActiveRepos(map[string]bool{"proja": true})
 
 	updated2, _ := m.Update(tea.KeyPressMsg{Code: 'p', Text: "p"})
 	m = updated2.(Model)
@@ -494,7 +499,7 @@ func TestTreeViewRespectsActiveRepos(t *testing.T) {
 
 	// Enter tree mode so the helper actually rebuilds.
 	m.mode = ViewTree
-	m.activeRepos = map[string]bool{"api": true}
+	m.SetActiveRepos(map[string]bool{"api": true})
 	m.rebuildTreeForCurrentFilter()
 
 	if got := m.tree.NodeCount(); got != 2 {
@@ -584,7 +589,7 @@ func buildLabelFlowFixture(prefix string) []model.Issue {
 
 // TestActionableViewRespectsActiveRepos is the repro for surface 1
 // (model_update_input.go's Actionable-view toggle): the execution plan must
-// be built from filteredIssuesForActiveView(), not the full cross-project
+// be built from the visible set (bt-imh), not the full cross-project
 // m.data.issues, so a projb-only item can never appear once activeRepos
 // narrows the view to proja.
 func TestActionableViewRespectsActiveRepos(t *testing.T) {
@@ -600,7 +605,7 @@ func TestActionableViewRespectsActiveRepos(t *testing.T) {
 		RepoCount:    2,
 		RepoPrefixes: []string{"proja-", "projb-"},
 	})
-	m.activeRepos = map[string]bool{"proja": true}
+	m.SetActiveRepos(map[string]bool{"proja": true})
 
 	updated2, _ := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	m = updated2.(Model)

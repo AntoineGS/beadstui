@@ -1162,10 +1162,9 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				m.focused = focusList
 			} else {
 				m.mode = ViewActionable
-				// Build execution plan from the filtered/visible issue set,
-				// not the full cross-project corpus (bt-dcby.3, mirrors
-				// bt-gcuv's recomputePriorityHints pattern).
-				analyzer := analysis.NewAnalyzer(m.filteredIssuesForActiveView())
+				// Build execution plan from the visible set (bt-imh), not
+				// the full cross-project corpus.
+				analyzer := analysis.NewAnalyzer(m.visibleIssues())
 				plan := analyzer.GetExecutionPlan()
 				m.actionableView = NewActionableModel(plan, m.theme)
 				m.actionableView.SetSize(m.width, m.height-2)
@@ -1457,11 +1456,6 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				// Currently showing all - filter to home project
 				m.SetActiveRepos(map[string]bool{m.currentProjectDB: true})
 				m.setStatus(fmt.Sprintf("Showing project: %s", m.currentProjectDB))
-			}
-			if m.filter.activeRecipe != nil {
-				m.applyRecipe(m.filter.activeRecipe)
-			} else {
-				m.applyFilter()
 			}
 			return m, nil
 
