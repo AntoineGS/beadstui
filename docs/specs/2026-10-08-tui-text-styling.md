@@ -2,8 +2,8 @@
 
 Date: 2026-10-08
 
-Status: spec/plan approved; implementation in progress, final inventory gaps
-awaiting owner regression fixes and whole-branch review.
+Status: spec/plan approved; migrated-surface inventory complete after owner
+regression fixes, awaiting final whole-branch review.
 
 Issue tracking is explicitly waived for this work because the configured beads
 database is unavailable.
@@ -273,17 +273,19 @@ automated tests, not a replacement for them.
 
 The final recipe audit covers production `pkg/ui` **and** `pkg/ui/slots`.
 It distinguishes text roles from layout-only styles and domain indicators;
-remaining `NewStyle` calls are not automatically defects. Inventory closure is
-pending the ordinary-text gaps below, which must return to their owning tasks.
+remaining `NewStyle` calls are not automatically defects. The three ordinary
+text gaps discovered at this gate were returned to their owners and fixed with
+reviewed regressions; the repeated inventory found no remaining ordinary-role
+gap. This inventory result does not substitute for whole-branch review.
 
 | Migrated surface | Shared roles used |
 |---|---|
 | `ActionableModel.layout`, shared `RenderPanel`/`RenderPopup`/`RenderPopupMenu` | Title, Heading, Body, Metadata, Badge, Selected, Callout |
 | `issueDelegate.Render`, issue/detail panels and non-markdown detail fields | Body, Metadata, Heading, Selected |
-| Board cards, graph node labels/metrics, issue tree, epic tree/focus card | Title, Heading, Body, Metadata, Selected |
+| Board cards, graph node labels/metrics, issue tree, epic tree/focus card, `buildEpicProgressANSI` detail embed | Title, Heading, Body, Metadata, Selected |
 | History lists/details, insights, alerts/notifications, label dashboard, velocity/flow, memories | Title, Heading, Body, Metadata, Badge, Selected |
 | Footer lens/hints, sidebar/help, settings, field/claim/agent/Cass/update modals, input/textarea constructors | Body, Metadata, Heading, Badge, Selected |
-| Tutorial paragraphs/sections/tables and general informational highlights | Body, Heading, Metadata, Callout |
+| Tutorial paragraphs/sections/tables, empty-state prose, focused/current-page TOC rows and general informational highlights | Body, Heading, Metadata, Selected, Callout |
 | `slots.Registry` providers, `badgeStyle`, `renderSlotSection` | Providers contribute data; badge attributes use Badge, section headings/content use refreshed Glamour markdown |
 
 Intentional semantic exceptions (including attribute overrides where the
@@ -295,30 +297,30 @@ attribute itself conveys status, not ordinary text hierarchy):
 | `GetHeatmapColor`, `GetHeatGradientColor`, `GetHeatGradientColorBg`, `RenderMiniBar`, `RenderRankBadge`, `braillePlainBar`, `brailleCompositionBar` | Quantitative charts, rank percentile and completion/status composition |
 | `GetRepoColor`, `RenderRepoBadge`, `badgeStyle` | Repository identity and provider domain tones; explicit provider styles are domain-owned |
 | `GraphModel.renderNodeBox`, `renderEgoNode`, `renderConnectorDown`; `TreeModel.buildTreePrefix`, `buildEpicTreePrefix` | Node frames, edges, branch glyphs and geometry; issue status/type glyphs remain semantic |
-| `BoardModel.renderCard`, `renderExpandedCard`, `getAgeColor`; `EpicsTreeModel.renderChildRow`, `renderEpicRow`; `Model.renderEpicCard` | Priority/type/age/dependency/risk indicators and faint closed work; ordinary IDs/titles use roles |
+| `BoardModel.renderCard`, `renderExpandedCard`, `getAgeColor`; `EpicsTreeModel.renderChildRow`, `renderEpicRow`; `Model.renderEpicCard`, `buildEpicProgressANSI` | Priority/type/age/dependency/risk indicators and faint closed work; ordinary IDs/titles use roles |
 | `HistoryModel.renderTimelinePanel`, `renderCommitDetail`, `renderDetailPanel`, `renderEventsSection`, `renderFileTreeLine` | Timeline edges, event types, correlation confidence, additions/deletions and active-filter state |
 | `InsightsModel.renderHeatmapCell`, `renderHeatmapLegend`, `renderMiniBar`, `renderPriorityItem`, `renderDrillDownIssue` | Heat intensity, chart bars, status chips and unblock meaning |
 | `FlowMatrixModel.renderLabelRow`, `renderDetailPanel`, `renderScoreBar`, `miniBar`, `renderDrilldown`; `VelocityComparisonModel.View`; `LabelDashboardModel.renderHealthCell`, `renderBlockedCell` | Bottleneck/health/trend/status scales and spark/bar geometry |
 | `kindRowStyle`, `Model.renderAlertsTab`, `renderNotificationsTab`, `MemoriesModel.renderNotes`, `renderEmptyState` | Event-kind/severity and unavailable-source warning colors, retaining roles for ordinary text |
 | `FooterData.Render`, `renderWorkerBadge`, `renderAlertsBadge`, `renderStatusBar`; `UpdateModal.View`, `BQLQueryModal.View`, `FieldInputModal.View`, `Model.renderClaimConfirm` | Lifecycle, warning/error, copy/success and readiness indicators (ordinary lens/hints remain role-styled) |
-| `StatusFlow.Render`, `Code.Render`, `ProgressIndicator.Render`, `Warning.Render`, `TutorialModel.renderHeader` | Status diagram, code-example region, progress chart and warning glyphs |
+| `StatusFlow.Render`, `Code.Render`, `ProgressIndicator.Render`, `Warning.Render`, `TutorialModel.renderHeader`, `renderTOC` | Status diagram, code-example region, progress chart and warning glyphs; TOC viewed-marker/focused-frame indicators (ordinary selected rows use Selected) |
 | `OverlayCenterDimBackdrop`, `spliceDebugDims`, `RenderDivider`, `RenderSubtleDivider` | Backdrop dimming, pre-existing debug dimension chip and non-text rules |
 | `Model.updateViewportContent`, `InsightsModel.renderMarkdownExplanation`, `renderSlotSection`, board/history markdown renderers | Glamour syntax/markdown stays its own language and receives refreshed theme |
 | `Theme.rebuildTextStyles`, panel/viewport/card border and padding wrappers, disabled built-in list chrome in `NewModel` | Central resolution or layout-only plumbing, not local ordinary text recipes |
 
-Open ordinary-role gaps found during the audit (not silently reclassified as
-semantic exceptions):
+Completed ordinary-role findings from the audit (not reclassified as semantic
+exceptions):
 
-| File / function | Gap and ownership |
+| File / function | Reviewed migration completion |
 |---|---|
-| `pkg/ui/epic_progress.go` / `buildEpicProgressANSI` | Summary and IDs use local colors; active child title is raw; closed ID/title only Faint. Preserve progress/status semantics but inherit Metadata/Body/Selected attributes. Return to Task 5 (detail embed) / Task 6. |
-| `pkg/ui/tutorial.go` / `TutorialModel.renderTOC` | Focused TOC item's ordinary title uses a local bold/color/background recipe instead of Selected. Preserve focus distinction without overriding configured false attributes. Return to Task 8. |
-| `pkg/ui/tutorial.go` / `TutorialModel.renderEmptyState` | Empty-state ordinary sentence has only border/layout styling, not Body/Metadata. Return to Task 8. |
+| `pkg/ui/epic_progress.go` / `buildEpicProgressANSI` | Task 6, `9f2a615c`: summary/IDs use Metadata, titles/gaps use Body, selected ordinary spans use Selected. Closed roles retain semantic Faint and pills stay independently styled; cell-level regressions verify attributes and selection coherence. |
+| `pkg/ui/tutorial.go` / `TutorialModel.renderTOC` | Task 8, `c47c9121`: focused/current-page ordinary rows use Selected, including indentation/cursor/title. Arrow/triangle and focused frame retain focus distinction; viewed markers retain their semantic color. Cell-level regressions verify false attributes and role backgrounds. |
+| `pkg/ui/tutorial.go` / `TutorialModel.renderEmptyState` | Task 8, `c47c9121`: ordinary empty-state sentence uses Body inside the unchanged geometry wrapper; cell-level regressions cover styled and explicit all-false variants. |
 
 `Theme.rebuildTextStyles` also still initializes unused legacy `MutedText`,
 `MutedTextItalic`, `InfoText`, `InfoBold`, `SecondaryText`, and `PrimaryBold`
 fields. These have no production consumers, so they are not a live render gap;
-their removal belongs to the earlier theme task, not this documentation gate.
+recorded as a final-review minor, not removed in this documentation gate.
 
 The gated render harness adds isolated many-track Actionable fixtures for
 dracula, paper (light), and greyscale (light), with metadata italics and explicit
