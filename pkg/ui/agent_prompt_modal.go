@@ -97,8 +97,8 @@ func (m AgentPromptModal) View() string {
 	previewRows := min(8, l.BodyHeight-len(intro)-4)
 	preview := strings.Split(ansi.Wrap(getBlurbPreview(), max(1, l.BodyWidth-4), ""), "\n")
 	preview = preview[:min(len(preview), max(1, previewRows-2))]
-	box := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(m.theme.Border).Padding(0, 1).Width(max(1, l.BodyWidth-2))
-	lines := append(intro, lipgloss.NewStyle().Foreground(m.theme.Subtext).Italic(true).Render("Preview of content to add:"), box.Render(strings.Join(preview, "\n")))
+	box := m.theme.Text.Body.Border(lipgloss.NormalBorder()).BorderForeground(m.theme.Border).Padding(0, 1).Width(max(1, l.BodyWidth-2))
+	lines := append(intro, m.theme.Text.Metadata.Render("Preview of content to add:"), box.Render(strings.Join(preview, "\n")))
 	entries := []PopupMenuEntry{{Label: "Yes, add it", Selected: m.selection == 0}, {Label: "No thanks", Selected: m.selection == 1}, {Label: "Don't ask again", Selected: m.selection == 2}}
 	lines = append(lines, RenderPopupMenu(entries, MeasurePopupMenu(entries, PopupMenuOpts{}), m.theme, l.BodyWidth)...)
 	opts.MinBodyRows = l.BodyHeight

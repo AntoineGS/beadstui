@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -101,10 +104,19 @@ func TestSettingsCyclesThemeLive(t *testing.T) {
 // would silently keep whichever palette the user happened to stop on.
 func TestSettingsCancelReverts(t *testing.T) {
 	restoreThemeGlobals(t)
+	path := withThemeConfigHome(t)
+	t.Setenv("BT_THEME", "")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("theme: dracula\ntext:\n  body:\n    foreground: danger\n    underline: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	m := settingsTestModel(t)
 
 	m.settingsModal.Reset()
 	original := ColorPrimary
+	originalTheme := m.theme
 
 	it := m.settingsModal.Selected()
 	if it == nil {
@@ -125,6 +137,10 @@ func TestSettingsCancelReverts(t *testing.T) {
 
 	if ColorPrimary != original {
 		t.Error("esc did not restore the palette that was active when the screen opened")
+	}
+	assertRetainedThemes(t, &m)
+	if !reflect.DeepEqual(m.theme.Text, originalTheme.Text) || m.theme.Bg != originalTheme.Bg || m.theme.TextColor != originalTheme.TextColor {
+		t.Error("esc did not restore role styles and palette fields")
 	}
 	if m.activeModal != ModalNone {
 		t.Errorf("esc left modal %v open", m.activeModal)

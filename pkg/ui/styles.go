@@ -3,11 +3,40 @@ package ui
 import (
 	"fmt"
 	"image/color"
+	"math"
 	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
 )
+
+// ActiveTextStyles is refreshed on the event loop with the Color* globals.
+var ActiveTextStyles TextStyles
+
+// textContrastRatio computes WCAG contrast for opaque RGB palette colors.
+func textContrastRatio(foreground, background color.Color) float64 {
+	luminance := func(c color.Color) float64 {
+		r, g, b, _ := c.RGBA()
+		channel := func(v uint32) float64 {
+			x := float64(v) / 65535
+			if x <= 0.04045 {
+				return x / 12.92
+			}
+			return math.Pow((x+0.055)/1.055, 2.4)
+		}
+		return .2126*channel(r) + .7152*channel(g) + .0722*channel(b)
+	}
+	a, b := luminance(foreground), luminance(background)
+	return (math.Max(a, b) + .05) / (math.Min(a, b) + .05)
+}
+
+func autoTextForeground(background color.Color) color.Color {
+	black, white := lipgloss.Color("#000000"), lipgloss.Color("#ffffff")
+	if textContrastRatio(black, background) >= textContrastRatio(white, background) {
+		return black
+	}
+	return white
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // DESIGN TOKENS - Consistent spacing, colors, and visual language
@@ -196,6 +225,7 @@ var (
 // isDarkBackground state. Called at init and when tea.BackgroundColorMsg
 // detects a mode change.
 func resolveColors() {
+	ActiveTextStyles = DefaultTheme().Text
 	ColorBg = resolveColor("#ffffff", "#1d1f21")
 	ColorBgDark = resolveColor("#f0f0f0", "#191b1d")
 	ColorBgSubtle = resolveColor("#efefef", "#282a2e")

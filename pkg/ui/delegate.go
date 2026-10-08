@@ -74,7 +74,7 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 	if layout.repoWidth > 0 {
 		left = padIssueListCell(repo, layout.repoWidth) + " "
 	}
-	left += padIssueListCell(chip, layout.chipWidth) + " " + t.SecondaryText.Render(padIssueListCell(id, layout.idWidth)) + " "
+	left += padIssueListCell(chip, layout.chipWidth) + " " + t.Text.Metadata.Render(padIssueListCell(id, layout.idWidth)) + " "
 	cells := d.issueListRightCells(i, width, layout.slotBudget, now)
 	var rightParts []string
 	for column, cellWidth := range layout.rightWidths {
@@ -92,9 +92,10 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 	right := strings.Join(rightParts, " ")
 	titleWidth := max(0, width-lipgloss.Width(left)-layout.rightWidth())
 	title := padIssueListCell(truncateRunesHelper(i.Issue.Title, titleWidth, "…"), titleWidth)
-	titleStyle := lipgloss.NewStyle().Foreground(ColorTextSecondary)
+	titleStyle := t.Text.Body
 	if i.Issue.Ephemeral != nil && *i.Issue.Ephemeral {
-		titleStyle = titleStyle.Foreground(ColorMuted).Italic(true)
+		// Wisp dimming is semantic; keep configured attributes (no forced italic).
+		titleStyle = titleStyle.Foreground(t.Muted)
 	}
 	row := left + titleStyle.Render(title)
 	if right != "" {
@@ -116,7 +117,7 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 	// and badge backgrounds cannot punch holes in the highlight.
 	rowStyle := lipgloss.NewStyle().Width(width).MaxWidth(width)
 	if isSelected {
-		row = rowStyle.Background(t.Highlight).Foreground(ColorText).Render(ansi.Strip(row))
+		row = t.Text.Selected.Width(width).MaxWidth(width).Render(ansi.Strip(row))
 	} else {
 		row = rowStyle.Render(row)
 	}
@@ -286,7 +287,7 @@ func (d IssueDelegate) issueListRightCells(i IssueItem, width, slotBudget int, n
 			} else if i.EpicDone > 0 {
 				fg = ColorInfo
 			}
-			cells[issueColEpic] = lipgloss.NewStyle().Foreground(fg).Render(fmt.Sprintf("%d/%d", i.EpicDone, i.EpicTotal))
+			cells[issueColEpic] = t.Text.Metadata.Foreground(fg).Render(fmt.Sprintf("%d/%d", i.EpicDone, i.EpicTotal))
 		}
 	}
 	cells[issueColDiff] = i.DiffStatus.Badge()
@@ -295,29 +296,26 @@ func (d IssueDelegate) issueListRightCells(i IssueItem, width, slotBudget int, n
 		if spinner == "" {
 			spinner = claimSpinnerFrame(0)
 		}
-		cells[issueColPending] = lipgloss.NewStyle().Foreground(t.Warning).Render(spinner)
+		cells[issueColPending] = t.Text.Metadata.Foreground(t.Warning).Render(spinner)
 	}
 	if width > 60 {
-		ageStyle := t.MutedText
-		if !i.Issue.UpdatedAt.Equal(i.Issue.CreatedAt) {
-			ageStyle = t.MutedTextItalic
-		}
+		ageStyle := t.Text.Metadata
 		cells[issueColAge] = ageStyle.Render(FormatTimeRel(i.Issue.UpdatedAt))
 		if len(i.Issue.Comments) > 0 {
-			cells[issueColComments] = t.InfoText.Render(fmt.Sprintf("%s%d", activeGlyphs.Comment, len(i.Issue.Comments)))
+			cells[issueColComments] = t.Text.Metadata.Render(fmt.Sprintf("%s%d", activeGlyphs.Comment, len(i.Issue.Comments)))
 		}
 	}
 	if width > 100 && i.Issue.Assignee != "" {
-		cells[issueColAssignee] = t.SecondaryText.Render("@" + truncateRunesHelper(i.Issue.Assignee, 12, "…"))
+		cells[issueColAssignee] = t.Text.Metadata.Render("@" + truncateRunesHelper(i.Issue.Assignee, 12, "…"))
 	}
 	if width > 120 {
 		cells[issueColSpark] = lipgloss.NewStyle().Foreground(GetHeatmapColor(i.GraphScore, t)).Render(RenderSparkline(i.GraphScore, 5))
 		if i.Issue.Author != "" && i.Issue.Author != i.Issue.Assignee {
-			cells[issueColAuthor] = t.MutedText.Render(activeGlyphs.Pencil + truncateRunesHelper(i.Issue.Author, 10, "…"))
+			cells[issueColAuthor] = t.Text.Metadata.Render(activeGlyphs.Pencil + truncateRunesHelper(i.Issue.Author, 10, "…"))
 		}
 	}
 	if width > 140 && len(i.Issue.Labels) > 0 {
-		cells[issueColLabels] = lipgloss.NewStyle().Foreground(ColorPrimary).Background(ColorBgSubtle).Padding(0, 1).
+		cells[issueColLabels] = t.Text.Badge.Padding(0, 1).
 			Render(truncateRunesHelper(strings.Join(i.Issue.Labels, ","), 20, "…"))
 	}
 	return cells

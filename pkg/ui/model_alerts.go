@@ -585,14 +585,14 @@ func (m Model) renderAlertsTab() string {
 	}
 
 	if len(visibleAlerts) == 0 {
-		sb.WriteString(lipgloss.NewStyle().Foreground(ColorSuccess).Render(" No active alerts"))
+		sb.WriteString(t.Text.Body.Foreground(t.Success).Render(" No active alerts"))
 		sb.WriteString("\n")
 	} else {
 		// Summary line rendered from alertSummarySegments so the click
 		// handler's hit-test geometry always matches what is drawn. Counts
 		// are severity-unfiltered (chips stay clickable while filtered);
-		// the active severity chip is underlined.
-		sepStyle := lipgloss.NewStyle().Foreground(t.Muted)
+		// the active severity chip uses Selected attributes/background.
+		sepStyle := t.Text.Metadata
 		sep := sepStyle.Render(" • ")
 		sb.WriteString(" ")
 		for i, seg := range m.alertSummarySegments() {
@@ -600,16 +600,17 @@ func (m Model) renderAlertsTab() string {
 				sb.WriteString(sep)
 			}
 			var st lipgloss.Style
+			// Unfilled severity chips retain their domain foregrounds.
 			switch seg.value {
 			case "critical":
-				st = lipgloss.NewStyle().Foreground(t.Blocked).Bold(true)
+				st = t.Text.Badge.Foreground(t.Blocked).UnsetBackground()
 			case "warning":
-				st = lipgloss.NewStyle().Foreground(t.Feature)
+				st = t.Text.Badge.Foreground(t.Feature).UnsetBackground()
 			default: // info, total
-				st = lipgloss.NewStyle().Foreground(t.Secondary)
+				st = t.Text.Badge.Foreground(t.Secondary).UnsetBackground()
 			}
 			if seg.value != "" && seg.value == m.alertFilterSeverity {
-				st = st.Bold(true).Underline(true)
+				st = t.Text.Selected.Foreground(st.GetForeground())
 			}
 			sb.WriteString(st.Render(seg.text))
 		}
@@ -651,8 +652,8 @@ func (m Model) renderAlertsTab() string {
 			aboveHint = fmt.Sprintf(" ▴ %d more above", start)
 		}
 		if aboveHint != "" || filterLabel != "" {
-			leftPart := lipgloss.NewStyle().Foreground(t.Muted).Render(aboveHint)
-			rightPart := lipgloss.NewStyle().Foreground(t.Feature).Italic(true).Render(filterLabel)
+			leftPart := t.Text.Metadata.Render(aboveHint)
+			rightPart := t.Text.Metadata.Render(filterLabel)
 			leftW := lipgloss.Width(leftPart)
 			rightW := lipgloss.Width(rightPart)
 			gap := innerWidth - leftW - rightW
@@ -673,20 +674,20 @@ func (m Model) renderAlertsTab() string {
 			var severityIcon string
 			switch a.Severity {
 			case drift.SeverityCritical:
-				severityStyle = lipgloss.NewStyle().Foreground(t.Blocked).Bold(true)
+				severityStyle = t.Text.Body.Foreground(t.Blocked)
 				severityIcon = "▲"
 			case drift.SeverityWarning:
-				severityStyle = lipgloss.NewStyle().Foreground(t.Feature)
+				severityStyle = t.Text.Body.Foreground(t.Feature)
 				severityIcon = "△"
 			default:
-				severityStyle = lipgloss.NewStyle().Foreground(t.Secondary)
+				severityStyle = t.Text.Body.Foreground(t.Secondary)
 				severityIcon = "○"
 			}
 
 			// Cursor indicator (neutral color so it stands out from severity)
 			cursor := "  "
 			if selected {
-				cursor = lipgloss.NewStyle().Foreground(t.Muted).Bold(true).Render("▸ ")
+				cursor = t.Text.Selected.Render("▸ ")
 			}
 
 			// Alert line (sanitize newlines to prevent panel expansion)
@@ -696,10 +697,17 @@ func (m Model) renderAlertsTab() string {
 			if lipgloss.Width(cursor)+lipgloss.Width(line) > innerWidth {
 				line = truncateRunesHelper(line, innerWidth-lipgloss.Width(cursor), "…")
 			}
+			// Severity keeps its foreground; ordinary message text uses the row role.
+			rowStyle := t.Text.Body
 			if selected {
-				severityStyle = severityStyle.Bold(true)
+				rowStyle = t.Text.Selected
+				severityStyle = rowStyle.Foreground(severityStyle.GetForeground())
 			}
-			rendered := cursor + severityStyle.Render(line)
+			semanticPrefix := severityIcon + " " + typeTag
+			prefixLen := len([]rune(semanticPrefix))
+			lineRunes := []rune(line)
+			prefixLen = min(prefixLen, len(lineRunes))
+			rendered := cursor + severityStyle.Render(string(lineRunes[:prefixLen])) + rowStyle.Render(string(lineRunes[prefixLen:]))
 
 			// Center the alert line
 			lineWidth := lipgloss.Width(rendered)
@@ -719,7 +727,7 @@ func (m Model) renderAlertsTab() string {
 			// description more clutter than help. Type explanations now live
 			// behind the ? help modal (bt-i20z).
 			if selected {
-				detailStyle := lipgloss.NewStyle().Foreground(t.Muted).Italic(true)
+				detailStyle := t.Text.Selected
 				detailMaxWidth := innerWidth - 8
 
 				if a.IssueID != "" {
@@ -778,8 +786,8 @@ func (m Model) renderAlertsTab() string {
 			pageLabel = fmt.Sprintf("%d/%d (%d alerts)", page, totalPages, len(visibleAlerts))
 		}
 		if belowHint != "" || pageLabel != "" {
-			leftPart := lipgloss.NewStyle().Foreground(t.Muted).Render(belowHint)
-			rightPart := lipgloss.NewStyle().Foreground(t.Secondary).Italic(true).Render(pageLabel)
+			leftPart := t.Text.Metadata.Render(belowHint)
+			rightPart := t.Text.Metadata.Render(pageLabel)
 			leftW := lipgloss.Width(leftPart)
 			rightW := lipgloss.Width(rightPart)
 			gap := innerWidth - leftW - rightW
@@ -810,19 +818,19 @@ func (m Model) renderAlertsTab() string {
 func kindRowStyle(t Theme, k events.EventKind) lipgloss.Style {
 	switch k {
 	case events.EventCreated:
-		return lipgloss.NewStyle().Foreground(t.Success)
+		return t.Text.Body.Foreground(t.Success)
 	case events.EventEdited:
-		return lipgloss.NewStyle().Foreground(t.Primary)
+		return t.Text.Body.Foreground(t.Primary)
 	case events.EventClosed:
-		return lipgloss.NewStyle().Foreground(t.Muted)
+		return t.Text.Body.Foreground(t.Muted)
 	case events.EventCommented:
-		return lipgloss.NewStyle().Foreground(t.Info)
+		return t.Text.Body.Foreground(t.Info)
 	case events.EventBulk:
-		return lipgloss.NewStyle().Foreground(t.Warning)
+		return t.Text.Body.Foreground(t.Warning)
 	case events.EventSystem:
-		return lipgloss.NewStyle().Foreground(t.Muted)
+		return t.Text.Body.Foreground(t.Muted)
 	default:
-		return lipgloss.NewStyle().Foreground(t.Base.GetForeground())
+		return t.Text.Body
 	}
 }
 
@@ -931,7 +939,7 @@ func (m Model) renderNotificationsTab() string {
 		// panel body. inner = panel inner area (Height - top/bottom borders).
 		// RenderTitledPanel pads content to inner rows, so we write vPad
 		// blanks + centered text + bottom blanks to land dead center.
-		msg := lipgloss.NewStyle().Foreground(ColorSuccess).Render("No notifications")
+		msg := t.Text.Body.Foreground(t.Success).Render("No notifications")
 		msgW := lipgloss.Width(msg)
 		hPad := (innerWidth - msgW) / 2
 		if hPad < 0 {
@@ -958,9 +966,9 @@ func (m Model) renderNotificationsTab() string {
 	// Rendered from notifSummarySegments so the click handler's hit-test
 	// geometry always matches what is drawn. Counts are kind-unfiltered
 	// (chips stay clickable while a kind filter is active); the active
-	// kind's chip is underlined. bt-0mxw: chips use the same kind→color
+	// kind's chip uses Selected. bt-0mxw: chips use the same kind→color
 	// token map as the row renderer so the eye links the header to the rows.
-	sepStyle := lipgloss.NewStyle().Foreground(t.Muted)
+	sepStyle := t.Text.Metadata
 	sep := sepStyle.Render(" • ")
 	sb.WriteString(" ")
 	for i, seg := range m.notifSummarySegments() {
@@ -969,7 +977,7 @@ func (m Model) renderNotificationsTab() string {
 		}
 		st := kindRowStyle(t, seg.kind)
 		if seg.value == m.notifFilterKind {
-			st = st.Bold(true).Underline(true)
+			st = t.Text.Selected.Foreground(st.GetForeground())
 		}
 		sb.WriteString(st.Render(seg.text))
 	}
@@ -985,7 +993,7 @@ func (m Model) renderNotificationsTab() string {
 		end = len(active)
 	}
 
-	mutedStyle := lipgloss.NewStyle().Foreground(t.Muted)
+	mutedStyle := t.Text.Metadata
 
 	// Above-indicator line: "▴ N more above" left, active kind-filter label
 	// right (matches alerts' above-hint/filter-label row).
@@ -999,7 +1007,7 @@ func (m Model) renderNotificationsTab() string {
 	}
 	if aboveHint != "" || filterLabel != "" {
 		leftPart := mutedStyle.Render(aboveHint)
-		rightPart := lipgloss.NewStyle().Foreground(t.Feature).Italic(true).Render(filterLabel)
+		rightPart := t.Text.Metadata.Render(filterLabel)
 		gap := innerWidth - lipgloss.Width(leftPart) - lipgloss.Width(rightPart)
 		if gap < 1 {
 			gap = 1
@@ -1008,8 +1016,8 @@ func (m Model) renderNotificationsTab() string {
 	}
 	sb.WriteString("\n")
 
-	cursorStyle := lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
-	summaryStyle := mutedStyle.Italic(true)
+	cursorStyle := t.Text.Selected
+	summaryStyle := t.Text.Selected
 	separatorStyle := mutedStyle
 	// bt-0mxw: per-row foreground is derived from event kind via
 	// kindRowStyle. Cursor row keeps cursorStyle so it always pops above
@@ -1080,7 +1088,7 @@ func (m Model) renderNotificationsTab() string {
 	}
 	pageLabel := fmt.Sprintf("%d/%d", m.notificationsCursor+1, len(active))
 	leftPart := mutedStyle.Render(belowHint)
-	rightPart := lipgloss.NewStyle().Foreground(t.Secondary).Italic(true).Render(pageLabel)
+	rightPart := t.Text.Metadata.Render(pageLabel)
 	leftW := lipgloss.Width(leftPart)
 	rightW := lipgloss.Width(rightPart)
 	gap := innerWidth - leftW - rightW

@@ -136,8 +136,8 @@ func (m LabelDashboardModel) View() string {
 
 	for i := start; i < end; i++ {
 		lh := m.labels[i]
-		row := m.getRowCells(lh)
 		selected := i == m.cursor
+		row := m.getRowCells(lh, selected)
 		b.WriteString(m.renderRow(row, widths, false, selected))
 		if i != end-1 {
 			b.WriteString("\n")
@@ -148,7 +148,11 @@ func (m LabelDashboardModel) View() string {
 }
 
 // getRowCells returns the fully rendered (colored) cells for a label row
-func (m LabelDashboardModel) getRowCells(lh analysis.LabelHealth) []string {
+func (m LabelDashboardModel) getRowCells(lh analysis.LabelHealth, selected bool) []string {
+	// Semantic cell foregrounds keep their meaning without resetting row selection.
+	if selected {
+		m.theme.Text.Body = m.theme.Text.Selected
+	}
 	return []string{
 		m.renderLabelCell(lh),
 		m.renderHealthCell(lh),
@@ -164,7 +168,7 @@ func (m LabelDashboardModel) computeColumnWidths(headers []string) []int {
 		widths[i] = lipgloss.Width(h)
 	}
 	for _, lh := range m.labels {
-		cells := m.getRowCells(lh)
+		cells := m.getRowCells(lh, false)
 		for i, c := range cells {
 			w := lipgloss.Width(c)
 			if w > widths[i] {
@@ -200,12 +204,12 @@ func (m LabelDashboardModel) renderRow(cells []string, widths []int, header bool
 	}
 	row := strings.Join(parts, " ")
 	if header {
-		return m.theme.Header.Render(row)
+		return m.theme.Text.Heading.Render(row)
 	}
 	if selected {
-		return m.theme.Selected.Render(row)
+		return m.theme.Text.Selected.Render(row)
 	}
-	return m.theme.Base.Render(row)
+	return m.theme.Text.Body.Render(row)
 }
 
 func (m LabelDashboardModel) renderLabelCell(lh analysis.LabelHealth) string {
@@ -231,7 +235,7 @@ func (m LabelDashboardModel) renderHealthCell(lh analysis.LabelHealth) string {
 	blankStr := strings.Repeat("░", barWidth-filled)
 	bar := filledStr + blankStr
 
-	style := m.theme.Base
+	style := m.theme.Text.Body
 	switch lh.HealthLevel {
 	case analysis.HealthLevelHealthy:
 		style = style.Foreground(m.theme.Open)
@@ -248,5 +252,5 @@ func (m LabelDashboardModel) renderBlockedCell(lh analysis.LabelHealth) string {
 	if lh.Blocked == 0 {
 		return "0"
 	}
-	return m.theme.Base.Foreground(m.theme.Blocked).Bold(true).Render(fmt.Sprintf("%d", lh.Blocked))
+	return m.theme.Text.Body.Foreground(m.theme.Blocked).Render(fmt.Sprintf("%d", lh.Blocked))
 }

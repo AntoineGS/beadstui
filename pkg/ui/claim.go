@@ -465,8 +465,8 @@ func predictClaimOutcome(iss *model.Issue) string {
 func (m Model) renderClaimConfirm() string {
 	t := m.theme
 
-	textStyle := lipgloss.NewStyle().Foreground(t.Base.GetForeground())
-	idStyle := lipgloss.NewStyle().Foreground(t.Secondary).Bold(true)
+	textStyle := t.Text.Body
+	idStyle := t.Text.Metadata
 	warnStyle := lipgloss.NewStyle().Foreground(t.Warning)
 
 	// Cap the panel to the terminal so it never overflows at scrunched widths

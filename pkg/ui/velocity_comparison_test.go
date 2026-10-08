@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -8,6 +10,56 @@ import (
 
 	"charm.land/lipgloss/v2"
 )
+
+func TestVelocityTextRole(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Title = lipgloss.NewStyle().Underline(true).Bold(false)
+	theme.Text.Selected = lipgloss.NewStyle().Underline(true).Bold(false)
+	theme.Text.Metadata = lipgloss.NewStyle().Underline(true).Italic(false)
+	theme.Text.Body = lipgloss.NewStyle().Foreground(theme.Warning).Italic(true).Bold(false)
+	theme.Text.Heading = lipgloss.NewStyle().Foreground(theme.Success).Underline(true).Bold(false)
+	m := NewVelocityComparisonModel(theme)
+	m.SetSize(120, 30)
+	m.SetData([]model.Issue{{ID: "one", Labels: []string{"api", "web"}, Status: model.StatusOpen}})
+	out := m.View()
+	if !strings.Contains(out, theme.Text.Title.Render("Velocity Comparison")) {
+		t.Error("velocity title ignored role")
+	}
+	if !strings.Contains(out, theme.Text.Selected.Render("> api")) {
+		t.Error("velocity selected row ignored role")
+	}
+	if !strings.Contains(out, theme.Text.Metadata.Render("j/k: navigate | enter: filter by label | esc: back")) {
+		t.Error("velocity hint ignored role")
+	}
+	row := m.data[1]
+	ordinary := fmt.Sprintf("  %-30s %5d %5d %5d %5d %6.1f ", row.Label, row.Weeks[0], row.Weeks[1], row.Weeks[2], row.Weeks[3], row.Avg)
+	if !strings.Contains(out, theme.Text.Body.Render(ordinary)) {
+		t.Error("populated unselected row ignored body role")
+	}
+	header := fmt.Sprintf("%-30s %5s %5s %5s %5s %6s %-10s %s", "Label", "W-4", "W-3", "W-2", "W-1", "Avg", "Trend", "Spark")
+	if !strings.Contains(out, theme.Text.Heading.Render(header)) {
+		t.Error("populated table header ignored heading role")
+	}
+}
+
+func TestVelocityPlainSelectedTextRole(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Selected = lipgloss.NewStyle().Foreground(theme.Warning).Background(theme.Primary).Bold(false).Italic(false).Underline(false)
+	theme.Text.Metadata = lipgloss.NewStyle().Italic(false).Bold(false)
+	m := NewVelocityComparisonModel(theme)
+	m.SetSize(120, 30)
+	m.SetData([]model.Issue{{ID: "one", Labels: []string{"api"}, Status: model.StatusOpen}})
+	out := m.View()
+	if !strings.Contains(out, strings.TrimSuffix(theme.Text.Selected.Render("> api"), "\x1b[m")) {
+		t.Error("selected label lost background/false attributes")
+	}
+	if !strings.Contains(out, theme.Text.Selected.Foreground(theme.Secondary).Render("─ stable")) {
+		t.Error("trend lost semantic color/selected attributes")
+	}
+	if !strings.Contains(out, theme.Text.Metadata.Render("j/k: navigate | enter: filter by label | esc: back")) {
+		t.Error("plain hint forced attributes")
+	}
+}
 
 func TestNewVelocityComparisonModel(t *testing.T) {
 	theme := DefaultTheme()

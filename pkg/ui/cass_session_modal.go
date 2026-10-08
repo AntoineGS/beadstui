@@ -95,7 +95,7 @@ func (m CassSessionModal) View() string {
 	if l.Compact || l.Height == 0 {
 		return RenderPopup(nil, opts)
 	}
-	dim := lipgloss.NewStyle().Foreground(m.theme.Subtext).Italic(true)
+	dim := m.theme.Text.Metadata
 	lines := []string{dim.Render(m.beadID), ""}
 	count := min(len(m.sessions), m.maxDisplay)
 	if count == 0 {
@@ -119,7 +119,7 @@ func (m CassSessionModal) View() string {
 		}
 		menu := MeasurePopupMenu(entries, PopupMenuOpts{Shortcuts: true})
 		snippetRows := max(1, min(3, budget/visible-4))
-		box := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(m.theme.Border).Padding(0, 1).Width(max(1, l.BodyWidth-2))
+		box := m.theme.Text.Body.Border(lipgloss.NormalBorder()).BorderForeground(m.theme.Border).Padding(0, 1).Width(max(1, l.BodyWidth-2))
 		for i := start; i < end; i++ {
 			lines = append(lines, RenderPopupMenu(entries[i:i+1], menu, m.theme, l.BodyWidth)...)
 			lines = append(lines, dim.Render(m.formatMatchReason(m.sessions[i])))

@@ -5,12 +5,26 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/seanmartinsmith/beadstui/internal/datasource"
 	"github.com/seanmartinsmith/beadstui/pkg/drift"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
+
+func TestAlertsHeaderTextRole(t *testing.T) {
+	m := statusHeaderModel(t)
+	m.theme.Text.Metadata = lipgloss.NewStyle().Underline(true).Italic(false)
+	m.theme.Text.Body = lipgloss.NewStyle().Underline(true).Bold(false)
+	out := strings.Join(m.alertsHeaderLines(100), "\n")
+	if !strings.Contains(out, m.theme.Text.Metadata.Render("corpus ")) {
+		t.Error("status header label ignored metadata role")
+	}
+	if !strings.Contains(out, m.theme.Text.Body.Render("3 advisories")) {
+		t.Error("status header value ignored body role")
+	}
+}
 
 // statusHeaderModel builds a model with a datasource, a handful of issues across
 // two sources, and a mix of anomaly + advisory alerts (including one INFO-

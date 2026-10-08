@@ -10,12 +10,32 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
 
 func newTreeTestTheme() Theme {
 	return DefaultTheme()
+}
+
+func TestTreeTextRole(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Body = lipgloss.NewStyle().Foreground(lipgloss.Color("#123456")).Underline(true).Bold(false)
+	theme.Text.Metadata = lipgloss.NewStyle().Foreground(lipgloss.Color("#654321")).Underline(true)
+	theme.Text.Selected = lipgloss.NewStyle().Foreground(lipgloss.Color("#abcdef")).Background(lipgloss.Color("#234567")).Underline(true).Bold(false).Italic(false)
+	tree := NewTreeModel(theme)
+	tree.Build([]model.Issue{{ID: "one", Title: "Selected", Priority: 1}, {ID: "two", Title: "Ordinary body", Priority: 2}})
+	tree.SetSize(120, 30)
+	out := tree.View()
+	if !strings.HasPrefix(ansi.Strip(out), "┃ ") {
+		t.Fatal("selected tree row lost its existing gutter")
+	}
+	for _, want := range []string{theme.Text.Body.Render("Ordinary body"), theme.Text.Metadata.Render("two"), theme.Text.Selected.Render("Selected"), theme.Text.Selected.Render("one")} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing role span %q in %q", want, out)
+		}
+	}
 }
 
 // TestTreeBuildEmpty verifies Build() handles empty issues slice

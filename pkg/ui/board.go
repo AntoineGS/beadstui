@@ -989,11 +989,10 @@ func (b BoardModel) View(width, height int) string {
 	// Calculate how many columns we're showing
 	numCols := len(b.activeColIdx)
 	if numCols == 0 {
-		return lipgloss.NewStyle().
+		return t.Text.Metadata.
 			Width(width).
 			Height(height).
 			Align(lipgloss.Center, lipgloss.Center).
-			Foreground(t.Secondary).
 			Render("No issues to display")
 	}
 
@@ -1223,23 +1222,19 @@ func (b BoardModel) View(width, height int) string {
 
 		// Empty column placeholder
 		if issueCount == 0 {
-			emptyStyle := lipgloss.NewStyle().
+			emptyStyle := t.Text.Metadata.
 				Width(cardWidth).
 				Height(colHeight-2).
-				Align(lipgloss.Center, lipgloss.Center).
-				Foreground(t.Secondary).
-				Italic(true)
+				Align(lipgloss.Center, lipgloss.Center)
 			cards = append(cards, emptyStyle.Render("(empty)"))
 		}
 
 		// Scroll indicator
 		if issueCount > visibleCards {
 			scrollInfo := fmt.Sprintf("↕ %d/%d", sel+1, issueCount)
-			scrollStyle := lipgloss.NewStyle().
+			scrollStyle := t.Text.Metadata.
 				Width(cardWidth).
-				Align(lipgloss.Center).
-				Foreground(t.Secondary).
-				Italic(true)
+				Align(lipgloss.Center)
 			cards = append(cards, scrollStyle.Render(scrollInfo))
 		}
 
@@ -1254,6 +1249,7 @@ func (b BoardModel) View(width, height int) string {
 			Focused:     isFocused,
 			BorderColor: colBorderColor,
 			TitleColor:  colTitleColor,
+			TitleStyle:  &t.Text.Heading,
 		})
 		renderedCols = append(renderedCols, column)
 		actualColumnsWidth += colWidth + borderOverhead
@@ -1296,11 +1292,9 @@ func (b BoardModel) renderTitleBar(width int, t Theme) string {
 	}
 
 	// Style the title bar
-	titleStyle := lipgloss.NewStyle().
+	titleStyle := t.Text.Title.
 		Width(width).
 		Align(lipgloss.Center).
-		Foreground(t.Primary).
-		Bold(true).
 		Padding(0, 0, 1, 0) // Bottom padding
 
 	return titleStyle.Render(title)
@@ -1389,6 +1383,7 @@ func (b BoardModel) renderCard(issue model.Issue, width int, selected bool, colI
 
 	if selected {
 		cardStyle = cardStyle.
+			Background(t.Text.Selected.GetBackground()).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(borderColor)
 	} else if isCurrentMatch {
@@ -1433,12 +1428,20 @@ func (b BoardModel) renderCard(issue model.Issue, width int, selected bool, colI
 
 	iconStyled := lipgloss.NewStyle().Foreground(iconColor).Render(icon)
 	prioStyled := prioStyle.Render(prioText)
-	idStyled := lipgloss.NewStyle().Bold(true).Foreground(t.Secondary).Render(displayID)
-	line1 := fmt.Sprintf("%s %s %s %s", iconStyled, prioStyled, idStyled, ageStyled)
+	idStyle := t.Text.Metadata
+	if selected {
+		idStyle = t.Text.Selected
+	}
+	idStyled := idStyle.Render(displayID)
+	gap := " "
+	if selected {
+		gap = t.Text.Selected.Render(gap)
+	}
+	line1 := strings.Join([]string{iconStyled, prioStyled, idStyled, ageStyled}, gap)
 
 	// Slot badges sit between the ID and the age, in whatever the card has left.
 	if strip, w := renderBadgeStrip(b.slots.Badges(&issue), width-cardStyle.GetHorizontalFrameSize()-lipgloss.Width(line1)-1, time.Now()); w > 0 {
-		line1 = fmt.Sprintf("%s %s %s %s %s", iconStyled, prioStyled, idStyled, strip, ageStyled)
+		line1 = strings.Join([]string{iconStyled, prioStyled, idStyled, strip, ageStyled}, gap)
 	}
 
 	// ══════════════════════════════════════════════════════════════════════════
@@ -1450,11 +1453,9 @@ func (b BoardModel) renderCard(issue model.Issue, width int, selected bool, colI
 	}
 	truncatedTitle := truncateRunesHelper(issue.Title, titleWidth, "…")
 
-	titleStyle := lipgloss.NewStyle()
+	titleStyle := t.Text.Body
 	if selected {
-		titleStyle = titleStyle.Foreground(t.Primary).Bold(true)
-	} else {
-		titleStyle = titleStyle.Foreground(t.Base.GetForeground())
+		titleStyle = t.Text.Selected
 	}
 	line2 := titleStyle.Render(truncatedTitle)
 
@@ -1497,13 +1498,16 @@ func (b BoardModel) renderCard(issue model.Issue, width int, selected bool, colI
 			labelParts = append(labelParts, truncateRunesHelper(issue.Labels[i], 8, ""))
 		}
 		labelText := strings.Join(labelParts, ",")
-		labelStyle := lipgloss.NewStyle().Foreground(t.InProgress)
+		labelStyle := t.Text.Badge
+		if selected {
+			labelStyle = t.Text.Selected
+		}
 		meta = append(meta, labelStyle.Render(labelText))
 	}
 
 	line3 := ""
 	if len(meta) > 0 {
-		line3 = strings.Join(meta, " ")
+		line3 = strings.Join(meta, gap)
 	}
 
 	// Render card with 3 content lines (line4 removed to eliminate extra vertical gap)
@@ -1532,7 +1536,7 @@ func (b BoardModel) renderExpandedCard(issue model.Issue, width int, _, _ int) s
 	// ══════════════════════════════════════════════════════════════════════════
 	// CARD STYLING - Expanded card is always selected (since we expand selected)
 	// ══════════════════════════════════════════════════════════════════════════
-	cardStyle := lipgloss.NewStyle().
+	cardStyle := lipgloss.NewStyle().Background(t.Text.Selected.GetBackground()).
 		Width(width).
 		Padding(0, 1).
 		MarginBottom(1)
@@ -1550,7 +1554,6 @@ func (b BoardModel) renderExpandedCard(issue model.Issue, width int, _, _ int) s
 	}
 
 	cardStyle = cardStyle.
-		Background(t.Highlight).
 		Border(lipgloss.DoubleBorder()). // Double border to distinguish expanded state
 		BorderForeground(borderColor)
 
@@ -1566,16 +1569,17 @@ func (b BoardModel) renderExpandedCard(issue model.Issue, width int, _, _ int) s
 		prioStyle = prioStyle.Foreground(t.Secondary)
 	}
 
-	header := fmt.Sprintf("%s %s %s ▼",
+	header := strings.Join([]string{
 		lipgloss.NewStyle().Foreground(iconColor).Render(icon),
 		prioStyle.Render(prioText),
-		lipgloss.NewStyle().Bold(true).Foreground(t.Primary).Render(issue.ID),
-	)
+		t.Text.Selected.Render(issue.ID),
+		t.Text.Selected.Render("▼"),
+	}, t.Text.Selected.Render(" "))
 
 	// ══════════════════════════════════════════════════════════════════════════
 	// TITLE: Full title (not truncated)
 	// ══════════════════════════════════════════════════════════════════════════
-	titleStyle := lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
+	titleStyle := t.Text.Selected
 	title := titleStyle.Render(issue.Title)
 
 	// ══════════════════════════════════════════════════════════════════════════
@@ -1599,7 +1603,7 @@ func (b BoardModel) renderExpandedCard(issue model.Issue, width int, _, _ int) s
 		desc := strings.Join(lines, "\n")
 
 		// Render with markdown if possible
-		rendered := desc
+		rendered := t.Text.Selected.Render(desc)
 		if b.mdRenderer != nil {
 			if md, err := b.mdRenderer.Render(desc); err == nil {
 				rendered = strings.TrimSpace(md)
@@ -1612,6 +1616,10 @@ func (b BoardModel) renderExpandedCard(issue model.Issue, width int, _, _ int) s
 	// DEPENDENCIES: Show blocking deps with titles
 	// ══════════════════════════════════════════════════════════════════════════
 	var depLines []string
+	// Expanded cards are selected: only the dependency foreground is semantic.
+	// Keep the Selected background and attributes on headings and values alike.
+	blockedStyle := t.Text.Selected.Foreground(t.Blocked)
+	blocksStyle := t.Text.Selected.Foreground(t.Feature)
 	var blockingDeps []*model.Dependency
 	for _, dep := range issue.Dependencies {
 		if dep != nil && dep.Type.IsBlocking() {
@@ -1619,25 +1627,25 @@ func (b BoardModel) renderExpandedCard(issue model.Issue, width int, _, _ int) s
 		}
 	}
 	if len(blockingDeps) > 0 {
-		depLines = append(depLines, lipgloss.NewStyle().Bold(true).Foreground(t.Blocked).Render("Blocked by:"))
+		depLines = append(depLines, blockedStyle.Render("Blocked by:"))
 		for _, dep := range blockingDeps {
 			blockerText := fmt.Sprintf("  • %s", dep.DependsOnID)
 			if blocker, ok := b.issueMap[dep.DependsOnID]; ok && blocker != nil {
 				blockerText = fmt.Sprintf("  • %s: %s (%s)", dep.DependsOnID, blocker.Title, blocker.Status)
 			}
-			depLines = append(depLines, lipgloss.NewStyle().Foreground(t.Blocked).Render(blockerText))
+			depLines = append(depLines, blockedStyle.Render(blockerText))
 		}
 	}
 
 	// Show what this blocks
 	if blockedIDs, ok := b.blocksIndex[issue.ID]; ok && len(blockedIDs) > 0 {
-		depLines = append(depLines, lipgloss.NewStyle().Bold(true).Foreground(t.Feature).Render("Blocks:"))
+		depLines = append(depLines, blocksStyle.Render("Blocks:"))
 		for _, blockedID := range blockedIDs {
 			blockedText := fmt.Sprintf("  • %s", blockedID)
 			if blocked, ok := b.issueMap[blockedID]; ok && blocked != nil {
 				blockedText = fmt.Sprintf("  • %s: %s", blockedID, blocked.Title)
 			}
-			depLines = append(depLines, lipgloss.NewStyle().Foreground(t.Feature).Render(blockedText))
+			depLines = append(depLines, blocksStyle.Render(blockedText))
 		}
 	}
 
@@ -1646,14 +1654,14 @@ func (b BoardModel) renderExpandedCard(issue model.Issue, width int, _, _ int) s
 	// ══════════════════════════════════════════════════════════════════════════
 	var labelLine string
 	if len(issue.Labels) > 0 {
-		labelStyle := lipgloss.NewStyle().Foreground(t.InProgress)
+		labelStyle := t.Text.Selected
 		labelLine = labelStyle.Render(activeGlyphs.Tag + " " + strings.Join(issue.Labels, ", "))
 	}
 
 	// ══════════════════════════════════════════════════════════════════════════
 	// TIMESTAMPS
 	// ══════════════════════════════════════════════════════════════════════════
-	timeStyle := lipgloss.NewStyle().Foreground(t.Secondary).Italic(true)
+	timeStyle := t.Text.Selected
 	timestamps := timeStyle.Render(fmt.Sprintf("Created: %s (%s) | Updated: %s (%s)",
 		FormatTimeAbs(issue.CreatedAt), FormatTimeRel(issue.CreatedAt),
 		FormatTimeAbs(issue.UpdatedAt), FormatTimeRel(issue.UpdatedAt)))
@@ -1816,9 +1824,7 @@ func (b *BoardModel) renderDetailPanel(width, height int) string {
 
 	scrollPercent := b.detailVP.ScrollPercent()
 	if scrollPercent < 1.0 || b.detailVP.YOffset() > 0 {
-		scrollHint := lipgloss.NewStyle().
-			Foreground(t.Secondary).
-			Italic(true).
+		scrollHint := t.Text.Metadata.
 			Render(fmt.Sprintf("─ %d%% ─ ctrl+j/k", int(scrollPercent*100)))
 		sb.WriteString("\n")
 		sb.WriteString(scrollHint)
@@ -1829,6 +1835,6 @@ func (b *BoardModel) renderDetailPanel(width, height int) string {
 		Width:       width + 2,
 		Height:      height + 2,
 		BorderColor: t.Primary,
-		TitleColor:  t.Primary,
+		TitleStyle:  &t.Text.Heading,
 	})
 }

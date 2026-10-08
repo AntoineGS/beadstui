@@ -1,16 +1,238 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/seanmartinsmith/beadstui/internal/datasource"
 	"github.com/seanmartinsmith/beadstui/pkg/cass"
 	"github.com/seanmartinsmith/beadstui/pkg/correlation"
 	"github.com/seanmartinsmith/beadstui/pkg/projects"
 )
+
+func TestFreshAndLazySearchInputsTextRoles(t *testing.T) {
+	restoreThemeGlobals(t)
+	theme := DefaultTheme()
+	theme.Text.Body = lipgloss.NewStyle().Foreground(lipgloss.Color("#123456")).Background(lipgloss.Color("#345678")).Bold(false).Italic(false).Underline(true)
+	theme.Text.Metadata = lipgloss.NewStyle().Foreground(lipgloss.Color("#fedcba")).Background(lipgloss.Color("#654321")).Bold(false).Italic(true).Underline(false)
+	theme.Text.Heading = lipgloss.NewStyle().Foreground(lipgloss.Color("#abcdef")).Background(lipgloss.Color("#234567")).Bold(true).Italic(false).Underline(false)
+	assertInput := func(name string, input textinput.Model) {
+		t.Helper()
+		for _, state := range []textinput.StyleState{input.Styles().Focused, input.Styles().Blurred} {
+			if !reflect.DeepEqual(state.Text, theme.Text.Body) || !reflect.DeepEqual(state.Placeholder, theme.Text.Metadata) || !reflect.DeepEqual(state.Prompt, theme.Text.Heading) {
+				t.Errorf("%s fresh focused/blurred roles differ", name)
+			}
+		}
+		input.Blur() // No cursor cell obscuring the rendered text role.
+		input.Prompt = "Prompt: "
+		input.Placeholder = "Placeholder"
+		for _, draft := range []string{"", "Draft"} {
+			input.SetValue(draft)
+			out := input.View()
+			for text, role := range map[string]lipgloss.Style{"Prompt:": theme.Text.Heading, "Placeholder": theme.Text.Metadata, "Draft": theme.Text.Body} {
+				if (text == "Placeholder" && draft != "") || (text == "Draft" && draft == "") {
+					continue
+				}
+				plain := ansi.Strip(out)
+				start := strings.Index(plain, text)
+				if start < 0 {
+					t.Fatalf("%s missing %q in %q", name, text, plain)
+				}
+				cells := uv.NewStyledString(out).Lines(ansi.GraphemeWidth)[0]
+				want := uv.NewStyledString(role.Render("x")).Lines(ansi.GraphemeWidth)[0][0].Style
+				for x := start; x < start+len(text); x++ {
+					if !reflect.DeepEqual(cells[x].Style, want) {
+						t.Errorf("%s %q cell %d: got %+v, want %+v", name, text, x, cells[x].Style, want)
+						break
+					}
+				}
+			}
+		}
+	}
+	h := NewHistoryModel(createTestHistoryReport(), theme)
+	h.StartSearch()
+	assertInput("fresh history", h.searchInput)
+	mem := NewMemoriesModel(theme)
+	mem.StartSearch()
+	assertInput("fresh memories", mem.searchInput)
+	m := NewModel(nil, nil, "", nil, nil)
+	m.theme = theme
+	m.refreshThemeConsumers()
+	for entry := 0; entry < 2; entry++ {
+		_ = m.enterHistoryView() // Do not execute commands or touch live sources.
+		assertInput("lazy history", m.historyView.searchInput)
+		m = m.handleHistoryLoaded(HistoryLoadedMsg{Report: createTestHistoryReport()})
+		assertInput("loaded history", m.historyView.searchInput)
+		_ = m.enterMemoriesView()
+		assertInput("lazy memories", m.memories.searchInput)
+	}
+	// A pinned source admits the async loading path without executing its cmd.
+	m.data.dataSource = &datasource.DataSource{Type: datasource.SourceTypeDolt}
+	for entry := 0; entry < 2; entry++ {
+		if cmd := m.enterHistoryView(); cmd == nil || !m.historyLoading {
+			t.Fatal("expected async history placeholder")
+		}
+		assertInput("loading history", m.historyView.searchInput)
+		m = m.handleHistoryLoaded(HistoryLoadedMsg{Report: createTestHistoryReport()})
+		assertInput("async loaded history", m.historyView.searchInput)
+	}
+	m.historyView.StartSearch()
+	m.memories.StartSearch()
+	for _, input := range []*textinput.Model{&m.historyView.searchInput, &m.memories.searchInput} {
+		input.SetValue("unsaved draft")
+		input.SetCursor(3)
+	}
+	m.theme.Text.Body = theme.Text.Metadata
+	m.refreshThemeConsumers()
+	for _, input := range []*textinput.Model{&m.historyView.searchInput, &m.memories.searchInput} {
+		if input.Value() != "unsaved draft" || input.Position() != 3 || !input.Focused() || !reflect.DeepEqual(input.Styles().Focused.Text, m.theme.Text.Body) {
+			t.Error("theme refresh lost draft/cursor/focus or failed to update body")
+		}
+	}
+}
+
+func TestHistorySelectedOrdinaryCellsTextRole(t *testing.T) {
+	for _, attributes := range []bool{false, true} {
+		t.Run(fmt.Sprintf("attributes_%t", attributes), func(t *testing.T) {
+			theme := DefaultTheme()
+			theme.Text.Selected = lipgloss.NewStyle().Foreground(theme.Warning).Background(theme.Primary).Bold(false).Italic(attributes).Underline(attributes)
+			theme.Text.Metadata = lipgloss.NewStyle().Foreground(theme.Muted).Background(theme.BgDark)
+			report := createTestHistoryReport()
+			hist := report.Histories["bv-1"]
+			hist.Events = []correlation.BeadEvent{{BeadID: "bv-1", Timestamp: time.Now()}}
+			report.Histories["bv-1"] = hist
+			h := NewHistoryModel(report, theme)
+			h.SetSize(180, 40)
+			h.commitList = []CommitListEntry{{SHA: hist.Commits[0].SHA, ShortSHA: hist.Commits[0].ShortSHA, Message: hist.Commits[0].Message, BeadIDs: []string{"bv-1"}}}
+			for i, item := range h.histories {
+				if item.BeadID == "bv-1" {
+					h.selectedBead = i
+				}
+			}
+			expected := uv.NewStyledString(theme.Text.Selected.Render("x")).Lines(ansi.GraphemeWidth)[0][0].Style
+			expectedSpace := uv.NewStyledString(theme.Text.Selected.Render(" ")).Lines(ansi.GraphemeWidth)[0][0].Style
+			assertSpan := func(name, rendered, endText string) {
+				t.Helper()
+				for _, line := range strings.Split(rendered, "\n") {
+					plain := ansi.Strip(line)
+					start := strings.Index(plain, "▸")
+					end := strings.LastIndex(plain, endText)
+					if start < 0 || end < start {
+						continue
+					}
+					startCell := ansi.StringWidth(plain[:start])
+					endCell := ansi.StringWidth(plain[:end+len(endText)])
+					cells := uv.NewStyledString(line).Lines(ansi.GraphemeWidth)[0]
+					for x := startCell; x < endCell; x++ {
+						style := cells[x].Style
+						want := expected
+						if cells[x].Content == " " {
+							want = expectedSpace
+						}
+						if !reflect.DeepEqual(style.Bg, want.Bg) || style.Attrs != want.Attrs || style.Underline != want.Underline {
+							t.Errorf("%s cell %d (%q) lost selected background/attributes: %+v", name, x, cells[x].Content, style)
+						}
+					}
+					return
+				}
+				t.Fatalf("%s selected populated span not found ending %q", name, endText)
+			}
+			h.focused = historyFocusList
+			assertSpan("events", h.renderBeadLine(h.selectedBead, h.histories[h.selectedBead], 100), fmt.Sprintf("%s1", activeGlyphs.Bolt))
+			commit := *h.SelectedGitCommit()
+			assertSpan("git", h.renderGitCommitLine(0, commit, 100), fmt.Sprintf("[%d]", len(commit.BeadIDs)))
+			h.focused = historyFocusMiddle
+			assertSpan("middle commit", h.renderCommitMiddlePanel(100, 20), hist.Commits[0].Message)
+			assertSpan("middle bead", h.renderGitBeadListPanel(100, 20), report.Histories[commit.BeadIDs[0]].Title)
+			h.focused = historyFocusDetail
+			assertSpan("related bead", h.renderGitDetailPanel(100, 20), report.Histories[commit.BeadIDs[0]].Title)
+			h.fileTreeFocus = true
+			node := &FileTreeNode{Name: "nested.go", Path: "pkg/nested.go", Level: 2, ChangeCount: 3}
+			h.fileFilter = node.Path
+			row := h.renderFileTreeLine(0, node, 100)
+			assertSpan("file tree", row, "(3)")
+			cells := uv.NewStyledString(row).Lines(ansi.GraphemeWidth)[0]
+			for x := 0; x < node.Level*2; x++ {
+				if !reflect.DeepEqual(cells[x].Style.Bg, expectedSpace.Bg) || cells[x].Style.Attrs != expectedSpace.Attrs || cells[x].Style.Underline != expectedSpace.Underline {
+					t.Errorf("file tree indent cell %d lost selection", x)
+				}
+			}
+			nameCell := ansi.StringWidth(ansi.Strip(row)[:strings.Index(ansi.Strip(row), node.Name)])
+			filtered := uv.NewStyledString(theme.Text.Selected.Foreground(theme.Closed).Render("x")).Lines(ansi.GraphemeWidth)[0][0].Style
+			if !reflect.DeepEqual(cells[nameCell].Style.Fg, filtered.Fg) {
+				t.Error("active file filter lost semantic foreground")
+			}
+		})
+	}
+}
+
+func TestHistoryTextRole(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Title = lipgloss.NewStyle().Underline(true).Bold(false)
+	theme.Text.Selected = lipgloss.NewStyle().Underline(true).Bold(false)
+	theme.Text.Metadata = lipgloss.NewStyle().Underline(true).Italic(false)
+	theme.Text.Body = lipgloss.NewStyle().Underline(true).Bold(false)
+	h := NewHistoryModel(createTestHistoryReport(), theme)
+	h.SetSize(180, 40)
+	if !strings.Contains(h.renderHeader(), theme.Text.Title.Padding(0, 1).Render("History")) {
+		t.Error("History title ignored role")
+	}
+	row := h.renderBeadLine(0, h.histories[0], 80)
+	if !strings.Contains(row, theme.Text.Selected.Render(h.histories[0].Title)) {
+		t.Error("selected history title ignored role")
+	}
+	if !strings.Contains(h.renderBeadLine(1, h.histories[1], 80), theme.Text.Body.Render(h.histories[1].Title)) {
+		t.Error("ordinary history title ignored body role")
+	}
+	if !strings.Contains(h.renderFilterLine(), theme.Text.Metadata.Padding(0, 1).Render("Showing all 3 beads with commits")) {
+		t.Error("history filter ignored metadata role")
+	}
+}
+
+func TestHistoryPlainSelectedTextRole(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Heading = lipgloss.NewStyle().Foreground(theme.Warning).Bold(false)
+	theme.Text.Metadata = lipgloss.NewStyle().Italic(false).Bold(false)
+	theme.Text.Selected = lipgloss.NewStyle().Foreground(theme.Warning).Background(theme.Primary).Bold(false).Italic(false).Underline(false)
+	h := NewHistoryModel(createTestHistoryReport(), theme)
+	h.SetSize(180, 40)
+	row := h.renderBeadLine(0, h.histories[0], 80)
+	for _, text := range []string{h.histories[0].Title, fmt.Sprintf("%d commits", len(h.histories[0].Commits))} {
+		if !strings.Contains(row, theme.Text.Selected.Render(text)) {
+			t.Errorf("selected text %q lost background/false attributes", text)
+		}
+	}
+	idText := h.histories[0].BeadID + strings.Repeat(" ", max(0, 12-lipgloss.Width(h.histories[0].BeadID)))
+	if !strings.Contains(row, theme.Text.Selected.Render(idText)) {
+		t.Error("selected ID lost role")
+	}
+	if !strings.Contains(h.renderListPanel(80, 20), theme.Text.Heading.Render("BEADS WITH HISTORY")) {
+		t.Error("panel did not use own heading")
+	}
+	commit := h.histories[0].Commits[0]
+	lines := h.renderCommitDetail(commit, 120, false)
+	typeIcon := commitTypeIndicator(commit.Message)
+	if typeIcon != "" {
+		typeIcon += " "
+	}
+	wantHeader := fmt.Sprintf("%s%s%s %s", theme.Text.Body.Render("  "), typeIcon, theme.Text.Metadata.Render(commit.ShortSHA), theme.Text.Metadata.Render("("+relativeTime(commit.Timestamp)+")"))
+	if lines[0] != wantHeader {
+		t.Error("plain commit time/ID forced attributes")
+	}
+	if !strings.Contains(strings.Join(lines, "\n"), theme.Text.Metadata.Foreground(theme.Open).Render(fmt.Sprintf("%.0f%% confidence", commit.Confidence*100))) {
+		t.Error("confidence semantics disappeared")
+	}
+}
 
 func createTestHistoryReport() *correlation.HistoryReport {
 	now := time.Now()

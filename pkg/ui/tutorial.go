@@ -251,8 +251,8 @@ func (m TutorialModel) View() string {
 	b.WriteString("\n")
 
 	// Page title and section
-	pageTitleStyle := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Primary)
-	sectionStyle := lipgloss.NewStyle().Foreground(m.theme.Subtext).Italic(true)
+	pageTitleStyle := m.theme.Text.Heading
+	sectionStyle := m.theme.Text.Metadata
 	pageTitle := pageTitleStyle.Render(currentPage.Title)
 	if currentPage.Section != "" {
 		pageTitle += sectionStyle.Render(" — " + currentPage.Section)
@@ -291,14 +291,11 @@ func (m TutorialModel) View() string {
 // renderHeader renders the tutorial header with title and progress bar.
 func (m TutorialModel) renderHeader(page TutorialPage, totalPages int) string {
 
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.Primary)
+	titleStyle := m.theme.Text.Title
 
 	// Progress indicator: [2/15] ███░░░
 	pageNum := m.currentPage + 1
-	progressText := lipgloss.NewStyle().
-		Foreground(m.theme.Subtext).
+	progressText := m.theme.Text.Metadata.
 		Render(fmt.Sprintf("[%d/%d]", pageNum, totalPages))
 
 	// Visual progress bar
@@ -404,11 +401,11 @@ func (m TutorialModel) renderContent(page TutorialPage, width int) string {
 
 	// Add scroll indicators (these are accounted for in the height calculation)
 	if m.scrollOffset > 0 {
-		scrollUpHint := lipgloss.NewStyle().Foreground(m.theme.Muted).Render("↑ more above")
+		scrollUpHint := m.theme.Text.Metadata.Render("↑ more above")
 		content = scrollUpHint + "\n" + content
 	}
 	if endLine < len(lines) {
-		scrollDownHint := lipgloss.NewStyle().Foreground(m.theme.Muted).Render("↓ more below")
+		scrollDownHint := m.theme.Text.Metadata.Render("↓ more below")
 		content = content + "\n" + scrollDownHint
 	}
 
@@ -450,11 +447,11 @@ func (m TutorialModel) renderStructuredContent(page StructuredTutorialPage, widt
 
 	// Add scroll indicators
 	if m.scrollOffset > 0 {
-		scrollUpHint := lipgloss.NewStyle().Foreground(m.theme.Muted).Render("↑ more above")
+		scrollUpHint := m.theme.Text.Metadata.Render("↑ more above")
 		content = scrollUpHint + "\n" + content
 	}
 	if endLine < len(lines) {
-		scrollDownHint := lipgloss.NewStyle().Foreground(m.theme.Muted).Render("↓ more below")
+		scrollDownHint := m.theme.Text.Metadata.Render("↓ more below")
 		content = content + "\n" + scrollDownHint
 	}
 
@@ -476,26 +473,10 @@ func (m TutorialModel) renderTOC(pages []TutorialPage) string {
 		Padding(0, 1).
 		Width(22)
 
-	headerStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.Primary)
-
-	sectionStyle := lipgloss.NewStyle().
-		Foreground(m.theme.Secondary).
-		Bold(true)
-
-	itemStyle := lipgloss.NewStyle().
-		Foreground(m.theme.Subtext)
-
-	selectedStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.Primary)
-
-	// TOC cursor style (when TOC has focus and cursor is on this item)
-	cursorStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.InProgress).
-		Background(m.theme.Highlight)
+	headerStyle := m.theme.Text.Heading
+	sectionStyle := m.theme.Text.Heading
+	itemStyle := m.theme.Text.Body
+	selectedStyle := m.theme.Text.Selected
 
 	viewedStyle := lipgloss.NewStyle().
 		Foreground(m.theme.Open)
@@ -524,7 +505,7 @@ func (m TutorialModel) renderTOC(pages []TutorialPage) string {
 		// TOC has focus and cursor is on this item
 		if m.focus == focusTutorialTOC && i == m.tocCursor {
 			prefix = " → "
-			style = cursorStyle
+			style = selectedStyle
 		} else if i == m.currentPage {
 			// Current page indicator (but not cursor)
 			prefix = " ▶ "
@@ -553,15 +534,9 @@ func (m TutorialModel) renderTOC(pages []TutorialPage) string {
 // renderFooter renders context-sensitive navigation hints.
 func (m TutorialModel) renderFooter(totalPages int) string {
 
-	keyStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.Primary)
-
-	descStyle := lipgloss.NewStyle().
-		Foreground(m.theme.Subtext)
-
-	sepStyle := lipgloss.NewStyle().
-		Foreground(m.theme.Muted)
+	keyStyle := m.theme.Text.Heading
+	descStyle := m.theme.Text.Metadata
+	sepStyle := m.theme.Text.Metadata
 
 	var hints []string
 
@@ -598,7 +573,7 @@ func (m TutorialModel) renderEmptyState() string {
 		Padding(2, 4).
 		Width(m.width)
 
-	return style.Render("No tutorial pages available for this context.")
+	return style.Render(m.theme.Text.Body.Render("No tutorial pages available for this context."))
 }
 
 // NextPage advances to the next page.

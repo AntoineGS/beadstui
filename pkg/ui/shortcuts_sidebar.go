@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/key"
-	"charm.land/lipgloss/v2"
 )
 
 // ShortcutsSidebar provides a toggleable panel showing context-aware keyboard
@@ -93,17 +92,9 @@ func (s *ShortcutsSidebar) Width() int {
 func (s *ShortcutsSidebar) View() string {
 	t := s.theme
 
-	keyStyle := lipgloss.NewStyle().
-		Foreground(ColorPrimary).
-		Bold(true).
-		Width(8)
-
-	descStyle := lipgloss.NewStyle().
-		Foreground(t.Base.GetForeground())
-
-	dimStyle := lipgloss.NewStyle().
-		Foreground(t.Secondary).
-		Italic(true)
+	keyStyle := t.Text.Heading.Width(8)
+	descStyle := t.Text.Body
+	dimStyle := t.Text.Metadata
 
 	// Build rows per group from the active key.Map's FullHelp() groups: each
 	// group is a vertical section (one binding per row, key + desc columns)

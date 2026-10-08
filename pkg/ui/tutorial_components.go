@@ -21,9 +21,7 @@ type Paragraph struct {
 }
 
 func (p Paragraph) Render(theme Theme, width int) string {
-	style := lipgloss.NewStyle().
-		Width(width).
-		Foreground(theme.Base.GetForeground())
+	style := theme.Text.Body.Width(width)
 	return style.Render(p.Text)
 }
 
@@ -34,10 +32,7 @@ type Section struct {
 
 func (s Section) Render(theme Theme, width int) string {
 
-	// Title with bold styling
-	titleStyle := lipgloss.NewStyle().
-		Foreground(theme.Primary).
-		Bold(true)
+	titleStyle := theme.Text.Heading
 
 	title := titleStyle.Render(s.Title)
 
@@ -85,21 +80,11 @@ func (kt KeyTable) Render(theme Theme, width int) string {
 		StyleFunc(func(row, col int) lipgloss.Style {
 			// Key column styling
 			if col == 0 {
-				return lipgloss.NewStyle().
-					Foreground(theme.Primary).
-					Bold(true).
+				return theme.Text.Heading.
 					Width(18).
 					PaddingRight(1)
 			}
-			// Description column - alternating subtle background for readability
-			baseStyle := lipgloss.NewStyle().
-				Foreground(theme.Base.GetForeground())
-
-			// Subtle alternating row colors for better visual scanning
-			if row%2 == 0 {
-				return baseStyle.Background(ColorBgSubtle)
-			}
-			return baseStyle
+			return theme.Text.Body
 		})
 
 	return t.Render()
@@ -112,17 +97,14 @@ type Tip struct {
 
 func (t Tip) Render(theme Theme, width int) string {
 
-	boxStyle := lipgloss.NewStyle().
+	boxStyle := theme.Text.Callout.
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(theme.Feature).
 		Padding(0, 1).
-		Width(width - 2).
-		Foreground(theme.Base.GetForeground())
+		Width(width - 2)
 
 	// Lightbulb icon with bold TIP label
-	iconStyle := lipgloss.NewStyle().
-		Foreground(theme.Feature).
-		Bold(true)
+	iconStyle := theme.Text.Callout
 
 	icon := iconStyle.Render(activeGlyphs.Bulb + " TIP  ")
 
@@ -207,9 +189,7 @@ func (b Bullet) Render(theme Theme, width int) string {
 		Foreground(theme.Primary)
 
 	// Text with proper wrapping
-	textStyle := lipgloss.NewStyle().
-		Foreground(theme.Base.GetForeground()).
-		Width(width - 4)
+	textStyle := theme.Text.Body.Width(width - 4)
 
 	var lines []string
 	for _, item := range b.Items {
@@ -264,13 +244,10 @@ type TutorialTreeNode struct {
 func (t Tree) Render(theme Theme, width int) string {
 
 	// Style for the tree items
-	itemStyle := lipgloss.NewStyle().
-		Foreground(theme.Base.GetForeground())
+	itemStyle := theme.Text.Body
 
 	// Style for the root
-	rootStyle := lipgloss.NewStyle().
-		Foreground(theme.Primary).
-		Bold(true)
+	rootStyle := theme.Text.Heading
 
 	// Style for the enumerators (├── └──)
 	enumStyle := lipgloss.NewStyle().
@@ -310,12 +287,9 @@ type InfoBox struct {
 
 func (ib InfoBox) Render(theme Theme, width int) string {
 
-	titleStyle := lipgloss.NewStyle().
-		Foreground(ib.Color).
-		Bold(true)
+	titleStyle := theme.Text.Heading
 
-	contentStyle := lipgloss.NewStyle().
-		Foreground(theme.Base.GetForeground())
+	contentStyle := theme.Text.Body
 
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
@@ -336,15 +310,10 @@ type ValueProp struct {
 func (vp ValueProp) Render(theme Theme, width int) string {
 
 	// Icon/number in a small rounded box for visual pop
-	iconStyle := lipgloss.NewStyle().
-		Foreground(theme.Primary).
-		Bold(true).
-		Width(4)
+	iconStyle := theme.Text.Badge.Width(4)
 
 	// Text with proper wrapping
-	textStyle := lipgloss.NewStyle().
-		Foreground(theme.Base.GetForeground()).
-		Width(width - 6)
+	textStyle := theme.Text.Body.Width(width - 6)
 
 	return iconStyle.Render(vp.Icon) + textStyle.Render(vp.Text)
 }
@@ -356,12 +325,11 @@ type Warning struct {
 
 func (w Warning) Render(theme Theme, width int) string {
 
-	boxStyle := lipgloss.NewStyle().
+	boxStyle := theme.Text.Body.
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(theme.Blocked).
 		Padding(0, 1).
-		Width(width - 2).
-		Foreground(theme.Base.GetForeground())
+		Width(width - 2)
 
 	iconStyle := lipgloss.NewStyle().
 		Foreground(theme.Blocked).
@@ -379,16 +347,13 @@ type Note struct {
 
 func (n Note) Render(theme Theme, width int) string {
 
-	boxStyle := lipgloss.NewStyle().
+	boxStyle := theme.Text.Callout.
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(theme.InProgress).
 		Padding(0, 1).
-		Width(width - 2).
-		Foreground(theme.Base.GetForeground())
+		Width(width - 2)
 
-	iconStyle := lipgloss.NewStyle().
-		Foreground(theme.InProgress).
-		Bold(true)
+	iconStyle := theme.Text.Callout
 
 	icon := iconStyle.Render(activeGlyphs.Info + "  NOTE ")
 
@@ -415,22 +380,12 @@ func (st StyledTable) Render(theme Theme, width int) string {
 		StyleFunc(func(row, col int) lipgloss.Style {
 			// Header row styling
 			if row == table.HeaderRow {
-				return lipgloss.NewStyle().
-					Foreground(theme.Primary).
-					Bold(true).
+				return theme.Text.Heading.
 					Align(lipgloss.Center).
 					Padding(0, 1)
 			}
 
-			// Data rows with alternating colors
-			baseStyle := lipgloss.NewStyle().
-				Foreground(theme.Base.GetForeground()).
-				Padding(0, 1)
-
-			if row%2 == 0 {
-				return baseStyle.Background(ColorBgSubtle)
-			}
-			return baseStyle
+			return theme.Text.Body.Padding(0, 1)
 		})
 
 	return t.Render()
@@ -455,8 +410,7 @@ func (pi ProgressIndicator) Render(theme Theme, width int) string {
 	}
 
 	// Label
-	labelStyle := lipgloss.NewStyle().
-		Foreground(theme.Muted)
+	labelStyle := theme.Text.Metadata
 
 	// Progress bar - use lipgloss.Width for proper Unicode width calculation
 	labelWidth := lipgloss.Width(pi.Label)
@@ -497,9 +451,7 @@ type Highlight struct {
 }
 
 func (h Highlight) Render(theme Theme, width int) string {
-	style := lipgloss.NewStyle().
-		Foreground(h.Color).
-		Bold(true)
+	style := theme.Text.Callout
 
 	return style.Render(h.Text)
 }

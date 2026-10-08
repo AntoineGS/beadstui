@@ -1,12 +1,61 @@
 package ui
 
 import (
+	"charm.land/lipgloss/v2"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
+
+func TestEpicsTextRole(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Body = lipgloss.NewStyle().Foreground(lipgloss.Color("#123456")).Underline(true).Bold(false)
+	theme.Text.Metadata = lipgloss.NewStyle().Foreground(lipgloss.Color("#654321")).Underline(true)
+	theme.Text.Selected = lipgloss.NewStyle().Foreground(lipgloss.Color("#abcdef")).Background(lipgloss.Color("#234567")).Underline(true).Bold(false).Italic(false)
+	theme.Text.Heading = theme.Text.Heading.Bold(false).Underline(true)
+	e := EpicsTreeModel{theme: theme}
+	e.Build(epicsTreeFixture(), EpicsAll, time.Now())
+	e.SetSize(140, 30)
+	e.cursor, _ = rowByIssue(e.rows(), "bt-A")
+	out := e.View()
+	for _, want := range []string{theme.Text.Body.Render("Gamma epic"), theme.Text.Selected.Render("Alpha epic"), theme.Text.Metadata.Render("    3 epics"), theme.Text.Heading.Render("▾ BT ")} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing role span %q in %q", want, out)
+		}
+	}
+	e.cursor = 0
+	if out := e.View(); !strings.Contains(out, theme.Text.Selected.Render("▾ BT ")) {
+		t.Fatal("selected project heading ignores Selected role")
+	}
+}
+
+func TestEpicsClosedChildTextRoles(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Body = lipgloss.NewStyle().Foreground(lipgloss.Color("#123456")).Underline(true)
+	theme.Text.Metadata = lipgloss.NewStyle().Foreground(lipgloss.Color("#654321")).Italic(true)
+	theme.Text.Selected = lipgloss.NewStyle().Foreground(lipgloss.Color("#abcdef")).Background(lipgloss.Color("#234567")).Bold(false).Underline(true)
+	issues := epicsTreeFixture()
+	issues[1].Title = "Completed child"
+	e := EpicsTreeModel{theme: theme}
+	e.Build(issues, EpicsAll, time.Now())
+	e.SetSize(140, 30)
+	e.expand("bt-A")
+	e.cursor, _ = rowByIssue(e.rows(), "bt-A")
+	for _, want := range []string{theme.Text.Metadata.Faint(true).Render("bt-A.1"), theme.Text.Body.Faint(true).Render(" — "), theme.Text.Body.Faint(true).Render("Completed child")} {
+		if out := e.View(); !strings.Contains(out, want) {
+			t.Fatalf("closed unselected child missing role span %q", want)
+		}
+	}
+	e.cursor, _ = rowByIssue(e.rows(), "bt-A.1")
+	for _, want := range []string{theme.Text.Selected.Render("bt-A.1"), theme.Text.Selected.Render("Completed child")} {
+		if out := e.View(); !strings.Contains(out, want) {
+			t.Fatalf("closed selected child missing role span %q", want)
+		}
+	}
+}
 
 // epicsTreeFixture builds a 2-project corpus exercising every Build concern:
 //   - project "bt": epic bt-A (mixed children) containing a NESTED child-epic
@@ -69,7 +118,7 @@ func TestEpicsTree_DefaultFlatten(t *testing.T) {
 		issueID string
 	}{
 		{rowProjectHeader, "bt", ""},
-		{rowEpic, "bt", "bt-A"},  // within-lane progress asc: bt-A (25%) before bt-C (100%)
+		{rowEpic, "bt", "bt-A"}, // within-lane progress asc: bt-A (25%) before bt-C (100%)
 		{rowEpic, "bt", "bt-C"},
 		{rowProjectHeader, "sym", ""},
 		{rowEpic, "sym", "sym-X"},

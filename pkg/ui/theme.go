@@ -74,9 +74,11 @@ func resolveColor(light, dark string) color.Color {
 
 type Theme struct {
 	// Colors - resolved color.Color values (not adaptive)
-	Primary   color.Color
-	Secondary color.Color
-	Subtext   color.Color
+	Bg, BgDark, BgSubtle, BgHighlight    color.Color
+	TextColor, TextSecondary, BgContrast color.Color
+	Primary                              color.Color
+	Secondary                            color.Color
+	Subtext                              color.Color
 
 	// Accents (map to Color* globals)
 	Info    color.Color
@@ -108,6 +110,7 @@ type Theme struct {
 	Muted     color.Color
 
 	// Styles
+	Text     TextStyles
 	Base     lipgloss.Style
 	Selected lipgloss.Style
 	Column   lipgloss.Style
@@ -132,6 +135,13 @@ type Theme struct {
 // for the current isDarkBackground state.
 func DefaultTheme() Theme {
 	t := Theme{
+		Bg:            resolveColor("#ffffff", "#1d1f21"),
+		BgDark:        resolveColor("#f0f0f0", "#191b1d"),
+		BgSubtle:      resolveColor("#efefef", "#282a2e"),
+		BgHighlight:   resolveColor("#d6d6d6", "#373b41"),
+		TextColor:     resolveColor("#4d4d4c", "#c5c8c6"),
+		TextSecondary: resolveColor("#333333", "#e8e8e8"),
+		BgContrast:    resolveColor("#ffffff", "#1d1f21"),
 		// Tomorrow Night palette + matcha-dark-sea teal accent
 		Primary:   resolveColor("#3e999f", "#8abeb7"), // Teal
 		Secondary: resolveColor("#8e908c", "#969896"), // Comment gray
@@ -163,20 +173,101 @@ func DefaultTheme() Theme {
 		Muted:     resolveColor("#8e908c", "#969896"),
 	}
 
-	t.Base = lipgloss.NewStyle().Foreground(resolveColor("#4d4d4c", "#c5c8c6"))
+	t.rebuildTextStyles(TextRoleConfigs{})
+	return t
+}
 
-	t.Selected = lipgloss.NewStyle().
-		Background(t.Highlight).
+// TextStyles caches the semantic text roles resolved from a Theme's own palette.
+type TextStyles struct {
+	Title, Heading, Body, Metadata, Badge, Selected, Callout lipgloss.Style
+}
+
+func (t Theme) textPaletteColor(token string) color.Color {
+	switch token {
+	case "bg":
+		return t.Bg
+	case "bg_dark":
+		return t.BgDark
+	case "bg_subtle":
+		return t.BgSubtle
+	case "bg_highlight":
+		return t.BgHighlight
+	case "text":
+		return t.TextColor
+	case "subtext":
+		return t.Subtext
+	case "muted":
+		return t.Muted
+	case "primary":
+		return t.Primary
+	case "secondary":
+		return t.Secondary
+	case "info":
+		return t.Info
+	case "success":
+		return t.Success
+	case "warning":
+		return t.Warning
+	case "danger":
+		return t.Danger
+	case "text_secondary":
+		return t.TextSecondary
+	case "bg_contrast":
+		return t.BgContrast
+	case "border":
+		return t.Border
+	case "highlight":
+		return t.Highlight
+	default:
+		return lipgloss.NoColor{}
+	}
+}
+
+// rebuildTextStyles starts afresh so attributes from a previous config cannot leak.
+func (t *Theme) rebuildTextStyles(config TextRoleConfigs) {
+	roles := defaultTextRoleConfigs()
+	mergeTextRoles(&roles, config)
+	// A partial Theme can lack palette fields. Contrast must still use an
+	// opaque background and never produce an invisible foreground.
+	bgFallback := t.Bg
+	if bgFallback == nil {
+		bgFallback = resolveColor("#ffffff", "#1d1f21")
+	}
+	if _, none := bgFallback.(lipgloss.NoColor); none {
+		bgFallback = resolveColor("#ffffff", "#1d1f21")
+	}
+	build := func(c TextRoleConfig) lipgloss.Style {
+		bg := t.textPaletteColor(c.Background)
+		contrastBg := bg
+		if contrastBg == nil {
+			contrastBg = bgFallback
+			bg = lipgloss.NoColor{}
+		}
+		if _, none := contrastBg.(lipgloss.NoColor); none {
+			contrastBg = bgFallback
+		}
+		fg := t.textPaletteColor(c.Foreground)
+		_, invisible := fg.(lipgloss.NoColor)
+		if c.Foreground == "auto" || fg == nil || invisible {
+			fg = autoTextForeground(contrastBg)
+		}
+		return lipgloss.NewStyle().Foreground(fg).Background(bg).
+			Bold(c.Bold != nil && *c.Bold).Italic(c.Italic != nil && *c.Italic).
+			Underline(c.Underline != nil && *c.Underline)
+	}
+	t.Text = TextStyles{
+		Title: build(roles.Title), Heading: build(roles.Heading), Body: build(roles.Body),
+		Metadata: build(roles.Metadata), Badge: build(roles.Badge),
+		Selected: build(roles.Selected), Callout: build(roles.Callout),
+	}
+	t.Base = t.Text.Body
+
+	t.Selected = t.Text.Selected.
 		Border(lipgloss.ThickBorder(), false, false, false, true).
 		BorderForeground(t.Primary).
-		PaddingLeft(1).
-		Bold(true)
+		PaddingLeft(1)
 
-	t.Header = lipgloss.NewStyle().
-		Background(t.Primary).
-		Foreground(resolveColor("#ffffff", "#1d1f21")).
-		Bold(true).
-		Padding(0, 1)
+	t.Header = t.Text.Title.Padding(0, 1)
 
 	// Pre-computed delegate styles (bv-o4cj optimization).
 	//
@@ -203,7 +294,6 @@ func DefaultTheme() Theme {
 	t.TriageUnblocks = lipgloss.NewStyle().Foreground(t.Success)
 	t.TriageUnblocksAlt = lipgloss.NewStyle().Foreground(t.Secondary)
 
-	return t
 }
 
 func (t Theme) GetStatusColor(s string) color.Color {

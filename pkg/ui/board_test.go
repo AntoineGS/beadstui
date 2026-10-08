@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
+
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/ui"
 
@@ -18,6 +21,68 @@ func createTime(hoursAgo int) time.Time {
 
 func createTheme() ui.Theme {
 	return ui.DefaultTheme()
+}
+
+func TestBoardBodyTextRole(t *testing.T) {
+	theme := ui.DefaultTheme()
+	theme.Text.Body = lipgloss.NewStyle().Foreground(lipgloss.Color("#123456")).Underline(true).Bold(false)
+	theme.Text.Metadata = lipgloss.NewStyle().Foreground(lipgloss.Color("#654321")).Underline(true)
+	theme.Text.Selected = lipgloss.NewStyle().Foreground(lipgloss.Color("#abcdef")).Background(lipgloss.Color("#234567")).Underline(true).Bold(false).Italic(false)
+	theme.Text.Heading = theme.Text.Heading.Bold(false).Underline(true)
+	theme.Text.Title = theme.Text.Title.Bold(false).Underline(true)
+	b := ui.NewBoardModel([]model.Issue{{ID: "one", Title: "Selected", Status: model.StatusOpen}, {ID: "two", Title: "Ordinary body", Status: model.StatusOpen}}, theme)
+	out := b.View(120, 30)
+	for _, want := range []string{theme.Text.Body.Render("Ordinary body"), theme.Text.Metadata.Render("two"), theme.Text.Selected.Render("Selected"), theme.Text.Selected.Render("one"), theme.Text.Title.Render("Board [by: Status]"), theme.Text.Heading.Foreground(theme.Open).Render(fmt.Sprintf("%s OPEN (2) 2%s", ui.Glyphs().Clipboard, ui.Glyphs().PrCritical))} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing role span %q in %q", want, out)
+		}
+	}
+}
+
+func TestBoardExpandedDependenciesSelectedCells(t *testing.T) {
+	theme := ui.DefaultTheme()
+	theme.Text.Selected = lipgloss.NewStyle().Foreground(lipgloss.Color("#abcdef")).Background(lipgloss.Color("#234567")).Bold(false).Italic(false).Underline(true)
+	theme.Text.Heading = lipgloss.NewStyle().Background(lipgloss.Color("#456789")).Bold(true).Underline(false)
+	theme.Text.Metadata = lipgloss.NewStyle().Background(lipgloss.Color("#654321")).Bold(true).Italic(true).Underline(false)
+	b := ui.NewBoardModel([]model.Issue{
+		{ID: "main", Title: "Selected task", Status: model.StatusOpen, Dependencies: []*model.Dependency{{DependsOnID: "blocker", Type: model.DepBlocks}}},
+		{ID: "blocker", Title: "Blocker title", Status: model.StatusInProgress},
+		{ID: "dependent", Title: "Dependent title", Status: model.StatusInProgress, Dependencies: []*model.Dependency{{DependsOnID: "main", Type: model.DepBlocks}}},
+	}, theme)
+	b.ToggleExpand()
+	out := b.View(180, 60)
+	for _, span := range []struct {
+		text  string
+		style lipgloss.Style
+	}{
+		{"Blocked by:", theme.Text.Selected.Foreground(theme.Blocked)},
+		{"blocker: Blocker title (in_progress)", theme.Text.Selected.Foreground(theme.Blocked)},
+		{"Blocks:", theme.Text.Selected.Foreground(theme.Feature)},
+		{"dependent: Dependent title", theme.Text.Selected.Foreground(theme.Feature)},
+	} {
+		found := false
+		for _, row := range strings.Split(out, "\n") {
+			plain := ansi.Strip(row)
+			idx := strings.Index(plain, span.text)
+			if idx < 0 {
+				continue
+			}
+			found = true
+			start := ansi.StringWidth(plain[:idx])
+			cells := uv.NewStyledString(row).Lines(ansi.GraphemeWidth)[0]
+			want := uv.NewStyledString(span.style.Render(span.text)).Lines(ansi.GraphemeWidth)[0]
+			for i, expected := range want {
+				if !cells[start+i].Style.Equal(&expected.Style) {
+					t.Errorf("dependency %q cell %d: style=%+v want=%+v", span.text, i, cells[start+i].Style, expected.Style)
+					break
+				}
+			}
+			break
+		}
+		if !found {
+			t.Errorf("expanded dependency span missing: %q", span.text)
+		}
+	}
 }
 
 // TestBoardModelBlackbox tests basic selection and update behavior

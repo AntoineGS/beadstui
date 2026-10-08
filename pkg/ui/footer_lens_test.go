@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"regexp"
 	"strings"
 	"testing"
 
@@ -378,16 +377,10 @@ func TestLensOrderChipDirectionASCII(t *testing.T) {
 	}
 }
 
-// --- bt-41gr8: the scope segment renders bare and unbolded ---
-
-// lensBoldRe matches an SGR sequence opening with the bold parameter.
-var lensBoldRe = regexp.MustCompile("\x1b\\[1[;m]")
-
 // TestLensScopeBareNerdFont locks the scope treatment from live dogfood
 // 2026-07-17 (bt-41gr8): the NF folder/globe icons read as oversized dots at
-// terminal size and the bold styling read poorly, so the scope renders as the
-// bare label in both tiers, distinguished from the dim chips by normal-
-// brightness color only.
+// terminal size, so the scope keeps its bare label in both tiers. Its text
+// formatting now follows the configurable workspace badge role.
 func TestLensScopeBareNerdFont(t *testing.T) {
 	setGlyphs(t, nerdfontGlyphs)
 	fd := FooterData{ScopeLabel: "bt"}
@@ -395,8 +388,8 @@ func TestLensScopeBareNerdFont(t *testing.T) {
 	if got := ansi.Strip(raw); got != "bt" {
 		t.Errorf("NF scope must render bare (no folder icon): %q", got)
 	}
-	if lensBoldRe.MatchString(raw) {
-		t.Errorf("scope must not render bold: %q", raw)
+	if raw != ActiveTextStyles.Badge.Render("bt") {
+		t.Errorf("scope must use the configured badge role: %q", raw)
 	}
 	fd = FooterData{ScopeLabel: "ALL(19)", ScopeCrossProject: true}
 	if got := ansi.Strip(renderLens(fd, lensScopeOnly)); got != "ALL(19)" {

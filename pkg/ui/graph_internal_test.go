@@ -1,9 +1,28 @@
 package ui
 
 import (
+	"charm.land/lipgloss/v2"
+	"fmt"
+	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"strings"
 	"testing"
 	"unicode/utf8"
 )
+
+func TestGraphTextRole(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Body = lipgloss.NewStyle().Foreground(lipgloss.Color("#123456")).Underline(true).Bold(false)
+	theme.Text.Metadata = lipgloss.NewStyle().Foreground(lipgloss.Color("#654321")).Underline(true)
+	theme.Text.Selected = lipgloss.NewStyle().Foreground(lipgloss.Color("#abcdef")).Background(lipgloss.Color("#234567")).Underline(true).Bold(false).Italic(false)
+	theme.Text.Heading = theme.Text.Heading.Bold(false).Underline(true)
+	g := NewGraphModel([]model.Issue{{ID: "one", Title: "Selected", Status: model.StatusOpen}, {ID: "two", Title: "Ordinary body", Status: model.StatusOpen, Dependencies: []*model.Dependency{{DependsOnID: "one", Type: model.DepBlocks}}}}, nil, theme)
+	out := g.View(120, 40)
+	for _, want := range []string{theme.Text.Body.Render("Ordinary body"), theme.Text.Metadata.Render("two"), theme.Text.Selected.Render("Selected"), theme.Text.Heading.Width(28).Render(fmt.Sprintf("%s Nodes (2)", activeGlyphs.BarChart))} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing role span %q in %q", want, out)
+		}
+	}
+}
 
 func TestSmartTruncateID(t *testing.T) {
 	tests := []struct {

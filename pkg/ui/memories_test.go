@@ -8,11 +8,51 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/seanmartinsmith/beadstui/internal/source"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
+
+func TestMemoriesTextRole(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Heading = lipgloss.NewStyle().Underline(true).Bold(false)
+	theme.Text.Body = lipgloss.NewStyle().Underline(true).Bold(false)
+	theme.Text.Metadata = lipgloss.NewStyle().Foreground(theme.Warning).Italic(true).Underline(false).Bold(false)
+	m := NewMemoriesModel(theme)
+	m.SetSize(120, 30)
+	agg := memoriesFixtureAggregate()
+	agg.Excluded = []source.Origin{{SourceKind: source.SourceKindGasCity, Scope: "rig-a", DisplayName: "city"}}
+	m.SetAggregate(agg)
+	out := m.View()
+	if !strings.Contains(out, theme.Text.Heading.Render("Memories (3)")) {
+		t.Error("memory panel heading ignored own theme")
+	}
+	if !strings.Contains(m.detailContent(150, 20), theme.Text.Body.Render("1Password is the source of truth for runtime-injected secrets across the fleet.")) {
+		t.Error("memory prose ignored body role")
+	}
+	if !strings.Contains(out, theme.Text.Metadata.Render("1 Gas City source hidden (own lens, coming later)")) {
+		t.Error("populated memory supporting note ignored metadata role")
+	}
+}
+
+func TestMemoriesPlainSelectedTextRole(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Selected = lipgloss.NewStyle().Foreground(theme.Warning).Background(theme.Primary).Bold(false).Italic(false).Underline(false)
+	theme.Text.Heading = lipgloss.NewStyle().Underline(true).Bold(false)
+	theme.Text.Body = lipgloss.NewStyle().Foreground(theme.Success).Bold(false).Italic(false).Underline(false)
+	m := NewMemoriesModel(theme)
+	m.SetSize(120, 30)
+	m.SetAggregate(memoriesFixtureAggregate())
+	out := m.View()
+	if !strings.Contains(out, theme.Text.Selected.Render("  atlas-secrets-topology")) {
+		t.Error("selected key lost background/false attributes")
+	}
+	if !strings.Contains(m.detailContent(150, 20), theme.Text.Body.Render("1Password is the source of truth for runtime-injected secrets across the fleet.")) {
+		t.Error("plain prose forced attributes")
+	}
+}
 
 // memoriesFixtureAggregate builds a two-source, multi-memory aggregate for
 // assertion tests: no live bd/Dolt needed, per the bead acceptance ("must

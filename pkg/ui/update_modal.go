@@ -200,23 +200,14 @@ func (m UpdateModal) View() string {
 	}
 
 	// Version styles
-	currentVersionStyle := lipgloss.NewStyle().
-		Foreground(m.theme.Subtext)
+	currentVersionStyle := m.theme.Text.Body
 
-	newVersionStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(ColorStatusOpen)
+	newVersionStyle := m.theme.Text.Body
 
 	// Button styles
-	buttonStyle := lipgloss.NewStyle().
-		Padding(0, 1).
-		Foreground(m.theme.Base.GetForeground())
+	buttonStyle := m.theme.Text.Body.Padding(0, 1)
 
-	selectedButtonStyle := lipgloss.NewStyle().
-		Padding(0, 1).
-		Background(m.theme.Primary).
-		Foreground(ColorBg).
-		Bold(true)
+	selectedButtonStyle := m.theme.Text.Selected.Padding(0, 1)
 
 	successStyle := lipgloss.NewStyle().
 		Foreground(ColorStatusOpen).
@@ -226,19 +217,17 @@ func (m UpdateModal) View() string {
 		Foreground(ColorStatusBlocked).
 		Bold(true)
 
-	subtextStyle := lipgloss.NewStyle().
-		Foreground(m.theme.Subtext).
-		Italic(true)
+	subtextStyle := m.theme.Text.Metadata
 
 	var b strings.Builder
 
 	switch m.state {
 	case UpdateStateConfirm:
-		b.WriteString("Current version: ")
+		b.WriteString(m.theme.Text.Metadata.Render("Current version: "))
 		b.WriteString(currentVersionStyle.Render(m.currentVersion))
 		b.WriteString("\n")
 
-		b.WriteString("New version:     ")
+		b.WriteString(m.theme.Text.Metadata.Render("New version:     "))
 		b.WriteString(newVersionStyle.Render(m.newVersion))
 		b.WriteString("\n")
 
@@ -259,9 +248,9 @@ func (m UpdateModal) View() string {
 
 	case UpdateStateDownloading:
 		b.WriteString(m.renderSpinner())
-		b.WriteString(" Downloading ")
+		b.WriteString(m.theme.Text.Body.Render(" Downloading "))
 		b.WriteString(newVersionStyle.Render(m.newVersion))
-		b.WriteString("...\n\n")
+		b.WriteString(m.theme.Text.Body.Render("...") + "\n\n")
 		b.WriteString(m.renderProgressBar())
 		b.WriteString("\n\n")
 		elapsed := time.Since(m.startTime).Round(time.Second)

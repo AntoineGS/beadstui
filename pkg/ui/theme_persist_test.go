@@ -5,7 +5,42 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
+
+func TestSaveThemePreservesTextRoles(t *testing.T) {
+	path := withThemeConfigHome(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := "# my text preferences\ntext:\n  metadata:\n    # supporting text is plain\n    italic: false\n    foreground: text\ntheme: dracula\n"
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveSelectedTheme("loam"); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"my text preferences", "supporting text is plain", "italic: false", "foreground: text", "theme: loam"} {
+		if !strings.Contains(string(saved), want) {
+			t.Fatalf("lost %q", want)
+		}
+	}
+	if strings.Index(string(saved), "text:") > strings.Index(string(saved), "theme:") {
+		t.Fatal("save reordered text and theme keys")
+	}
+	var parsed ThemeFile
+	if err := yaml.Unmarshal(saved, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Text.Metadata.Italic == nil || *parsed.Text.Metadata.Italic || parsed.Text.Metadata.Foreground != "text" {
+		t.Fatal("saved role changed")
+	}
+}
 
 func withThemeConfigHome(t *testing.T) string {
 	t.Helper()

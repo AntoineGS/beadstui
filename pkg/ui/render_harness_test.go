@@ -153,8 +153,23 @@ func TestRenderDump(t *testing.T) {
 	if os.Getenv("BT_RENDER_DUMP") == "" {
 		t.Skip("set BT_RENDER_DUMP=1 to dump TUI renders to _tmp/render")
 	}
+	restoreThemeGlobals(t)
+	outDir, err := filepath.Abs(filepath.Join("..", "..", "_tmp", "render"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	userTheme := withThemeConfigHome(t)
+	t.Chdir(t.TempDir())
+	t.Setenv("BT_THEME", "")
+	t.Setenv("BT_NO_BROWSER", "1")
+	t.Setenv("BT_TEST_MODE", "1")
+	if err := os.MkdirAll(filepath.Dir(userTheme), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(userTheme, []byte("text:\n  metadata: {italic: true}\n  selected: {bold: false, underline: true}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
-	outDir := filepath.Join("..", "..", "_tmp", "render")
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", outDir, err)
 	}
@@ -322,6 +337,25 @@ func TestRenderDump(t *testing.T) {
 		m.mode = ViewActionable
 		m.focused = focusActionable
 	}
+	readableActionable := func(name string) func(*Model) {
+		return func(m *Model) {
+			isDarkBackground = name != "paper" && name != "bt:greyscale"
+			m.applyThemeLive(name)
+			plan := analysis.ExecutionPlan{Summary: analysis.PlanSummary{HighestImpact: "issue-00", ImpactReason: "Unblocks work", UnblocksCount: 2}}
+			for i := 0; i < 24; i++ {
+				plan.Tracks = append(plan.Tracks, analysis.ExecutionTrack{
+					TrackID: fmt.Sprintf("track-%02d", i), Reason: "Independent work stream",
+					Items: []analysis.PlanItem{{ID: fmt.Sprintf("issue-%02d", i), Title: "界面 e\u0301 - a long actionable title for width checks", UnblocksIDs: []string{"next-a", "next-b"}}},
+				})
+			}
+			m.actionableView = NewActionableModel(plan, m.theme)
+			m.actionableView.SetSize(m.width, max(1, m.height-1))
+			for i := 0; i < 15; i++ {
+				m.actionableView.MoveDown()
+			}
+			enterActionable(m)
+		}
+	}
 	enterFlowMatrix := func(m *Model) {
 		cfg := analysis.DefaultLabelHealthConfig()
 		flow := analysis.ComputeCrossLabelFlow(m.data.issues, cfg)
@@ -470,6 +504,10 @@ func TestRenderDump(t *testing.T) {
 		// on the final row at the user's scrunched height.
 		{"actionable_100x32", 100, 32, enterActionable},
 		{"actionable_70x20", 70, 20, enterActionable},
+		{"actionable_readable_dracula_120x40", 120, 40, readableActionable("dracula")},
+		{"actionable_readable_dracula_40x12", 40, 12, readableActionable("dracula")},
+		{"actionable_readable_paper_120x40", 120, 40, readableActionable("paper")},
+		{"actionable_readable_greyscale_40x12", 40, 12, readableActionable("bt:greyscale")},
 		{"flowmatrix_100x32", 100, 32, enterFlowMatrix},
 		{"insights_100x32", 100, 32, enterInsights},
 
@@ -653,6 +691,7 @@ func TestRenderDump(t *testing.T) {
 			}()
 
 			issues := harnessIssues()
+			isDarkBackground = !strings.Contains(sc.name, "readable_paper") && !strings.Contains(sc.name, "readable_greyscale")
 			m := NewModel(issues, nil, "", nil, nil)
 			nm, _ := m.Update(tea.WindowSizeMsg{Width: sc.w, Height: sc.h})
 			m = nm.(Model)

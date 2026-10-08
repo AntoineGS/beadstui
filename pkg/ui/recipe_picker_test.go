@@ -31,6 +31,29 @@ func TestRecipePopup_SelectedRowAndFooterFit(t *testing.T) {
 	}
 }
 
+func TestRecipeHintTextRole(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Metadata = lipgloss.NewStyle().Background(theme.Primary).Underline(true).Bold(false).Italic(false)
+	recipes := make([]recipe.Recipe, 20)
+	for i := range recipes {
+		recipes[i] = recipe.Recipe{Name: fmt.Sprintf("Recipe %d", i)}
+	}
+	m := NewRecipePickerModel(recipes, theme)
+	m.SetSize(50, 14)
+	for range 19 {
+		m.MoveDown()
+	}
+	out := m.View()
+	_, hint := popupFindRow(t, out, "↑")
+	start := strings.Index(hint, "↑")
+	end := strings.Index(hint[start:], "more") + start + len("more")
+	text := hint[start:end]
+	if !strings.Contains(out, theme.Text.Metadata.Render(text)) {
+		t.Fatal("recipe scroll hint ignored metadata attributes/background")
+	}
+	assertPopupBounds(t, out, 50, 14)
+}
+
 func TestRecipePopup_EmptyAndZeroBudgets(t *testing.T) {
 	m := NewRecipePickerModel(nil, DefaultTheme())
 	m.SetSize(40, 12)

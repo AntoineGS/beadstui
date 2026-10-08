@@ -10,12 +10,15 @@ package ui
 import (
 	"bytes"
 	"context"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/teatest/v2"
 
@@ -23,6 +26,104 @@ import (
 	"github.com/seanmartinsmith/beadstui/internal/bdroute"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
+
+func TestFreshSupportingInputsTextRoles(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Body = lipgloss.NewStyle().Background(theme.Primary).Underline(true).Bold(false).Italic(false)
+	theme.Text.Heading = lipgloss.NewStyle().Background(theme.Secondary).Bold(false).Italic(false)
+	theme.Text.Metadata = lipgloss.NewStyle().Underline(true).Bold(false).Italic(false)
+	field := NewFieldInputModal("title", "Title", "draft", theme)
+	bql := NewBQLQueryModal(theme)
+	label := NewLabelPickerModel(nil, nil, theme)
+	repo := NewRepoPickerModel(nil, theme)
+	for name, input := range map[string]textinput.Model{"field": field.input, "bql": bql.input, "label": label.input, "repo": repo.input} {
+		styles := input.Styles()
+		for _, state := range []textinput.StyleState{styles.Focused, styles.Blurred} {
+			if !reflect.DeepEqual(state.Text, theme.Text.Body) || !reflect.DeepEqual(state.Prompt, theme.Text.Heading) || !reflect.DeepEqual(state.Placeholder, theme.Text.Metadata) {
+				t.Errorf("%s constructor did not adopt current text roles", name)
+			}
+		}
+	}
+	longform := NewLongformEditModal("description", "Description", "unsaved", theme)
+	areaStyles := longform.textarea.Styles()
+	for _, state := range []struct{ text, prompt, placeholder lipgloss.Style }{
+		{areaStyles.Focused.Text, areaStyles.Focused.Prompt, areaStyles.Focused.Placeholder},
+		{areaStyles.Blurred.Text, areaStyles.Blurred.Prompt, areaStyles.Blurred.Placeholder},
+	} {
+		if !reflect.DeepEqual(state.text, theme.Text.Body) || !reflect.DeepEqual(state.prompt, theme.Text.Heading) || !reflect.DeepEqual(state.placeholder, theme.Text.Metadata) {
+			t.Error("textarea constructor did not adopt current roles")
+		}
+	}
+	field.SetSize(80, 24)
+	if !strings.Contains(field.View(), theme.Text.Heading.Render("Title:")) {
+		t.Error("field label ignored heading role")
+	}
+	bql.SetSize(100, 40)
+	bql.input.SetValue("status:open")
+	out := bql.View()
+	if !strings.Contains(out, theme.Text.Body.Render("status:open")) {
+		t.Error("rendered BQL input ignored body role")
+	}
+	if !strings.Contains(out, theme.Text.Metadata.Render("enter: apply | esc: cancel | up/down: history")) {
+		t.Error("rendered BQL hint ignored metadata role")
+	}
+}
+
+func TestSupportingSurfacesTextRoles(t *testing.T) {
+	restoreThemeGlobals(t)
+	theme := DefaultTheme()
+	role := lipgloss.NewStyle().Foreground(theme.TextColor).Background(theme.Secondary).Underline(true).Bold(false).Italic(false)
+	theme.Text.Body = role.Foreground(theme.Success)
+	theme.Text.Metadata = role.Foreground(theme.Warning)
+	theme.Text.Heading = role.Foreground(theme.Info)
+	theme.Text.Badge = role.Foreground(theme.Danger)
+	theme.Text.Selected, theme.Text.Callout = role, role
+	m := settingsTestModel(t)
+	m.theme = theme
+	m.refreshThemeConsumers()
+	ActiveTextStyles = theme.Text
+	m.claimTargetID, m.claimTargetTitle = "role-id", "claim draft"
+	field := NewFieldInputModal("title", "Title", "draft", theme)
+	field.SetSize(100, 40)
+	longform := NewLongformEditModal("description", "Description", "draft", theme)
+	longform.SetSize(100, 40)
+	agent := NewAgentPromptModal("AGENTS.md", "AGENTS.md", theme)
+	agent.SetSize(100, 40)
+	update := NewUpdateModal("v1", "", theme)
+	update.SetSize(100, 40)
+	m.cassModal.beadID = "role-id"
+	m.cassModal.SetSize(100, 40)
+	m.shortcutsSidebar.SetSize(34, 40)
+	m.settingsModal.SetSize(100, 40)
+	for _, tc := range []struct{ name, out, label string }{
+		{"field", field.View(), "Title:"},
+		{"longform", longform.View(), "Description:"},
+		{"claim", m.renderClaimConfirm(), "role-id"},
+		{"update", update.View(), "Current version: "},
+		{"agent", agent.View(), "Preview of content to add:"},
+		{"cass", m.cassModal.View(), "role-id"},
+		{"help", RenderContextHelp(ContextList, theme, 100, 40), "Press ` for full tutorial │ Esc to close"},
+		{"sidebar", m.shortcutsSidebar.View(), "? global  -  ; hide"},
+		{"settings", strings.Join(m.settingsModal.renderHelp(60), "\n"), "Set the color palette."},
+		{"footer scope", renderLens(richLensFixture(160), lensFull), "bt"},
+		{"footer hint", renderStaticHints(false), " help"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			want := theme.Text.Metadata
+			switch tc.name {
+			case "field", "longform":
+				want = theme.Text.Heading
+			case "settings":
+				want = theme.Text.Body
+			case "footer scope":
+				want = theme.Text.Badge
+			}
+			if !strings.Contains(tc.out, want.Render(tc.label)) {
+				t.Fatalf("%s did not retain explicit false attributes/background for %q:\n%s", tc.name, tc.label, tc.out)
+			}
+		})
+	}
+}
 
 func TestFieldPickerView_AlignedCurrentAndCursor(t *testing.T) {
 	for _, width := range []int{48, 80, 120} {

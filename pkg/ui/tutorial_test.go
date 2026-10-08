@@ -6,7 +6,94 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 )
+
+func TestTutorialFocusedTOCAndEmptyTextRoleCells(t *testing.T) {
+	assertSpan := func(t *testing.T, out, text string, style lipgloss.Style) {
+		t.Helper()
+		for _, row := range strings.Split(out, "\n") {
+			plain := ansi.Strip(row)
+			idx := strings.Index(plain, text)
+			if idx < 0 {
+				continue
+			}
+			start := ansi.StringWidth(plain[:idx])
+			cells := uv.NewStyledString(row).Lines(ansi.GraphemeWidth)[0]
+			want := uv.NewStyledString(style.Render(text)).Lines(ansi.GraphemeWidth)[0]
+			for i, expected := range want {
+				if !cells[start+i].Style.Equal(&expected.Style) {
+					t.Errorf("span %q cell %d: style=%+v want=%+v", text, i, cells[start+i].Style, expected.Style)
+				}
+			}
+			return
+		}
+		t.Fatalf("missing span %q in %q", text, ansi.Strip(out))
+	}
+	for _, underline := range []bool{true, false} {
+		t.Run(fmt.Sprintf("underline=%t", underline), func(t *testing.T) {
+			theme := DefaultTheme()
+			theme.Text.Selected = lipgloss.NewStyle().Foreground(theme.TextColor).Background(theme.Secondary).Bold(false).Italic(false).Underline(underline)
+			theme.Text.Body = lipgloss.NewStyle().Foreground(theme.TextColor).Background(theme.Primary).Bold(false).Italic(underline).Underline(underline)
+			m := NewTutorialModel(theme)
+			m.width, m.height = 80, 30
+			m.focus, m.tocCursor, m.currentPage = focusTutorialTOC, 1, 0
+			pages := []TutorialPage{{ID: "first", Title: "First page", Section: "Section"}, {ID: "focused", Title: "Focused page", Section: "Section"}}
+			m.progress["focused"] = true
+			baseline := m
+			baseline.theme = DefaultTheme()
+			t.Run("focused", func(t *testing.T) {
+				out := m.renderTOC(pages)
+				assertSpan(t, out, " → Focused page", theme.Text.Selected)
+				assertSpan(t, out, activeGlyphs.Success, lipgloss.NewStyle().Foreground(theme.Open))
+				if lipgloss.Width(out) != lipgloss.Width(baseline.renderTOC(pages)) || lipgloss.Height(out) != lipgloss.Height(baseline.renderTOC(pages)) {
+					t.Fatal("TOC role styling changed geometry")
+				}
+				if m.focus != focusTutorialTOC || m.tocCursor != 1 || m.currentPage != 0 {
+					t.Fatal("TOC rendering changed navigation state")
+				}
+			})
+			t.Run("empty", func(t *testing.T) {
+				out := m.renderEmptyState()
+				assertSpan(t, out, "No tutorial pages available for this context.", theme.Text.Body)
+				if lipgloss.Width(out) != lipgloss.Width(baseline.renderEmptyState()) || lipgloss.Height(out) != lipgloss.Height(baseline.renderEmptyState()) {
+					t.Fatal("empty-state role styling changed geometry")
+				}
+			})
+		})
+	}
+}
+
+func TestTutorialElementsRespectTextRoles(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Body = lipgloss.NewStyle().Background(theme.Primary).Underline(true).Bold(false).Italic(false)
+	theme.Text.Heading = lipgloss.NewStyle().Background(theme.Secondary).Underline(true).Bold(false).Italic(false)
+	out := (Paragraph{Text: "Body text"}).Render(theme, 40)
+	if out != theme.Text.Body.Width(40).Render("Body text") {
+		t.Fatal("paragraph ignored body attributes/background")
+	}
+	heading := (Section{Title: "Section text"}).Render(theme, 40)
+	if !strings.Contains(heading, theme.Text.Heading.Render("Section text")) {
+		t.Fatal("section ignored heading attributes/background or forced bold")
+	}
+}
+
+func TestSupportingPlainTextRoles(t *testing.T) {
+	theme := DefaultTheme()
+	plain := lipgloss.NewStyle().Background(theme.Primary).Bold(false).Italic(false).Underline(false)
+	theme.Text.Body, theme.Text.Heading, theme.Text.Metadata = plain, plain, plain
+	if got := (Paragraph{Text: "Plain prose"}).Render(theme, 40); got != plain.Width(40).Render("Plain prose") {
+		t.Fatal("plain paragraph acquired local attributes")
+	}
+	if got := (Section{Title: "Plain heading"}).Render(theme, 40); !strings.Contains(got, plain.Render("Plain heading")) {
+		t.Fatal("plain heading acquired local attributes")
+	}
+	if got := RenderContextHelp(ContextList, theme, 100, 40); !strings.Contains(got, plain.Render("Press ` for full tutorial │ Esc to close")) {
+		t.Fatal("plain help hint acquired local attributes")
+	}
+}
 
 func newTestTutorialModel() TutorialModel {
 	return NewTutorialModel(DefaultTheme())

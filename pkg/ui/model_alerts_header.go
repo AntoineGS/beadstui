@@ -248,8 +248,8 @@ func (m Model) alertsHeaderLines(innerWidth int) []string {
 		contentW = 6
 	}
 
-	mutedStyle := lipgloss.NewStyle().Foreground(t.Muted)
-	valStyle := lipgloss.NewStyle().Foreground(t.Secondary)
+	mutedStyle := t.Text.Metadata
+	valStyle := t.Text.Body
 	sep := mutedStyle.Render(" " + activeGlyphs.Sep + " ")
 
 	// layout places left + right on one line within contentW. When there is no
@@ -275,7 +275,7 @@ func (m Model) alertsHeaderLines(innerWidth int) []string {
 	anomText := countWord(anomalies, "anomaly", "anomalies")
 	var anomStyled string
 	if anomalies > 0 {
-		anomStyled = lipgloss.NewStyle().Foreground(t.Blocked).Bold(true).Render(anomText)
+		anomStyled = t.Text.Body.Foreground(t.Blocked).Render(anomText)
 	} else {
 		anomStyled = mutedStyle.Render(anomText)
 	}

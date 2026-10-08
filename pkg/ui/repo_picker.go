@@ -30,6 +30,7 @@ type RepoPickerModel struct {
 // NewRepoPickerModel creates a new repo picker. By default, all repos are selected.
 func NewRepoPickerModel(repos []string, theme Theme) RepoPickerModel {
 	ti := textinput.New()
+	styleTextInput(&ti, theme)
 	ti.Placeholder = "type to filter..."
 	ti.CharLimit = 50
 	ti.SetWidth(30)

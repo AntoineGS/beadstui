@@ -36,7 +36,6 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 )
 
 // longformDirtyGuardWindow is the tkhq #3 "Variant A" ratified discard
@@ -158,6 +157,7 @@ type LongformEditModal struct {
 // the textarea and (via panelTitle) the basis for the panel's border title.
 func NewLongformEditModal(field, label, current string, theme Theme) LongformEditModal {
 	ta := textarea.New()
+	styleTextArea(&ta, theme)
 	ta.ShowLineNumbers = false
 	ta.SetValue(current)
 	ta.CursorEnd()
@@ -234,13 +234,30 @@ func (m LongformEditModal) Update(msg tea.Msg) (LongformEditModal, tea.Cmd) {
 // in Model.View().
 func (m LongformEditModal) View() string {
 	t := m.theme
-	labelStyle := lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
+	labelStyle := t.Text.Heading
 
 	lines := []string{
 		labelStyle.Render(m.label + ":"),
 		m.textarea.View(),
 	}
 	return RenderPopup(lines, m.popupOpts())
+}
+
+// styleTextArea shares constructor and live-refresh styling, preserving buffers.
+func styleTextArea(input *textarea.Model, t Theme) {
+	styles := input.Styles()
+	for _, state := range []*textarea.StyleState{&styles.Focused, &styles.Blurred} {
+		state.Base = t.Text.Body
+		state.Text = t.Text.Body
+		state.CursorLine = t.Text.Body
+		state.LineNumber = t.Text.Metadata
+		state.CursorLineNumber = t.Text.Heading
+		state.EndOfBuffer = t.Text.Metadata
+		state.Placeholder = t.Text.Metadata
+		state.Prompt = t.Text.Heading
+	}
+	styles.Cursor.Color = t.TextColor
+	input.SetStyles(styles)
 }
 
 // ---------------------------------------------------------------------------

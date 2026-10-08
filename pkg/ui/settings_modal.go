@@ -122,30 +122,8 @@ func (s *themeSetting) Next(m *Model) {
 // Safe to call from Update without synchronisation: bt-1n0b1 established that
 // the bubbletea event loop is the only reader of the Color* tokens and the
 // styles built from them, and Update and View run consecutively on it.
-//
-// The real hazard is staleness, not races. Most sub-models are rebuilt on entry
-// and pick up the new palette for free; the three below hold a Theme value copy
-// or a style built from one and outlive the swap, so they need an explicit
-// re-push or the list keeps rendering in the previous palette while everything
-// around it changes.
 func (m *Model) applyThemeLive(name string) {
-	tf := LoadThemeNamed(name)
-	ApplyThemeToGlobals(tf)
-	ApplyThemeToThemeStruct(&m.theme, tf)
-
-	// updateListDelegate rebuilds from current model state, so the delegate
-	// picks up the new Theme along with the hint/claim state it already
-	// carries. Reconstructing it here by hand would silently drop whichever
-	// field gets added to IssueDelegate next.
-	m.updateListDelegate()
-
-	m.list.Styles.Filter.Focused.Prompt = lipgloss.NewStyle().Foreground(m.theme.Primary)
-	m.list.Styles.Filter.Focused.Text = lipgloss.NewStyle().Foreground(m.theme.Primary)
-	m.renderer = NewMarkdownRendererWithTheme(80, m.theme)
-
-	// And the settings screen itself, so it repaints along with everything
-	// underneath it rather than staying in the palette it opened in.
-	m.settingsModal.SetTheme(m.theme)
+	m.applyThemeConfig(LoadThemeNamed(name))
 }
 
 // SettingsModalModel is the options screen.
@@ -282,8 +260,8 @@ func (s *SettingsModalModel) View() string {
 
 func (s *SettingsModalModel) renderTabs() string {
 	t := s.theme
-	active := lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
-	idle := lipgloss.NewStyle().Foreground(t.Subtext)
+	active := t.Text.Selected
+	idle := t.Text.Metadata
 
 	out := make([]string, 0, len(s.tabs))
 	for i, name := range s.tabs {
@@ -300,14 +278,10 @@ func (s *SettingsModalModel) renderTabs() string {
 // value beneath, the selected one highlighted.
 func (s *SettingsModalModel) renderSettings(width int) []string {
 	t := s.theme
-	// Filled bar for the selected setting, matching btop. Foreground comes from
-	// the theme background so the label stays legible whatever Primary is --
-	// several palettes in the corpus have a near-white Primary, where white-on-
-	// Primary would vanish.
-	nameSel := lipgloss.NewStyle().Foreground(ColorBg).Background(t.Primary).Bold(true)
-	nameIdle := lipgloss.NewStyle().Foreground(t.Base.GetForeground()).Bold(true)
-	valSel := lipgloss.NewStyle().Foreground(t.Primary)
-	valIdle := lipgloss.NewStyle().Foreground(t.Subtext)
+	nameSel := t.Text.Selected
+	nameIdle := t.Text.Heading
+	valSel := t.Text.Selected
+	valIdle := t.Text.Body
 
 	var out []string
 	for i, it := range s.items {
@@ -344,7 +318,7 @@ func (s *SettingsModalModel) renderHelp(width int) []string {
 	if it == nil {
 		return nil
 	}
-	style := lipgloss.NewStyle().Foreground(s.theme.Subtext)
+	style := s.theme.Text.Body
 
 	var out []string
 	for _, raw := range strings.Split(it.Help(), "\n") {

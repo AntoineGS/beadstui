@@ -938,9 +938,8 @@ func (fd FooterData) Render() string {
 	// ascii renders the doc's literal words ("ready 41") — the ascii glyph
 	// values carry their own trailing space so the same "%s%d" format works
 	// for both tiers.
-	// No background fills anywhere in the footer (bt-ycoqf, lens spec):
-	// hierarchy is carried by foreground color, bold, and dim only. The
-	// Padding(0, 1) survives as inter-section breathing room.
+	// Ordinary text follows configured roles; semantic count glyphs retain
+	// their status colors. Padding(0, 1) remains inter-section breathing room.
 	buildStats := func() string {
 		if fd.TimeTravelActive {
 			return lipgloss.NewStyle().
@@ -949,9 +948,7 @@ func (fd FooterData) Render() string {
 				Padding(0, 1).
 				Render(fd.TimeTravelStats)
 		}
-		statsStyle := lipgloss.NewStyle().
-			Foreground(ColorText).
-			Padding(0, 1)
+		statsStyle := ActiveTextStyles.Body.Padding(0, 1)
 		seg := func(style lipgloss.Style, glyph string, n int) string {
 			if n == 0 {
 				return ""
@@ -985,9 +982,7 @@ func (fd FooterData) Render() string {
 	// signal that out-ranks per-view counts.
 	hasCenterOverride := fd.CenterOverride != "" && !fd.TimeTravelActive
 	if hasCenterOverride {
-		statsSection = lipgloss.NewStyle().
-			Foreground(ColorText).
-			Padding(0, 1).
+		statsSection = ActiveTextStyles.Body.Padding(0, 1).
 			Render(fd.CenterOverride)
 	}
 
@@ -1006,9 +1001,7 @@ func (fd FooterData) Render() string {
 	// Watcher badge
 	watcherSection := ""
 	if fd.WatcherText != "" {
-		watcherStyle := lipgloss.NewStyle().
-			Foreground(ColorMuted).
-			Padding(0, 1)
+		watcherStyle := ActiveTextStyles.Metadata.Padding(0, 1)
 		watcherSection = watcherStyle.Render(fd.WatcherText)
 	}
 
@@ -1059,7 +1052,7 @@ func (fd FooterData) Render() string {
 	// feed only the ? overlay and the ; sidebar. renderStaticHints builds the
 	// pair; the anomaly (alertsSection) and bell render to its right.
 
-	countStyle := lipgloss.NewStyle().Foreground(ColorSecondary).Padding(0, 1)
+	countStyle := ActiveTextStyles.Body.Padding(0, 1)
 	countBadge := countStyle.Render(fmt.Sprintf("%d issues", fd.TotalItems))
 	countBadgeShort := countStyle.Render(fmt.Sprintf("%d", fd.TotalItems))
 	if hasCenterOverride {
