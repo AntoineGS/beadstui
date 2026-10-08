@@ -89,6 +89,7 @@ const (
 	focusFieldInput   // Textinput sub-modal: title/assignee (bt-oiaj.5)
 	focusLongformEdit // Textarea sub-modal: description/design/comment/notes/acceptance (bt-oiaj.6)
 	focusMemories     // Memories master/detail view (bt-2ea7t.4)
+	focusPluginPrompt // Plugin confirm/select prompt or plugin action menu
 )
 
 // ViewMode represents which primary view is active. Only one view mode
@@ -168,6 +169,7 @@ const (
 	// values, so inserting mid-block renumbers every modal below it.
 	ModalSettings     // Settings / options screen (bt-54c3)
 	ModalSettingsMenu // esc menu routing to options/help/quit (bt-54c3)
+	ModalPluginPrompt // Plugin confirm/select prompt or plugin action menu
 )
 
 // ModalTab identifies which tab the shared alerts/notifications modal is
@@ -766,11 +768,13 @@ type Model struct {
 	viewport           viewport.Model
 	renderer           *MarkdownRenderer
 	board              BoardModel
-	slotRegistry       *slots.Registry // row badge, section and BQL field providers; built-ins registered in NewModel
-	pluginHost         *plugin.Host    // nil when no plugin is configured
-	pluginSyncHash     string          // data hash last sent to pluginHost
-	pluginFields       func() []string // active plugins' BQL field prefixes; set by SetPluginHost, replaceable in tests
-	popupMode          bool            // --popup: quit after a plugin action asks to
+	slotRegistry       *slots.Registry    // row badge, section and BQL field providers; built-ins registered in NewModel
+	pluginHost         *plugin.Host       // nil when no plugin is configured
+	pluginSyncHash     string             // data hash last sent to pluginHost
+	pluginFields       func() []string    // active plugins' BQL field prefixes; set by SetPluginHost, replaceable in tests
+	popupMode          bool               // --popup: quit after a plugin action asks to
+	pluginActions      pluginActionSource // plugin actions on beads; set by SetPluginHost, replaceable in tests
+	pluginPrompt       *pluginPrompt      // open plugin prompt or action menu (ModalPluginPrompt)
 	labelDashboard     LabelDashboardModel
 	velocityComparison VelocityComparisonModel // bv-125
 	shortcutsSidebar   ShortcutsSidebar        // bv-3qi5

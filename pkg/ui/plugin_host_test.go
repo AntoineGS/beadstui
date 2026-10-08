@@ -265,8 +265,9 @@ func TestPluginStatusNotices(t *testing.T) {
 	}
 }
 
-func TestPluginPromptRepliesNil(t *testing.T) {
+func TestPluginPromptRepliesNilUnderModal(t *testing.T) {
 	m := NewModel(pluginTestIssues(), nil, "", nil, nil)
+	m.openModal(ModalHelp)
 	replied := false
 	var answer any = "unset"
 	m.Update(plugin.PromptMsg{Plugin: "example", Confirm: &plugin.ConfirmParams{}, Reply: func(a any) {

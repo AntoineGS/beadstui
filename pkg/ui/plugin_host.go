@@ -63,14 +63,7 @@ func (m Model) handlePluginMsg(msg tea.Msg) (Model, tea.Cmd, bool) {
 		return m, nil, true
 
 	case plugin.ToastMsg:
-		switch msg.Toast.Tone {
-		case "warn":
-			m.setNotice(msg.Toast.Message)
-		case "error":
-			m.setFailure(msg.Toast.Message)
-		default:
-			m.setStatus(msg.Toast.Message)
-		}
+		m.showPluginToast(msg.Toast)
 		return m, nil, true
 
 	case plugin.StatusMsg:
@@ -84,17 +77,18 @@ func (m Model) handlePluginMsg(msg tea.Msg) (Model, tea.Cmd, bool) {
 		return m, nil, true
 
 	case plugin.PromptMsg:
-		if msg.Reply != nil {
-			msg.Reply(nil)
-		}
-		return m, nil, true
+		m, cmd := m.handlePluginPromptMsg(msg)
+		return m, cmd, true
+
+	case pluginPromptStaleMsg:
+		return m.handlePluginPromptStale(msg), nil, true
+
+	case pluginActionResultMsg:
+		m, cmd := m.handlePluginActionResult(msg)
+		return m, cmd, true
 	}
 	return m, nil, false
 }
-
-// clearPluginPending ends the pending state of plugin actions on beads whose
-// plugin state changed.
-func (m *Model) clearPluginPending(_ []plugin.BeadKey) {}
 
 // queryMentionsPluginField reports whether a BQL query names a field of a
 // plugin, given the plugins' "<name>." field prefixes.

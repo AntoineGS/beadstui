@@ -138,6 +138,8 @@ func (m Model) View() tea.View {
 	case ModalLongformEdit:
 		// Handled as overlay after background renders (below) — dimmed
 		// backdrop like the other field-edit modals (bt-oiaj.6).
+	case ModalPluginPrompt:
+		// Handled as overlay after background renders (below)
 	case ModalAgentPrompt:
 		// Handled as overlay after background renders (below)
 	case ModalCassSession:
@@ -353,6 +355,9 @@ func (m Model) View() tea.View {
 	}
 	if m.activeModal == ModalLongformEdit {
 		body = OverlayCenterDimBackdrop(body, m.longformEdit.View(), m.width, m.height-1)
+	}
+	if m.activeModal == ModalPluginPrompt {
+		body = OverlayCenterDimBackdrop(body, m.renderPluginPrompt(), m.width, m.height-1)
 	}
 
 	footer := m.renderFooter()

@@ -44,6 +44,7 @@ type writeKind int
 const (
 	writeClaim writeKind = iota
 	writeFieldEdit
+	writePluginAction // Field holds the action label; never settles on reload
 )
 
 // pendingWrite tracks one in-flight write (bt-oiaj.13). Field/Target are
@@ -291,6 +292,7 @@ func lastNonEmptyLine(s string) string {
 // while writes remain pending and self-cancelling otherwise. Generalizes
 // handleClaimSpinnerTick (bt-oiaj.10).
 func (m Model) handleWriteSpinnerTick() (Model, tea.Cmd) {
+	m.expirePluginActions(time.Now())
 	if len(m.pendingWrites) == 0 {
 		m.writeSpinnerActive = false
 		return m, nil

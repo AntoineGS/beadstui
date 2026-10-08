@@ -184,6 +184,7 @@ func (m *Model) SetActiveRepos(repos map[string]bool) {
 func (m *Model) SetPluginHost(h *plugin.Host) {
 	m.pluginHost = h
 	m.pluginFields = h.FieldPrefixes
+	m.pluginActions = h
 	h.Register(m.slotRegistry)
 }
 
@@ -475,6 +476,8 @@ func (m Model) FocusState() string {
 		return "update_modal"
 	case focusMemories:
 		return "memories"
+	case focusPluginPrompt:
+		return "plugin_prompt"
 	default:
 		return "unknown"
 	}

@@ -657,6 +657,11 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 		return m.handleLongformEditKeys(msg)
 	}
+	// Plugin confirm/select prompt and plugin action menu: owns every key
+	// while open, ctrl+c included (it answers the plugin before quitting).
+	if m.activeModal == ModalPluginPrompt {
+		return m.handlePluginPromptKeys(msg)
+	}
 
 	// Handle help overlay toggle (? or F1)
 	if key.Matches(msg, m.keys.Global.Help) && m.list.FilterState() != list.Filtering {
@@ -1513,6 +1518,12 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.focused = focusLabelPicker
 			return m, nil
 
+		}
+
+		// Plugin action keys and the action menu, for keys the view's own
+		// handler does not bind.
+		if m2, cmd, ok := m.tryPluginActionKey(msg); ok {
+			return m2, cmd
 		}
 
 		// Focus-specific key handling
