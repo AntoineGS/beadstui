@@ -107,3 +107,19 @@ func TestSelectIssueByIDKeepsExplicitFilter(t *testing.T) {
 		t.Fatalf("CurrentFilter() = %q, want in_progress", got)
 	}
 }
+
+func TestSelectIssueByIDKeepsDefaultWhenLabelHidesBead(t *testing.T) {
+	// Widening only helps closed beads; a bead the label filter hides stays
+	// hidden and the status filter must not change behind the user's back.
+	issues := defaultFilterIssues()
+	issues[0].Labels = []string{"ui"}
+	m := NewModel(issues, nil, "", nil, nil)
+	m.filter.labelFilter = "ui"
+	m.applyFilter()
+	if m.selectIssueByID("c-progress") {
+		t.Fatal("selectIssueByID(c-progress) = true, but the label filter hides it")
+	}
+	if got := m.CurrentFilter(); got != "open" {
+		t.Fatalf("CurrentFilter() = %q, want open", got)
+	}
+}

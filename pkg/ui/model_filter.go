@@ -193,7 +193,7 @@ func (m *Model) selectIssueByID(issueID string) bool {
 	// Hidden only by the default open filter (bt-fx1): epics, alerts and
 	// notifications still reach closed beads. An explicit filter is kept.
 	if m.filter.currentFilter == defaultStatusFilter && m.filter.activeRecipe == nil {
-		if _, ok := m.data.issueMap[issueID]; ok {
+		if issue, ok := m.data.issueMap[issueID]; ok && issue != nil && isClosedLikeStatus(issue.Status) {
 			m.filter.currentFilter = "all"
 			m.applyFilter()
 			return selectVisible()
