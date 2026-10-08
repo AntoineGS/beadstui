@@ -12,12 +12,6 @@ package ui
 // It also restores the quit confirmation. Moving esc to this menu orphaned
 // ModalQuitConfirm, since esc was its only route; QUIT below is that route now.
 
-import (
-	"strings"
-
-	"charm.land/lipgloss/v2"
-)
-
 // menuEntry is one row of the esc menu.
 type menuEntry struct {
 	label string
@@ -26,11 +20,12 @@ type menuEntry struct {
 
 // SettingsMenuModel is the esc menu.
 type SettingsMenuModel struct {
-	entries  []menuEntry
-	selected int
-	width    int
-	height   int
-	theme    Theme
+	entries   []menuEntry
+	selected  int
+	width     int
+	height    int
+	theme     Theme
+	popupSize *PopupSize
 }
 
 // Menu entry indices. Named rather than positional so the key handler does not
@@ -57,6 +52,7 @@ func NewSettingsMenuModel(theme Theme) SettingsMenuModel {
 func (s *SettingsMenuModel) SetSize(width, height int) {
 	s.width = width
 	s.height = height
+	s.popupSize = &PopupSize{width, height}
 }
 
 // SetTheme re-points the menu at a new theme.
@@ -88,50 +84,9 @@ func (s *SettingsMenuModel) SelectedIndex() int { return s.selected }
 
 // View renders the menu. Composited by OverlayCenterDimBackdrop.
 func (s *SettingsMenuModel) View() string {
-	if s.width == 0 {
-		s.width = 80
-	}
-	if s.height == 0 {
-		s.height = 24
-	}
-	t := s.theme
-
-	boxWidth := 34
-	if boxWidth > s.width-4 {
-		boxWidth = s.width - 4
-	}
-	if boxWidth < 18 {
-		boxWidth = 18
-	}
-
-	selStyle := lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
-	idleStyle := lipgloss.NewStyle().Foreground(t.Subtext)
-	descStyle := lipgloss.NewStyle().Foreground(t.Secondary).Italic(true)
-	footerStyle := lipgloss.NewStyle().Foreground(t.Secondary).Italic(true)
-
-	var lines []string
-	lines = append(lines, "")
+	entries := make([]PopupMenuEntry, len(s.entries))
 	for i, e := range s.entries {
-		prefix := "    "
-		style := idleStyle
-		if i == s.selected {
-			prefix = "  ▸ "
-			style = selStyle
-		}
-		lines = append(lines, prefix+style.Render(e.label))
-		lines = append(lines, "      "+descStyle.Render(truncateRunesHelper(e.desc, boxWidth-8, "…")))
-		if i < len(s.entries)-1 {
-			lines = append(lines, "")
-		}
+		entries[i] = PopupMenuEntry{Label: e.label, Detail: e.desc, Selected: i == s.selected}
 	}
-	lines = append(lines, "")
-	lines = append(lines, "  "+footerStyle.Render("j/k • enter • esc"))
-	lines = append(lines, "")
-
-	return RenderTitledPanel(strings.Join(lines, "\n"), PanelOpts{
-		Title:   "bt",
-		Width:   boxWidth,
-		Height:  len(lines) + 2,
-		Focused: true,
-	})
+	return renderPopupMenuWindow(entries, PopupMenuOpts{}, s.selected, PopupOpts{Title: "bt", Theme: s.theme, Available: s.popupSize, Width: 34, MinBodyRows: 2, Footer: []string{"j/k move  enter select  esc back", "j/k enter esc"}})
 }

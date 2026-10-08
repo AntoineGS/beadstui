@@ -303,23 +303,28 @@ func renderPopupMenuWindow(entries []PopupMenuEntry, menuOpts PopupMenuOpts, cur
 	if l.Compact || l.Height == 0 {
 		return RenderPopup(shape, opts)
 	}
-	start, end := 0, len(entries)
-	if len(shape) > l.BodyHeight {
-		cursor = min(max(0, cursor), max(0, len(entries)-1))
-		start = cursor
-		used := PopupMenuEntryRows(entries[cursor])
-		for start > 0 && used+PopupMenuEntryRows(entries[start-1]) <= l.BodyHeight {
-			start--
-			used += PopupMenuEntryRows(entries[start])
-		}
-		end = cursor + 1
-		for end < len(entries) && used+PopupMenuEntryRows(entries[end]) <= l.BodyHeight {
-			used += PopupMenuEntryRows(entries[end])
-			end++
-		}
-	}
+	start, end := popupMenuWindowRange(entries, cursor, l.BodyHeight)
 	opts.Width, opts.Height, opts.MinBodyRows = l.Width, l.Height, l.BodyHeight
 	return RenderPopup(RenderPopupMenu(entries[start:end], menu, opts.Theme, l.BodyWidth), opts)
+}
+
+func popupMenuWindowRange(entries []PopupMenuEntry, cursor, rows int) (start, end int) {
+	if len(entries) == 0 || rows <= 0 {
+		return 0, 0
+	}
+	cursor = min(max(0, cursor), len(entries)-1)
+	start = cursor
+	end = cursor + 1
+	used := PopupMenuEntryRows(entries[cursor])
+	for start > 0 && used+PopupMenuEntryRows(entries[start-1]) <= rows {
+		start--
+		used += PopupMenuEntryRows(entries[start])
+	}
+	for end < len(entries) && used+PopupMenuEntryRows(entries[end]) <= rows {
+		used += PopupMenuEntryRows(entries[end])
+		end++
+	}
+	return start, end
 }
 
 // BorderVariant controls the weight of box-drawing characters.

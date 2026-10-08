@@ -7,9 +7,39 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/seanmartinsmith/beadstui/pkg/recipe"
 )
+
+func TestRecipePopup_SelectedRowAndFooterFit(t *testing.T) {
+	m := NewRecipePickerModel([]recipe.Recipe{{Name: "Short", Description: "one"}, {Name: "A much longer name", Description: strings.Repeat("description ", 8)}, {Name: "Last", Description: "three"}}, DefaultTheme())
+	m.SetSize(40, 12)
+	m.MoveDown()
+	m.MoveDown()
+	out := m.View()
+	assertPopupBounds(t, out, 40, 12)
+	_, row := popupFindRow(t, out, "Last")
+	if !strings.Contains(row, ">") {
+		t.Fatalf("selected row cue missing: %q", row)
+	}
+	popupFindRow(t, out, "esc")
+	popupFindRow(t, out, "↑")
+	_, detail := popupFindRow(t, out, "three")
+	if ansi.StringWidth(row[:strings.Index(row, "Last")]) != ansi.StringWidth(detail[:strings.Index(detail, "three")]) {
+		t.Fatal("description misaligned")
+	}
+}
+
+func TestRecipePopup_EmptyAndZeroBudgets(t *testing.T) {
+	m := NewRecipePickerModel(nil, DefaultTheme())
+	m.SetSize(40, 12)
+	popupFindRow(t, m.View(), "No recipes available")
+	m.SetSize(0, 0)
+	if m.View() != "" {
+		t.Fatal("explicit zero budget rendered recipe popup")
+	}
+}
 
 func TestRecipePickerSelection(t *testing.T) {
 	recipes := []recipe.Recipe{

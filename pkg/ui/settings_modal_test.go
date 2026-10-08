@@ -1,12 +1,43 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
+
+func TestSettingsLauncherPopup_AlignedDetailsAndShortSelection(t *testing.T) {
+	m := settingsTestModel(t)
+	m.settingsMenu.SetSize(48, 16)
+	out := m.settingsMenu.View()
+	assertPopupBounds(t, out, 48, 16)
+	var column int
+	for i, entry := range []struct{ label, detail string }{{"OPTIONS", "theme and display settings"}, {"HELP", "keybindings and views"}, {"QUIT", "leave bt"}} {
+		_, row := popupFindRow(t, out, entry.label)
+		_, detail := popupFindRow(t, out, entry.detail)
+		x := ansi.StringWidth(row[:strings.Index(row, entry.label)])
+		if i > 0 && x != column {
+			t.Fatal("menu label columns differ")
+		}
+		column = x
+		if y := ansi.StringWidth(detail[:strings.Index(detail, entry.detail)]); y != x {
+			t.Fatal("menu detail not under label")
+		}
+	}
+	m.settingsMenu.MoveUp()
+	m.settingsMenu.SetSize(36, 8)
+	out = m.settingsMenu.View()
+	assertPopupBounds(t, out, 36, 8)
+	_, quit := popupFindRow(t, out, "QUIT")
+	if !strings.Contains(quit, ">") {
+		t.Fatal("short menu lost selection")
+	}
+	popupFindRow(t, out, "esc")
+}
 
 func settingsTestModel(t *testing.T) Model {
 	t.Helper()

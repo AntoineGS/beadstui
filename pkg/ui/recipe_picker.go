@@ -16,6 +16,7 @@ type RecipePickerModel struct {
 	width         int
 	height        int
 	theme         Theme
+	popupSize     *PopupSize
 }
 
 // NewRecipePickerModel creates a new recipe picker
@@ -31,6 +32,7 @@ func NewRecipePickerModel(recipes []recipe.Recipe, theme Theme) RecipePickerMode
 func (m *RecipePickerModel) SetSize(width, height int) {
 	m.width = width
 	m.height = height
+	m.popupSize = &PopupSize{width, height}
 }
 
 // MoveUp moves selection up
@@ -73,160 +75,47 @@ func (m *RecipePickerModel) SelectedIndex() int {
 // surrounding bg for OverlayCenterDimBackdrop to dim — the user perceived
 // this as "the dim layer is invisible" (bt-rhfo dogfood, 2026-05-07).
 func (m *RecipePickerModel) View() string {
-	if m.width == 0 {
-		m.width = 60
+	entries := make([]PopupMenuEntry, len(m.recipes))
+	shapeRows := 2
+	for i, r := range m.recipes {
+		entries[i] = PopupMenuEntry{Label: r.Name, Detail: r.Description, Selected: i == m.selectedIndex}
+		shapeRows += PopupMenuEntryRows(entries[i])
 	}
-	if m.height == 0 {
-		m.height = 20
-	}
-
-	t := m.theme
-
-	// Box width: content-comfortable, narrows on small terminals.
-	boxWidth := 50
-	if m.width < 60 {
-		boxWidth = m.width - 10
-	}
-	if boxWidth < 30 {
-		boxWidth = 30
-	}
-
-	// Box height: cap at ~70% of body height (matches alertsPanelHeight).
-	boxHeight := m.height * 7 / 10
-	if boxHeight < 12 {
-		boxHeight = 12
-	}
-	if boxHeight > m.height-2 {
-		boxHeight = m.height - 2
-	}
-	if boxHeight < 8 {
-		boxHeight = 8
-	}
-
-	// Inner content rows (RenderTitledPanel reserves 2 for top/bottom border).
-	// Subtract another 2 for the Padding(1, 2) wrap below, giving the budget
-	// available for our own content lines.
-	innerRows := boxHeight - 4
-	if innerRows < 4 {
-		innerRows = 4
-	}
-
-	// Layout budget: 2 rows for top/bottom scroll indicators (always rendered
-	// — blank when not scrolled — so the layout stays stable across scroll
-	// states) and 2 rows for the footer (blank separator + key hint).
-	const indicatorRows = 2
-	const footerRows = 2
-	bodyRows := innerRows - indicatorRows - footerRows
-	if bodyRows < 3 {
-		bodyRows = 3
-	}
-
-	// Each recipe up to 3 rows (name + desc + separator). Last visible recipe
-	// drops the trailing separator: 3N - 1 ≤ bodyRows → N = (bodyRows + 1) / 3.
-	visibleCount := 0
-	if len(m.recipes) > 0 {
-		visibleCount = (bodyRows + 1) / 3
-		if visibleCount < 1 {
-			visibleCount = 1
-		}
-		if visibleCount > len(m.recipes) {
-			visibleCount = len(m.recipes)
-		}
-	}
-
-	// Viewport offset: keep selected in view, biased to ~1/3 down the window.
-	offset := 0
-	if visibleCount < len(m.recipes) {
-		offset = m.selectedIndex - visibleCount/3
-		if offset < 0 {
-			offset = 0
-		}
-		if max := len(m.recipes) - visibleCount; offset > max {
-			offset = max
-		}
-	}
-	end := offset + visibleCount
-	if end > len(m.recipes) {
-		end = len(m.recipes)
-	}
-
-	scrollHintStyle := lipgloss.NewStyle().
-		Foreground(t.Subtext).
-		Italic(true)
-	footerStyle := lipgloss.NewStyle().
-		Foreground(t.Secondary).
-		Italic(true)
-
-	// Match the alerts-modal padding pattern: prefix each line with a fixed
-	// leading-space pad. RenderTitledPanel handles trailing-space padding to
-	// innerWidth via lipgloss.Width on each line. Avoid wrapping the whole
-	// block in lipgloss.NewStyle().Padding(...).Render(...): lipgloss does
-	// not consistently pad multi-line styled content to a uniform width when
-	// each line has its own SGR scope, producing description rows that end
-	// early and leave the right border misaligned (bt-rhfo dogfood).
-	const leadPad = "  "
-
-	var lines []string
-	lines = append(lines, "") // top breathing room
-
-	// Top scroll indicator (or blank).
-	if offset > 0 {
-		lines = append(lines, leadPad+scrollHintStyle.Render(fmt.Sprintf("  ↑ %d more", offset)))
+	menu := MeasurePopupMenu(entries, PopupMenuOpts{})
+	minimum := 3
+	if len(entries) > 0 {
+		minimum = 2 + PopupMenuEntryRows(entries[m.selectedIndex])
 	} else {
+		shapeRows++
+	}
+	opts := PopupOpts{Title: "Select Recipe", Theme: m.theme, Available: m.popupSize, Width: 50, Height: max(8, popupAvailableSize(m.popupSize).Height*7/10), MinBodyRows: minimum, Footer: []string{"j/k: navigate  enter: apply  esc: cancel", "j/k enter esc"}}
+	shape := make([]string, shapeRows)
+	shape[0] = strings.Repeat(" ", menu.Width)
+	l := MeasurePopup(shape, opts)
+	if l.Compact || l.Height == 0 {
+		return RenderPopup(shape, opts)
+	}
+	start, end := popupMenuWindowRange(entries, m.selectedIndex, l.BodyHeight-2)
+	lines := []string{""}
+	hint := lipgloss.NewStyle().Foreground(m.theme.Subtext).Italic(true)
+	if start > 0 {
+		lines[0] = hint.Render(fmt.Sprintf("↑ %d more", start))
+	}
+	if len(entries) == 0 {
+		lines = append(lines, "No recipes available")
+	} else {
+		lines = append(lines, RenderPopupMenu(entries[start:end], menu, m.theme, l.BodyWidth)...)
+	}
+	for len(lines) < l.BodyHeight-1 {
 		lines = append(lines, "")
 	}
-
-	for i := offset; i < end; i++ {
-		r := m.recipes[i]
-		isSelected := i == m.selectedIndex
-
-		nameStyle := lipgloss.NewStyle()
-		if isSelected {
-			nameStyle = nameStyle.Foreground(t.Primary).Bold(true)
-		} else {
-			nameStyle = nameStyle.Foreground(t.Base.GetForeground())
-		}
-
-		prefix := "  "
-		if isSelected {
-			prefix = "▸ "
-		}
-
-		name := prefix + r.Name
-		lines = append(lines, leadPad+nameStyle.Render(name))
-
-		if r.Description != "" {
-			descStyle := lipgloss.NewStyle().
-				Foreground(t.Secondary).
-				Italic(true)
-			desc := "    " + truncateRunesHelper(r.Description, boxWidth-8, "…")
-			lines = append(lines, leadPad+descStyle.Render(desc))
-		}
-
-		if i < end-1 {
-			lines = append(lines, "")
-		}
+	bottom := ""
+	if end < len(entries) {
+		bottom = hint.Render(fmt.Sprintf("↓ %d more", len(entries)-end))
 	}
-
-	// Bottom scroll indicator (or blank).
-	if remaining := len(m.recipes) - end; remaining > 0 {
-		lines = append(lines, leadPad+scrollHintStyle.Render(fmt.Sprintf("  ↓ %d more", remaining)))
-	} else {
-		lines = append(lines, "")
-	}
-
-	lines = append(lines, "")
-	lines = append(lines, leadPad+footerStyle.Render("j/k: navigate • enter: apply • esc: cancel"))
-	lines = append(lines, "") // bottom breathing room
-
-	content := strings.Join(lines, "\n")
-
-	return RenderTitledPanel(content, PanelOpts{
-		Title:   "Select Recipe",
-		Width:   boxWidth,
-		Height:  boxHeight,
-		Focused: true,
-	})
+	lines = append(lines, bottom)
+	opts.Width, opts.Height, opts.MinBodyRows = l.Width, l.Height, l.BodyHeight
+	return RenderPopup(lines, opts)
 }
 
 // RecipeCount returns the number of recipes
