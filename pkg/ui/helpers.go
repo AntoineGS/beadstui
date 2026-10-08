@@ -496,7 +496,7 @@ func RenderDependencyTree(node *DependencyNode) string {
 	for _, child := range node.Children {
 		addTreeChild(t, child)
 	}
-	return "Dependency Graph:\n" + t.String()
+	return ActiveTextStyles.Heading.Render("Dependency Graph:") + "\n" + t.String()
 }
 
 // formatTreeNode formats a single tree row: unstyled type icon + lipgloss-
@@ -537,30 +537,32 @@ func addTreeChild(parent *tree.Tree, node *DependencyNode) {
 // visually; open/in_progress/blocked nodes are styled to pop. Uses package-
 // level ColorStatus* vars so light/dark adaptation is automatic.
 func statusTreeStyle(status string) lipgloss.Style {
+	// Status colors/dimming remain semantic; text attributes follow Body.
+	base := ActiveTextStyles.Body
 	switch status {
 	case "closed", "tombstone":
 		// Recede: dim so closed work doesn't compete with still-open items.
-		return lipgloss.NewStyle().Foreground(ColorStatusClosed).Faint(true)
+		return base.Foreground(ColorStatusClosed).Faint(true)
 	case "open":
 		// Default: visible but not emphasized.
-		return lipgloss.NewStyle().Foreground(ColorStatusOpen)
+		return base.Foreground(ColorStatusOpen)
 	case "in_progress":
 		// Accent: bright to signal active work.
-		return lipgloss.NewStyle().Foreground(ColorStatusInProgress).Bold(true)
+		return base.Foreground(ColorStatusInProgress)
 	case "blocked":
 		// Warning: red foreground to demand attention.
-		return lipgloss.NewStyle().Foreground(ColorStatusBlocked).Bold(true)
+		return base.Foreground(ColorStatusBlocked)
 	case "deferred":
-		// Parked: italic + dim, distinct from both closed and open.
-		return lipgloss.NewStyle().Foreground(ColorStatusDeferred).Italic(true).Faint(true)
+		// Parked: semantic dimming, without overriding configured italic.
+		return base.Foreground(ColorStatusDeferred).Faint(true)
 	case "pinned":
-		return lipgloss.NewStyle().Foreground(ColorStatusPinned)
+		return base.Foreground(ColorStatusPinned)
 	case "hooked":
-		return lipgloss.NewStyle().Foreground(ColorStatusHooked)
+		return base.Foreground(ColorStatusHooked)
 	case "review":
-		return lipgloss.NewStyle().Foreground(ColorStatusReview)
+		return base.Foreground(ColorStatusReview)
 	default:
-		return lipgloss.NewStyle().Foreground(ColorMuted)
+		return base.Foreground(ColorMuted)
 	}
 }
 

@@ -22,6 +22,20 @@ func fullscreenIssuesModel(t *testing.T, w, h int) Model {
 	return m
 }
 
+func TestPeekTextRoles(t *testing.T) {
+	m := fullscreenIssuesModel(t, 120, 32)
+	m.theme.Text.Body = lipgloss.NewStyle().Italic(true).Bold(false)
+	m.theme.Text.Metadata = lipgloss.NewStyle().Italic(false).Bold(true)
+	item := m.list.SelectedItem().(IssueItem)
+	got := m.renderPeekStrip(m.list.Width())
+	if !strings.Contains(got, m.theme.Text.Body.Width(m.list.Width()).Render(item.Issue.Title)) {
+		t.Fatalf("peek title ignored Body: %q", got)
+	}
+	if !strings.Contains(got, m.theme.Text.Metadata.Width(m.list.Width()).MaxHeight(1).Render(m.peekMetaLine(item))) {
+		t.Fatalf("peek facts ignored Metadata: %q", got)
+	}
+}
+
 // TestPeekStripHeightMatchesSizing is the invariant that keeps the list inside
 // its panel. renderPeekStrip and applyListDetailSizing are gated on the same
 // predicate and must agree on the row cost; if the renderer emits more rows

@@ -158,7 +158,7 @@ func RenderPopup(body []string, opts PopupOpts) string {
 		return ""
 	}
 	if l.Compact {
-		return ansi.Truncate("Terminal too small", l.Width, "")
+		return opts.Theme.Text.Metadata.Render(ansi.Truncate("Terminal too small", l.Width, ""))
 	}
 	flat := popupBodyLines(body)
 	inner := make([]string, l.Height-2)
@@ -166,11 +166,11 @@ func RenderPopup(body []string, opts PopupOpts) string {
 	for i := 0; i < l.BodyHeight; i++ {
 		line := ""
 		if i < len(flat) {
-			line = ansi.Truncate(flat[i], l.BodyWidth, "")
+			line = popupStyledText(ansi.Truncate(flat[i], l.BodyWidth, ""), opts.Theme.Text.Body)
 		}
 		inner[l.BodyY-1+i] = pad + line
 	}
-	hintStyle := lipgloss.NewStyle().Foreground(opts.Theme.Secondary).Italic(true)
+	hintStyle := opts.Theme.Text.Metadata
 	for i, hint := range l.Footer {
 		inner[l.FooterY-1+i] = pad + centerLine(hintStyle.Render(hint), l.BodyWidth)
 	}
@@ -188,7 +188,7 @@ func RenderPopup(body []string, opts PopupOpts) string {
 	}
 	return RenderTitledPanel(strings.Join(inner, "\n"), PanelOpts{
 		Title: title, RightLabel: right, Width: l.Width, Height: l.Height,
-		Focused: true, CenterTitle: right == "", BorderColor: accent, TitleColor: accent,
+		Focused: true, CenterTitle: right == "", BorderColor: accent, TitleColor: opts.Accent, TitleStyle: &opts.Theme.Text.Heading,
 		ansiTitleWidth: true,
 	})
 }
@@ -275,18 +275,18 @@ func RenderPopupMenu(entries []PopupMenuEntry, l PopupMenuLayout, theme Theme, w
 	}
 	blockWidth := min(l.Width, width)
 	left := strings.Repeat(" ", max(0, (width-blockWidth)/2))
-	primary := lipgloss.NewStyle().Foreground(theme.Primary).Bold(true)
-	idle := lipgloss.NewStyle().Foreground(theme.Base.GetForeground())
-	secondary := lipgloss.NewStyle().Foreground(theme.Secondary)
-	detail := secondary.Italic(true)
+	primary := theme.Text.Heading
+	idle := theme.Text.Body
+	secondary := theme.Text.Metadata
+	detail := theme.Text.Metadata
 	fit := func(row string) string { return popupPadCell(left+popupPadCell(row, blockWidth), width) }
 	var rows []string
 	for _, e := range entries {
 		e = popupSingleRow(e)
 		cursor, labelStyle := "  ", idle
 		if e.Selected {
-			cursor = primary.Render("> ")
-			labelStyle = primary
+			cursor = theme.Text.Selected.Render("> ")
+			labelStyle = theme.Text.Selected
 		}
 		row := cursor
 		if l.Shortcuts {
@@ -378,7 +378,7 @@ func renderSearchPopup(entries []PopupMenuEntry, cursor, slots, selected int, in
 	menu := MeasurePopupMenu(entries, PopupMenuOpts{Markers: true})
 	lines := []string{input, ""}
 	if len(entries) == 0 {
-		lines = append(lines, lipgloss.NewStyle().Foreground(opts.Theme.Secondary).Italic(true).Render(empty))
+		lines = append(lines, opts.Theme.Text.Metadata.Render(empty))
 	} else {
 		lines = append(lines, RenderPopupMenu(entries[start:end], menu, opts.Theme, l.BodyWidth)...)
 	}
@@ -394,7 +394,7 @@ func renderSearchPopup(entries []PopupMenuEntry, cursor, slots, selected int, in
 	if selected > 0 {
 		count += fmt.Sprintf(" • %d selected", selected)
 	}
-	lines = append(lines, "", lipgloss.NewStyle().Foreground(opts.Theme.Secondary).Italic(true).Render(count))
+	lines = append(lines, "", opts.Theme.Text.Metadata.Render(count))
 	opts.Width, opts.Height, opts.MinBodyRows = l.Width, l.Height, l.BodyHeight
 	return RenderPopup(lines, opts)
 }
@@ -426,12 +426,16 @@ type PanelOpts struct {
 	// honored in the non-centered (left-aligned title) path.
 	RightLabel string
 
-	// Optional color overrides. When non-nil these take precedence
-	// over the default focus-based colors, letting callers supply
+	// Optional semantic color overrides. When non-nil these take precedence
+	// over focus-based border colors and the Heading foreground, letting callers supply
 	// custom border/title colors (e.g. per-column board colors,
 	// dimmed "skipped" panels).
 	BorderColor color.Color
 	TitleColor  color.Color
+
+	// TitleStyle supplies heading attributes and colors from the caller's theme.
+	// An explicit semantic TitleColor overrides only its foreground.
+	TitleStyle *lipgloss.Style
 
 	// Popup chrome opts into the same grapheme-aware width used by its
 	// layout. Ordinary panels retain their existing title-width behavior.
@@ -463,13 +467,13 @@ func RenderTitledPanel(content string, opts PanelOpts) string {
 
 	tl, tr, bl, br, h, vert := borderChars(opts.Variant)
 
-	// Colors: use overrides when provided, otherwise derive from focus state.
-	// Unfocused border uses ColorMuted (matches the unfocused title color)
+	// Border colors: use overrides when provided, otherwise derive from focus.
+	// Unfocused borders use ColorMuted
 	// rather than ColorBgHighlight so the frame stays readable on dark
 	// terminals — bt-peo7 dogfooding showed that dim borders next to a
 	// brighter title made multi-pane views (history) read as broken chrome
 	// even though all four borders were rendering correctly.
-	var borderColor, titleColor color.Color
+	var borderColor color.Color
 	if opts.BorderColor != nil {
 		borderColor = opts.BorderColor
 	} else if opts.Focused {
@@ -478,18 +482,13 @@ func RenderTitledPanel(content string, opts PanelOpts) string {
 		borderColor = ColorMuted
 	}
 
-	if opts.TitleColor != nil {
-		titleColor = opts.TitleColor
-	} else if opts.Focused {
-		titleColor = ColorPrimary
-	} else {
-		titleColor = ColorMuted
-	}
-
 	borderStyle := lipgloss.NewStyle().Foreground(borderColor)
-	titleStyle := lipgloss.NewStyle().Foreground(titleColor)
-	if opts.Focused {
-		titleStyle = titleStyle.Bold(true)
+	titleStyle := ActiveTextStyles.Heading
+	if opts.TitleStyle != nil {
+		titleStyle = *opts.TitleStyle
+	}
+	if opts.TitleColor != nil {
+		titleStyle = titleStyle.Foreground(opts.TitleColor)
 	}
 
 	innerWidth := opts.Width - 2 // subtract left and right border chars

@@ -1015,14 +1015,14 @@ func (m *Model) recalculateSplitPaneSizes() {
 func (m *Model) updateViewportContent() {
 	selectedItem := m.list.SelectedItem()
 	if selectedItem == nil {
-		m.viewport.SetContent("No issues selected")
+		m.viewport.SetContent(m.theme.Text.Metadata.Render("No issues selected"))
 		return
 	}
 
 	// Safe type assertion
 	issueItem, ok := selectedItem.(IssueItem)
 	if !ok {
-		m.viewport.SetContent("Error: invalid item type")
+		m.viewport.SetContent(m.theme.Text.Body.Foreground(m.theme.Blocked).Render("Error: invalid item type"))
 		return
 	}
 	item := issueItem.Issue
@@ -1346,7 +1346,7 @@ func (m *Model) updateViewportContent() {
 	source := buildMarkdownSource(sections)
 	rendered, err := m.renderer.Render(source)
 	if err != nil {
-		m.viewport.SetContent(fmt.Sprintf("Error rendering markdown: %v", err))
+		m.viewport.SetContent(m.theme.Text.Body.Foreground(m.theme.Blocked).Render(fmt.Sprintf("Error rendering markdown: %v", err)))
 		m.pendingCommentScroll = time.Time{}
 		return
 	}
@@ -1387,8 +1387,8 @@ func (m *Model) updateViewportContent() {
 // buildPropertyBlockANSI renders the bead property block (author, assignee,
 // timestamps, labels, session provenance) as lipgloss-styled aligned rows.
 // Replaces the previous fenced-code-block path which routed through chroma
-// (bt-x5xc4 trap class). Labels use ColorMuted; values use the default
-// foreground. Returns empty string when no rows are populated.
+// (bt-x5xc4 trap class). Labels use Heading; values use Metadata.
+// Returns empty string when no rows are populated.
 func buildPropertyBlockANSI(item model.Issue) string {
 	type metaRow struct{ label, value string }
 	rows := []metaRow{}
@@ -1429,26 +1429,27 @@ func buildPropertyBlockANSI(item model.Issue) string {
 			labelWidth = n
 		}
 	}
-	labelStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	labelStyle := ActiveTextStyles.Heading
 	var lines []string
 	for _, r := range rows {
 		paddedLabel := fmt.Sprintf("%-*s", labelWidth, r.label)
-		lines = append(lines, labelStyle.Render(paddedLabel)+"  "+r.value)
+		lines = append(lines, labelStyle.Render(paddedLabel)+"  "+ActiveTextStyles.Metadata.Render(r.value))
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
 // buildGraphAnalysisANSI renders the three numeric rows of the graph-
 // position panel (Impact Depth, Centrality, Flow Role) with lipgloss.
-// Labels are muted; values use default foreground. The "### Graph
+// Labels use Heading; values use Metadata. The "### Graph
 // Analysis" heading is emitted as a separate md section by the caller so
 // Glamour styles it consistently with adjacent H3 headings.
 func buildGraphAnalysisANSI(pr, bt, imp, ev, hub, auth float64) string {
-	muted := lipgloss.NewStyle().Foreground(ColorMuted)
+	label := ActiveTextStyles.Heading
+	value := ActiveTextStyles.Metadata
 	lines := []string{
-		muted.Render("Impact Depth:") + fmt.Sprintf(" %.0f (downstream chain length)", imp),
-		muted.Render("Centrality:") + fmt.Sprintf(" PR %.4f • BW %.4f • EV %.4f", pr, bt, ev),
-		muted.Render("Flow Role:") + fmt.Sprintf(" Hub %.4f • Authority %.4f", hub, auth),
+		label.Render("Impact Depth:") + value.Render(fmt.Sprintf(" %.0f (downstream chain length)", imp)),
+		label.Render("Centrality:") + value.Render(fmt.Sprintf(" PR %.4f • BW %.4f • EV %.4f", pr, bt, ev)),
+		label.Render("Flow Role:") + value.Render(fmt.Sprintf(" Hub %.4f • Authority %.4f", hub, auth)),
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
@@ -1623,7 +1624,7 @@ const searchScoreMinAbs = 0.05
 // The caller routes this through addANSI so it bypasses Glamour's code-fence
 // path (bt-x5xc4 trap) and the ANSI block characters survive intact.
 func buildSearchScoresANSI(components map[string]float64, hybridScore, textScore float64, item model.Issue) string {
-	muted := lipgloss.NewStyle().Foreground(ColorMuted)
+	muted := ActiveTextStyles.Metadata
 
 	// Sort components by absolute contribution descending; alphabetical key
 	// as tiebreaker so the bar order is deterministic when two components

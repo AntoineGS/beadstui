@@ -38,7 +38,9 @@ func badgeStyle(b slots.Badge) lipgloss.Style {
 	default:
 		fg = ColorMuted
 	}
-	return lipgloss.NewStyle().Foreground(fg).Bold(b.Tone != slots.ToneMuted)
+	// Provider tones carry domain meaning; inherit text attributes without
+	// turning an unfilled tone indicator into a general filled badge.
+	return ActiveTextStyles.Badge.UnsetBackground().Foreground(fg)
 }
 
 // compactAge formats a duration for a badge: "<1m", "4m", "3h", "2d".

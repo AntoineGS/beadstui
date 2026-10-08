@@ -22,9 +22,9 @@ func (m Model) renderLoadingScreen() string {
 		frame = workerSpinnerFrames[m.data.workerSpinnerIdx%len(workerSpinnerFrames)]
 	}
 
-	spinnerStyle := lipgloss.NewStyle().Foreground(ColorInfo).Bold(true)
-	titleStyle := lipgloss.NewStyle().Foreground(ColorText).Bold(true)
-	subStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	spinnerStyle := m.theme.Text.Body.Foreground(m.theme.Info)
+	titleStyle := m.theme.Text.Title
+	subStyle := m.theme.Text.Metadata
 
 	lines := []string{
 		spinnerStyle.Render(frame),
@@ -47,9 +47,9 @@ func (m Model) renderLoadingScreen() string {
 // that with this message; phase 2 wires the Dolt extractor (bt-08sh) so the
 // pane actually renders events. Style mirrors renderHistoryLoadingScreen.
 func (m Model) renderHistoryDoltOnly(width, height int) string {
-	titleStyle := lipgloss.NewStyle().Foreground(ColorText).Bold(true)
-	bodyStyle := lipgloss.NewStyle().Foreground(ColorMuted)
-	hintStyle := lipgloss.NewStyle().Foreground(ColorMuted).Italic(true)
+	titleStyle := m.theme.Text.Title
+	bodyStyle := m.theme.Text.Body
+	hintStyle := m.theme.Text.Metadata
 
 	lines := []string{
 		titleStyle.Render("No commit history yet"),
@@ -74,9 +74,9 @@ func (m Model) renderHistoryDoltOnly(width, height int) string {
 func (m Model) renderHistoryLoadingScreen() string {
 	frame := workerSpinnerFrames[m.data.workerSpinnerIdx%len(workerSpinnerFrames)]
 
-	spinnerStyle := lipgloss.NewStyle().Foreground(ColorInfo).Bold(true)
-	titleStyle := lipgloss.NewStyle().Foreground(ColorText).Bold(true)
-	subStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	spinnerStyle := m.theme.Text.Body.Foreground(m.theme.Info)
+	titleStyle := m.theme.Text.Title
+	subStyle := m.theme.Text.Metadata
 
 	lines := []string{
 		spinnerStyle.Render(frame),
@@ -98,9 +98,9 @@ func (m Model) renderHistoryLoadingScreen() string {
 func (m Model) renderMemoriesLoadingScreen() string {
 	frame := workerSpinnerFrames[m.data.workerSpinnerIdx%len(workerSpinnerFrames)]
 
-	spinnerStyle := lipgloss.NewStyle().Foreground(ColorInfo).Bold(true)
-	titleStyle := lipgloss.NewStyle().Foreground(ColorText).Bold(true)
-	subStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	spinnerStyle := m.theme.Text.Body.Foreground(m.theme.Info)
+	titleStyle := m.theme.Text.Title
+	subStyle := m.theme.Text.Metadata
 
 	lines := []string{
 		spinnerStyle.Render(frame),
@@ -116,7 +116,7 @@ func (m Model) renderMemoriesLoadingScreen() string {
 
 func (m Model) View() tea.View {
 	if !m.ready {
-		return tea.NewView("Initializing...")
+		return tea.NewView(m.theme.Text.Body.Render("Initializing..."))
 	}
 
 	var body string
@@ -438,7 +438,7 @@ func spliceDebugDims(s string, width, height int) string {
 // composites it via OverlayCenterDimBackdrop in View() so the backdrop
 // dims uniformly with the other modals (bt-yly4).
 func (m Model) renderQuitConfirm() string {
-	return RenderPopup([]string{"Quit beadstui?"}, PopupOpts{Title: "Quit?", Theme: m.theme, Accent: m.theme.Blocked, Available: &PopupSize{m.width, max(0, m.height-1)}, Footer: []string{"esc / y to quit; any other key cancels", "esc/y quit; other cancel"}})
+	return RenderPopup([]string{m.theme.Text.Body.Render("Quit beadstui?")}, PopupOpts{Title: "Quit?", Theme: m.theme, Accent: m.theme.Blocked, Available: &PopupSize{m.width, max(0, m.height-1)}, Footer: []string{"esc / y to quit; any other key cancels", "esc/y quit; other cancel"}})
 }
 
 // centerLine pads s with spaces on both sides so its visible width
@@ -473,9 +473,9 @@ func (m Model) renderSearchRow(width int) string {
 	totalItems := len(m.list.Items())
 	visibleItems := len(m.list.VisibleItems())
 
-	labelStyle := lipgloss.NewStyle().Foreground(t.Muted)
-	queryStyle := lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
-	countStyle := lipgloss.NewStyle().Foreground(t.Muted)
+	labelStyle := t.Text.Metadata
+	queryStyle := t.Text.Body
+	countStyle := t.Text.Metadata
 
 	var left, right string
 
@@ -532,8 +532,7 @@ func (m Model) issueListHeader(layout issueListLayout) string {
 	t := m.theme
 	listInnerWidth := m.list.Width()
 
-	headerStyle := lipgloss.NewStyle().
-		Foreground(t.Subtext).
+	headerStyle := t.Text.Heading.
 		Width(listInnerWidth)
 
 	headerText := issueListColumnHeader(layout)
@@ -632,8 +631,7 @@ func (m Model) renderIssuesPanel(outerWidth, panelHeight int, focused bool) stri
 	// Keep pagination to one row so sizing and the bottom search click target
 	// agree even when the Issues pane is narrower than the full page summary.
 	pageInfo = ansi.Truncate(pageInfo, listInnerWidth, "")
-	pageStyle := lipgloss.NewStyle().
-		Foreground(t.Secondary).
+	pageStyle := t.Text.Metadata.
 		Width(listInnerWidth).
 		Align(lipgloss.Center)
 
@@ -677,6 +675,7 @@ func (m Model) renderIssuesPanel(outerWidth, panelHeight int, focused bool) stri
 		Width:      outerWidth,
 		Height:     panelHeight,
 		Focused:    focused,
+		TitleStyle: &t.Text.Heading,
 	})
 }
 
@@ -685,10 +684,11 @@ func (m Model) renderIssuesPanel(outerWidth, panelHeight int, focused bool) stri
 // (bt-530vn).
 func (m Model) renderDetailsPanel(outerWidth, panelHeight int, focused bool) string {
 	return RenderTitledPanel(m.viewport.View(), PanelOpts{
-		Title:   detailsPaneBadge,
-		Width:   outerWidth,
-		Height:  panelHeight,
-		Focused: focused,
+		Title:      detailsPaneBadge,
+		Width:      outerWidth,
+		Height:     panelHeight,
+		Focused:    focused,
+		TitleStyle: &m.theme.Text.Heading,
 	})
 }
 
@@ -826,9 +826,9 @@ func (m Model) helpGlobalGroups() []helpGroup {
 // cells, followed by right-justified key + muted desc rows. Groups are separated
 // by a blank line. keyW is the right-justify width for the key token column.
 func renderHelpGroupColumn(groups []helpGroup, colWidth, keyW int, t Theme) []string {
-	headerStyle := lipgloss.NewStyle().Foreground(t.Secondary)
-	keyStyle := lipgloss.NewStyle().Foreground(t.Base.GetForeground()).Bold(true)
-	descStyle := lipgloss.NewStyle().Foreground(t.Muted)
+	headerStyle := t.Text.Heading
+	keyStyle := t.Text.Body
+	descStyle := t.Text.Metadata
 
 	var lines []string
 	for i, g := range groups {
@@ -1101,7 +1101,7 @@ func (m Model) helpMiniRows() []helpRow {
 
 // renderHelpMini renders the compact non-scrolling mini help card for short
 // terminals (bt-dx7k.1 Task 2). Lays helpMiniRows into a fixed 2-column grid
-// using the Task-1 key/desc styles (bold key, muted desc). A centered nudge
+// using the shared Body/Metadata roles. A centered nudge
 // line communicates the tier relationship; the footer close hint matches the
 // full sheet. Wrapped in ONE RenderTitledPanel.
 func (m Model) renderHelpMini() string {
@@ -1111,10 +1111,10 @@ func (m Model) renderHelpMini() string {
 		return ""
 	}
 
-	// Reuse Task-1 row styles: bold bright key, muted desc, dim secondary for chrome.
-	keyStyle := lipgloss.NewStyle().Foreground(t.Base.GetForeground()).Bold(true)
-	descStyle := lipgloss.NewStyle().Foreground(t.Muted)
-	dimStyle := lipgloss.NewStyle().Foreground(t.Secondary)
+	// Share the same roles as the full help sheet.
+	keyStyle := t.Text.Body
+	descStyle := t.Text.Metadata
+	dimStyle := t.Text.Metadata
 
 	// keyW: max visible width of any key token (uniform right-justification, yazi rjust).
 	keyW := 1
@@ -1243,8 +1243,8 @@ func (m Model) renderLabelHealthDetail(lh analysis.LabelHealth) string {
 		BorderForeground(t.Primary).
 		Padding(1, 2)
 
-	labelStyle := lipgloss.NewStyle().Foreground(t.Secondary).Bold(true)
-	valStyle := lipgloss.NewStyle().Foreground(t.Base.GetForeground())
+	labelStyle := t.Text.Heading
+	valStyle := t.Text.Body
 
 	// 2. Define helper functions
 	bar := func(score int) string {
@@ -1296,7 +1296,7 @@ func (m Model) renderLabelHealthDetail(lh analysis.LabelHealth) string {
 
 	// 3. Build content
 	var sb strings.Builder
-	sb.WriteString(lipgloss.NewStyle().Foreground(t.Primary).Bold(true).MarginBottom(1).
+	sb.WriteString(t.Text.Title.MarginBottom(1).
 		Render(fmt.Sprintf("Label Health: %s", lh.Label)))
 	sb.WriteString("\n")
 
@@ -1351,7 +1351,7 @@ func (m Model) renderLabelHealthDetail(lh analysis.LabelHealth) string {
 		}
 	}
 
-	sb.WriteString(lipgloss.NewStyle().Foreground(t.Secondary).Italic(true).Render("Press Esc to close"))
+	sb.WriteString(t.Text.Metadata.Render("Press Esc to close"))
 
 	content := boxStyle.Render(sb.String())
 
@@ -1374,16 +1374,9 @@ func (m Model) renderLabelDrilldown() string {
 		Padding(1, 2).
 		Align(lipgloss.Left)
 
-	titleStyle := lipgloss.NewStyle().
-		Foreground(t.Primary).
-		Bold(true)
-
-	labelStyle := lipgloss.NewStyle().
-		Foreground(t.Base.GetForeground()).
-		Bold(true)
-
-	valStyle := lipgloss.NewStyle().
-		Foreground(t.Base.GetForeground())
+	titleStyle := t.Text.Title
+	labelStyle := t.Text.Heading
+	valStyle := t.Text.Body
 
 	// Locate cached health for this label (if available)
 	var lh *analysis.LabelHealth
@@ -1518,7 +1511,7 @@ func (m Model) renderLabelDrilldown() string {
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString(lipgloss.NewStyle().Foreground(t.Secondary).Italic(true).Render("Press Esc to close • g for graph analysis"))
+	sb.WriteString(t.Text.Metadata.Render("Press Esc to close • g for graph analysis"))
 
 	content := boxStyle.Render(sb.String())
 
@@ -1542,20 +1535,10 @@ func (m Model) renderLabelGraphAnalysis() string {
 		Padding(1, 2).
 		Align(lipgloss.Left)
 
-	titleStyle := lipgloss.NewStyle().
-		Foreground(t.Primary).
-		Bold(true)
-
-	labelStyle := lipgloss.NewStyle().
-		Foreground(t.Base.GetForeground()).
-		Bold(true)
-
-	valStyle := lipgloss.NewStyle().
-		Foreground(t.Base.GetForeground())
-
-	subtextStyle := lipgloss.NewStyle().
-		Foreground(t.Subtext).
-		Italic(true)
+	titleStyle := t.Text.Title
+	labelStyle := t.Text.Heading
+	valStyle := t.Text.Body
+	subtextStyle := t.Text.Metadata
 
 	var sb strings.Builder
 	sb.WriteString(titleStyle.Render(fmt.Sprintf("Graph Analysis: %s", r.Label)))
@@ -1674,7 +1657,7 @@ func (m Model) renderLabelGraphAnalysis() string {
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(lipgloss.NewStyle().Foreground(t.Secondary).Italic(true).Render("Press Esc/q/g to close"))
+	sb.WriteString(t.Text.Metadata.Render("Press Esc/q/g to close"))
 
 	content := boxStyle.Render(sb.String())
 
@@ -1700,12 +1683,8 @@ func (m Model) renderLabelGraphAnalysis() string {
 func (m Model) renderTimeTravelPrompt() string {
 	t := m.theme
 
-	subtitleStyle := lipgloss.NewStyle().
-		Foreground(t.Subtext).
-		Italic(true)
-
-	exampleStyle := lipgloss.NewStyle().
-		Foreground(t.Secondary)
+	subtitleStyle := t.Text.Metadata
+	exampleStyle := t.Text.Metadata
 
 	opts := PopupOpts{Title: "Time-Travel Mode", Theme: t, Available: &PopupSize{m.width, max(0, m.height-1)}, Width: 64, MinBodyRows: 3, Footer: []string{"Enter to compare, Esc to cancel", "Enter compare Esc cancel"}}
 	l := MeasurePopup(nil, opts)

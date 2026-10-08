@@ -7,8 +7,27 @@ import (
 
 	"charm.land/bubbles/v2/viewport"
 	"charm.land/glamour/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
+
+func TestDetailTextRoles(t *testing.T) {
+	old := ActiveTextStyles
+	t.Cleanup(func() { ActiveTextStyles = old })
+	ActiveTextStyles.Heading = lipgloss.NewStyle().Bold(false).Underline(true)
+	ActiveTextStyles.Metadata = lipgloss.NewStyle().Italic(false).Underline(true)
+	got := buildPropertyBlockANSI(model.Issue{Author: "alice"})
+	for _, want := range []string{ActiveTextStyles.Heading.Render("Author "), ActiveTextStyles.Metadata.Render("@alice")} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("property block ignored role %q: %q", want, got)
+		}
+	}
+	ActiveTextStyles.Body = lipgloss.NewStyle().Underline(true).Bold(false)
+	semantic := statusTreeStyle("blocked")
+	if semantic.GetForeground() != ColorStatusBlocked || !semantic.GetUnderline() || semantic.GetBold() {
+		t.Fatalf("dependency status lost semantic color/configured attributes: %+v", semantic)
+	}
+}
 
 // TestSpliceSections_Empty verifies that an empty section list passes the
 // rendered output through unchanged.

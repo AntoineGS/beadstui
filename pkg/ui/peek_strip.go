@@ -62,9 +62,7 @@ func (m Model) renderPeekStrip(width int) string {
 
 	// Title, wrapped rather than truncated: showing the whole title is the
 	// entire reason the strip exists.
-	titleBlock := lipgloss.NewStyle().
-		Foreground(t.Primary).
-		Bold(true).
+	titleBlock := t.Text.Body.
 		Width(width).
 		Render(issue.Title)
 	titleRows := strings.Split(titleBlock, "\n")
@@ -79,8 +77,7 @@ func (m Model) renderPeekStrip(width int) string {
 		titleRows = append(titleRows, "")
 	}
 
-	meta := lipgloss.NewStyle().
-		Foreground(t.Muted).
+	meta := t.Text.Metadata.
 		Width(width).
 		MaxHeight(1).
 		Render(m.peekMetaLine(item))

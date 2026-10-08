@@ -27,6 +27,54 @@ func assertPopupBounds(t *testing.T, out string, width, height int) {
 	}
 }
 
+func TestPopupMenuRespectsTextAttributes(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Body = lipgloss.NewStyle().Underline(true)
+	theme.Text.Metadata = lipgloss.NewStyle().Italic(false).Underline(true)
+	theme.Text.Selected = lipgloss.NewStyle().Bold(false).Underline(true)
+	entries := []PopupMenuEntry{{Label: "Choice", Detail: "Explanation", Selected: true}, {Label: "Other"}}
+	got := strings.Join(RenderPopupMenu(entries, MeasurePopupMenu(entries, PopupMenuOpts{}), theme, 40), "\n")
+	for _, want := range []string{theme.Text.Selected.Render("Choice"), theme.Text.Body.Render("Other"), theme.Text.Metadata.Render("Explanation")} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("menu ignored role %q: %q", want, got)
+		}
+	}
+}
+
+func TestPanelTextRole(t *testing.T) {
+	old := ActiveTextStyles
+	t.Cleanup(func() { ActiveTextStyles = old })
+	ActiveTextStyles.Heading = lipgloss.NewStyle().Bold(false).Underline(true)
+	for _, focused := range []bool{false, true} {
+		got := RenderTitledPanel("body", PanelOpts{Title: "Heading", Width: 30, Height: 4, Focused: focused})
+		if !strings.Contains(got, ActiveTextStyles.Heading.Render("Heading")) {
+			t.Fatalf("focused=%v ignored heading role: %q", focused, got)
+		}
+		supplied := lipgloss.NewStyle().Bold(false).Italic(false).Underline(true).Foreground(DefaultTheme().Warning)
+		got = RenderTitledPanel("body", PanelOpts{Title: "Heading", Width: 30, Height: 4, Focused: focused, TitleStyle: &supplied})
+		if !strings.Contains(got, supplied.Render("Heading")) {
+			t.Fatalf("focused=%v ignored supplied heading: %q", focused, got)
+		}
+		semantic := DefaultTheme().Blocked
+		got = RenderTitledPanel("body", PanelOpts{Title: "Heading", Width: 30, Height: 4, Focused: focused, TitleStyle: &supplied, TitleColor: semantic})
+		if !strings.Contains(got, supplied.Foreground(semantic).Render("Heading")) {
+			t.Fatalf("focused=%v ignored semantic foreground/attributes: %q", focused, got)
+		}
+	}
+}
+
+func TestPopupOwnHeadingRole(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Heading = lipgloss.NewStyle().Bold(false).Underline(true)
+	theme.Text.Metadata = lipgloss.NewStyle().Italic(false).Underline(true)
+	got := RenderPopup([]string{"body"}, PopupOpts{Title: "Heading", Theme: theme, Footer: []string{"hint"}})
+	for _, want := range []string{theme.Text.Heading.Render("Heading"), theme.Text.Metadata.Render("hint")} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("popup ignored its own theme %q: %q", want, got)
+		}
+	}
+}
+
 func popupFindRow(t *testing.T, out, text string) (int, string) {
 	t.Helper()
 	for i, row := range strings.Split(ansi.Strip(out), "\n") {

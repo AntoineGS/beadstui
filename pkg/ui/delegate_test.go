@@ -16,6 +16,46 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+func TestDelegateSelectedTextRole(t *testing.T) {
+	item := newTestIssueItem("bt-long-id-for-role-regression")
+	item.Issue.Title = strings.Repeat("界 title ", 30)
+	item.IsQuickWin = true
+	item.GateAwaitType = "gh:run"
+	item.UnblocksCount = 3
+	theme := DefaultTheme()
+	theme.Text.Selected = lipgloss.NewStyle().Foreground(theme.TextColor).Background(theme.Highlight).Bold(false).Underline(true)
+	d := IssueDelegate{Theme: theme, Slots: waitRegistry()}
+	l := list.New([]list.Item{item}, d, 180, 8)
+	var buf bytes.Buffer
+	d.Render(&buf, l, 0, item)
+	got := buf.String()
+	if lipgloss.Width(got) != 180 || !strings.Contains(ansi.Strip(got), activeGlyphs.Bolt) {
+		t.Fatalf("selection lost width/marker: %q", got)
+	}
+	want := theme.Text.Selected.Width(180).MaxWidth(180).Render(ansi.Strip(got))
+	if got != want {
+		t.Fatalf("selection ignored coherent role: got %q want %q", got, want)
+	}
+	for _, marker := range []string{"WAIT", activeGlyphs.GateCI, activeGlyphs.Bolt} {
+		if !strings.Contains(ansi.Strip(got), marker) {
+			t.Fatalf("selected row lost marker %q: %q", marker, ansi.Strip(got))
+		}
+	}
+	wantStyle := uv.NewStyledString(theme.Text.Selected.Render("X")).Lines(ansi.GraphemeWidth)[0][0].Style
+	for x, cell := range uv.NewStyledString(got).Lines(ansi.GraphemeWidth)[0] {
+		if !cell.Style.Equal(&wantStyle) {
+			t.Fatalf("cell %d lost selected background/attributes: %+v", x, cell.Style)
+		}
+	}
+	item.IsQuickWin = false
+	l.SetItems([]list.Item{item})
+	buf.Reset()
+	d.Render(&buf, l, 0, item)
+	if !strings.Contains(ansi.Strip(buf.String()), "↪3") {
+		t.Fatalf("selected row lost triage marker: %q", ansi.Strip(buf.String()))
+	}
+}
+
 // Build a minimal issue item used across delegate tests.
 func newTestIssueItem(id string) IssueItem {
 	now := time.Now().Add(-2 * time.Hour) // deterministic-ish age string (e.g. "2h")
@@ -182,7 +222,7 @@ func TestIssueListColumnHeaderUsesCompactIDCell(t *testing.T) {
 	}
 }
 
-func TestIssueListHeaderIsQuietAndSingleLine(t *testing.T) {
+func TestIssueListHeaderUsesHeadingAndSingleLine(t *testing.T) {
 	for _, workspace := range []bool{false, true} {
 		for _, width := range []int{1, 12, 30, 80} {
 			m := Model{
@@ -190,17 +230,18 @@ func TestIssueListHeaderIsQuietAndSingleLine(t *testing.T) {
 				list:  list.New(nil, IssueDelegate{}, width, 10),
 			}
 			m.workspaceMode = workspace
+			wantStyle := uv.NewStyledString(m.theme.Text.Heading.Render("X")).Lines(ansi.GraphemeWidth)[0][0].Style
 			header := m.splitViewHeader()
 			lines := uv.NewStyledString(header).Lines(ansi.GraphemeWidth)
 			if len(lines) != 1 || len(lines[0]) != width {
 				t.Fatalf("workspace=%t width=%d: header must occupy one full row: %q", workspace, width, header)
 			}
 			for x, cell := range lines[0] {
-				if cell.Style.Bg != nil || cell.Style.Attrs != 0 {
-					t.Fatalf("workspace=%t width=%d cell=%d: header must have no fill or bold: %+v", workspace, width, x, cell.Style)
+				if cell.Style.Bg != nil {
+					t.Fatalf("workspace=%t width=%d cell=%d: default heading must have no fill: %+v", workspace, width, x, cell.Style)
 				}
-				if cell.Content != " " && !cell.Style.Equal(&uv.Style{Fg: m.theme.Subtext}) {
-					t.Fatalf("workspace=%t width=%d cell=%d: column label must use subdued text: %+v", workspace, width, x, cell.Style)
+				if cell.Content != " " && !cell.Style.Equal(&wantStyle) {
+					t.Fatalf("workspace=%t width=%d cell=%d: column label must use Heading: %+v", workspace, width, x, cell.Style)
 				}
 			}
 			wantPrefix := "T"
@@ -243,6 +284,7 @@ func TestIssueDelegate_SelectedRowHasUniformHighlight(t *testing.T) {
 	item.IsQuickWin = true
 	item.RepoPrefix = "api"
 	d := IssueDelegate{Theme: DefaultTheme(), ShowRepoBadges: true, Slots: waitRegistry()}
+	wantStyle := uv.NewStyledString(d.Theme.Text.Selected.Render("X")).Lines(ansi.GraphemeWidth)[0][0].Style
 	for _, width := range []int{12, 50, 80, 120, 160} {
 		row := renderDelegateRow(t, d, item, width)
 		lines := uv.NewStyledString(row).Lines(ansi.GraphemeWidth)
@@ -253,7 +295,7 @@ func TestIssueDelegate_SelectedRowHasUniformHighlight(t *testing.T) {
 			if cell.Style.Bg == nil || cell.Style.Fg == nil {
 				t.Fatalf("width=%d cell=%d: missing selection colors", width, x)
 			}
-			if !cell.Style.Equal(&uv.Style{Bg: d.Theme.Highlight, Fg: ColorText}) {
+			if !cell.Style.Equal(&wantStyle) {
 				t.Fatalf("width=%d cell=%d: non-uniform selection style: %+v", width, x, cell.Style)
 			}
 		}
@@ -266,6 +308,8 @@ func TestIssueDelegate_SelectedRowUsesCustomThemeText(t *testing.T) {
 		Text:      &AdaptiveHex{Dark: "#eeeeee", Light: "#222222"},
 		Highlight: &AdaptiveHex{Dark: "#333333", Light: "#dddddd"},
 	}}
+	plain := false
+	tf.Text.Selected = TextRoleConfig{Foreground: "text", Bold: &plain}
 	for _, dark := range []bool{false, true} {
 		isDarkBackground = dark
 		d := IssueDelegate{Theme: DefaultTheme()}
@@ -679,7 +723,7 @@ func TestIssueDelegate_EditedAgeHasNoTilde(t *testing.T) {
 	d := IssueDelegate{Theme: DefaultTheme()}
 	l := list.New([]list.Item{item, item}, d, 90, 10)
 	var buf bytes.Buffer
-	d.Render(&buf, l, 1, item) // nonselected row retains italic styling
+	d.Render(&buf, l, 1, item) // nonselected row retains configured metadata
 	row := buf.String()
 	if strings.Contains(ansi.Strip(row), "~") {
 		t.Fatalf("edited age must not have tilde: %q", row)
@@ -687,14 +731,8 @@ func TestIssueDelegate_EditedAgeHasNoTilde(t *testing.T) {
 	if !strings.Contains(ansi.Strip(row), "1h ago") {
 		t.Fatalf("missing edited age: %q", row)
 	}
-	italic := false
-	for _, cell := range uv.NewStyledString(row).Lines(ansi.GraphemeWidth)[0] {
-		if cell.Content == "h" && cell.Style.Attrs&uv.AttrItalic != 0 {
-			italic = true
-		}
-	}
-	if !italic {
-		t.Fatalf("edited age lost italic styling: %q", row)
+	if !strings.Contains(row, d.Theme.Text.Metadata.Render("1h ago")) {
+		t.Fatalf("edited age ignored metadata role: %q", row)
 	}
 }
 

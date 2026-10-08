@@ -91,6 +91,22 @@ func TestBadgeStyleOverride(t *testing.T) {
 	}
 }
 
+func TestSlotBadgeTextRoleAndSemanticTone(t *testing.T) {
+	old := ActiveTextStyles
+	t.Cleanup(func() { ActiveTextStyles = old })
+	ActiveTextStyles.Badge = lipgloss.NewStyle().Bold(false).Underline(true).Background(ColorSecondary)
+	got, _ := renderBadgeStrip([]slots.Badge{{Text: "WAIT", Tone: slots.ToneWarn}}, 20, time.Now())
+	want := ActiveTextStyles.Badge.UnsetBackground().Foreground(ColorWarning).Render("WAIT")
+	if got != want {
+		t.Fatalf("slot tone/attributes ignored: got %q want %q", got, want)
+	}
+	custom := lipgloss.NewStyle().Bold(true).Foreground(ColorDanger)
+	got, _ = renderBadgeStrip([]slots.Badge{{Text: "CUSTOM", Tone: slots.ToneWarn, Style: &custom}}, 20, time.Now())
+	if got != custom.Render("CUSTOM") {
+		t.Fatalf("provider styling was replaced: %q", got)
+	}
+}
+
 func TestRenderSlotSection(t *testing.T) {
 	got := renderSlotSection(slots.Section{Title: "Agent", Markdown: "- one"})
 	if want := "### Agent\n\n- one\n\n"; got != want {
