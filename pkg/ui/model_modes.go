@@ -428,11 +428,8 @@ func (m *Model) exitTimeTravelMode() {
 }
 
 // rebuildListWithDiffInfo recreates list items with current diff state.
-// Dispatches through reapplyActiveFilter so recipe, BQL, and plain
-// status/label filters are all honored (bt-k9f6f) instead of only recipe
-// vs. plain applyFilter().
 func (m *Model) rebuildListWithDiffInfo() {
-	m.reapplyActiveFilter()
+	m.applyFilter()
 }
 
 // IsTimeTravelMode returns whether time-travel mode is active

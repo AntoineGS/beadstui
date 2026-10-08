@@ -280,13 +280,13 @@ func (m Model) handlePhase2Ready(msg Phase2ReadyMsg) (Model, tea.Cmd) {
 	debug.LogTiming("phase2.insightsPanel.setup", time.Since(insightsStart))
 
 	graphStart := time.Now()
-	if m.data.snapshot != nil {
-		if m.data.snapshot.GraphLayout != nil {
-			m.data.snapshot.GraphLayout.UpdatePhase2Ranks(msg.Stats)
-		}
+	if m.data.snapshot != nil && m.data.snapshot.GraphLayout != nil {
+		m.data.snapshot.GraphLayout.UpdatePhase2Ranks(msg.Stats)
+	}
+	if m.canUseSnapshot(m.filterSpec(), len(m.filter.visible)) && m.data.snapshot.GraphLayout != nil {
 		m.graphView.SetSnapshot(m.data.snapshot)
 	} else {
-		m.graphView.SetIssues(m.data.issues, &ins)
+		m.graphView.SetIssues(m.filter.visible, &ins)
 	}
 	debug.LogTiming("phase2.graphView.setup", time.Since(graphStart))
 
@@ -401,16 +401,14 @@ func (m Model) handlePhase2Ready(msg Phase2ReadyMsg) (Model, tea.Cmd) {
 		}
 	}
 
-	// Re-apply filters. When nothing is active, refreshListItemsPhase2 is an
-	// in-place score refresh (avoids rebuilding the filtered set and losing
-	// selection); everything else (recipe, BQL, plain status/label) goes
-	// through the shared reapplyActiveFilter dispatcher so a BQL filter
-	// doesn't fall through to applyFilter() and zero out (bt-0iajg).
+	// Re-apply filters. When nothing filters, refreshListItemsPhase2 is an
+	// in-place score refresh that keeps the selection; otherwise the single
+	// apply path rebuilds (a recipe may have re-sorted by a Phase 2 metric).
 	filterStart := time.Now()
-	if m.filter.currentFilter == "" || m.filter.currentFilter == "all" {
+	if m.filterSpec().IsUnfiltered() {
 		m.refreshListItemsPhase2()
 	} else {
-		m.reapplyActiveFilter()
+		m.applyFilter()
 	}
 	debug.LogTiming("phase2.filter.reapply", time.Since(filterStart))
 

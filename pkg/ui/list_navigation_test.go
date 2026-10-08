@@ -98,7 +98,7 @@ func TestLabelFilterChangeMovesCursorToFirstRow(t *testing.T) {
 func TestRefreshKeepsCursor(t *testing.T) {
 	m := newSizedModel(t, mixedIssues(), 140, 40)
 	m.list.Select(2)
-	m.reapplyActiveFilter() // what a background reload runs
+	m.applyFilter() // what a background reload runs
 	if got := m.list.Index(); got != 2 {
 		t.Fatalf("cursor after refresh = %d, want 2", got)
 	}

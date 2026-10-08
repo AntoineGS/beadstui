@@ -304,3 +304,26 @@ func TestSetActiveReposAppliesScope(t *testing.T) {
 		t.Fatalf("list after SetActiveRepos = %v, want proja-1..3", got)
 	}
 }
+
+func TestSnapshotReloadKeepsStatusFilter(t *testing.T) {
+	issues := filterMatrixFixture()
+	for _, status := range []string{"blocked", "in_progress", "deferred", "open", "ready"} {
+		t.Run(status, func(t *testing.T) {
+			m := newSizedModel(t, issues, 140, 40)
+			m.SetFilter(status)
+			before := idsOf(m.FilteredIssues())
+			snap := NewSnapshotBuilder(filterMatrixFixture()).Build()
+			updated, _ := m.Update(SnapshotReadyMsg{Snapshot: snap})
+			m = updated.(Model)
+			after := idsOf(m.FilteredIssues())
+			if len(before) != len(after) {
+				t.Fatalf("status %s: before reload %v, after %v", status, before, after)
+			}
+			for i := range before {
+				if before[i] != after[i] {
+					t.Fatalf("status %s: before reload %v, after %v", status, before, after)
+				}
+			}
+		})
+	}
+}

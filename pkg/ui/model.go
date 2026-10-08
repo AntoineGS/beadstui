@@ -1772,26 +1772,6 @@ func (m *Model) replaceIssues(newIssues []model.Issue) {
 		m.closeModal()
 	}
 
-	// Rebuild list items
-	items := make([]list.Item, len(m.data.issues))
-	for i := range m.data.issues {
-		item := IssueItem{
-			Issue:      m.data.issues[i],
-			GraphScore: m.data.analysis.GetPageRankScore(m.data.issues[i].ID),
-			Impact:     m.data.analysis.GetCriticalPathScore(m.data.issues[i].ID),
-			RepoPrefix: ExtractRepoPrefix(m.data.issues[i].ID),
-		}
-		item.TriageScore = m.ac.triageScores[m.data.issues[i].ID]
-		if reasons, exists := m.ac.triageReasons[m.data.issues[i].ID]; exists {
-			item.TriageReason = reasons.Primary
-			item.TriageReasons = reasons.All
-		}
-		item.IsQuickWin = m.ac.quickWinSet[m.data.issues[i].ID]
-		item.IsBlocker = m.ac.blockerSet[m.data.issues[i].ID]
-		item.UnblocksCount = len(m.ac.unblocksMap[m.data.issues[i].ID])
-		items[i] = item
-	}
-	m.updateSemanticIDs(items)
 	m.clearSemanticScores()
 	if m.semanticSearch != nil {
 		m.semanticSearch.ResetCache()
@@ -1799,7 +1779,7 @@ func (m *Model) replaceIssues(newIssues []model.Issue) {
 	}
 	m.semanticHybridReady = false
 	m.semanticHybridBuilding = false
-	m.setListItems(items)
+	m.applyFilter()
 
 	// Invalidate label-derived caches
 	m.labelHealthCached = false

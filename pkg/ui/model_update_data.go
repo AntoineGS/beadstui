@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/debug"
@@ -192,149 +191,16 @@ func (m Model) handleSnapshotReady(msg SnapshotReadyMsg) (Model, tea.Cmd) {
 	}
 	m.insightsPanel.SetSize(m.width, bodyHeight)
 
-	// Update list/board/graph views while preserving the current recipe/filter state.
-	if m.filter.activeRecipe != nil {
-		// If the snapshot already includes recipe filtering/sorting, use it directly (bv-cwwd).
-		if msg.Snapshot.RecipeName == m.filter.activeRecipe.Name && msg.Snapshot.RecipeHash == recipeFingerprint(m.filter.activeRecipe) {
-			filteredItems := make([]list.Item, 0, len(msg.Snapshot.ListItems))
-			filteredIssues := make([]model.Issue, 0, len(msg.Snapshot.ListItems))
-
-			for _, item := range msg.Snapshot.ListItems {
-				issue := item.Issue
-
-				// Workspace repo filter (nil = all repos). Must use
-				// IssueRepoKey so the lookup matches activeRepos keys
-				// (workspace DB names) when those differ from the bead
-				// ID prefix — e.g. DB "marketplace", IDs "mkt-xxx".
-				// Bare item.RepoPrefix is ID-derived only and would
-				// silently nuke the whole filtered view (bt-ci7b).
-				if m.workspaceMode && m.activeRepos != nil {
-					repoKey := IssueRepoKey(issue)
-					if repoKey != "" && !m.activeRepos[repoKey] {
-						continue
-					}
-				}
-
-				filteredItems = append(filteredItems, item)
-				filteredIssues = append(filteredIssues, issue)
-			}
-
-			m.setListItems(filteredItems)
-			m.updateSemanticIDs(filteredItems)
-			m.board.SetIssues(filteredIssues)
-
-			recipeIns := analysis.Insights{}
-			if m.data.analysis != nil {
-				recipeIns = m.data.analysis.GenerateInsights(len(filteredIssues))
-			}
-			m.graphView.SetIssues(filteredIssues, &recipeIns)
-
-			m.filter.currentFilter = "recipe:" + m.filter.activeRecipe.Name
-
-			// Keep selection in bounds
-			if len(filteredItems) > 0 && m.list.Index() >= len(filteredItems) {
-				m.list.Select(0)
-			}
-		} else {
-			m.applyRecipe(m.filter.activeRecipe)
-		}
-	} else {
-		var filteredItems []list.Item
-		var filteredIssues []model.Issue
-
-		filteredItems = make([]list.Item, 0, len(msg.Snapshot.ListItems))
-		filteredIssues = make([]model.Issue, 0, len(msg.Snapshot.ListItems))
-
-		for _, item := range msg.Snapshot.ListItems {
-			issue := item.Issue
-
-			// Workspace repo filter (nil = all repos). See bt-ci7b: the
-			// recipe-mode branch above has the same fix. IssueRepoKey
-			// honors issue.SourceRepo first so DB-name vs ID-prefix
-			// divergence (marketplace ↔ mkt) doesn't drop every item.
-			if m.workspaceMode && m.activeRepos != nil {
-				repoKey := IssueRepoKey(issue)
-				if repoKey != "" && !m.activeRepos[repoKey] {
-					continue
-				}
-			}
-
-			include := false
-			switch m.filter.currentFilter {
-			case "all":
-				include = true
-			case "open":
-				include = !isClosedLikeStatus(issue.Status)
-			case "closed":
-				include = isClosedLikeStatus(issue.Status)
-			case "ready":
-				// Ready = Open/InProgress AND NO Open Blockers
-				if !isClosedLikeStatus(issue.Status) && issue.Status != model.StatusBlocked {
-					isBlocked := false
-					for _, dep := range issue.Dependencies {
-						if dep == nil || !dep.Type.IsBlocking() {
-							continue
-						}
-						if blocker, exists := m.data.issueMap[dep.DependsOnID]; exists && !isClosedLikeStatus(blocker.Status) {
-							isBlocked = true
-							break
-						}
-					}
-					include = !isBlocked
-				}
-			default:
-				// Legacy: label: prefix in currentFilter
-				if strings.HasPrefix(m.filter.currentFilter, "label:") {
-					lf := strings.TrimPrefix(m.filter.currentFilter, "label:")
-					include = matchesLabelFilter(issue, lf)
-				}
-			}
-
-			// Independent label filter (composes with status)
-			if include && m.filter.labelFilter != "" {
-				include = matchesLabelFilter(issue, m.filter.labelFilter)
-			}
-
-			if include {
-				filteredItems = append(filteredItems, item)
-				filteredIssues = append(filteredIssues, issue)
-			}
-		}
-
-		m.sortFilteredItems(filteredItems, filteredIssues)
-		m.setListItems(filteredItems)
-		m.updateSemanticIDs(filteredItems)
-		if m.data.snapshot != nil && m.data.snapshot.BoardState != nil && (!m.workspaceMode || m.activeRepos == nil) && len(filteredIssues) == len(m.data.snapshot.Issues) {
-			m.board.SetSnapshot(m.data.snapshot)
-		} else {
-			m.board.SetIssues(filteredIssues)
-		}
-		if m.data.snapshot != nil && m.data.snapshot.GraphLayout != nil && len(filteredIssues) == len(m.data.snapshot.Issues) {
-			m.graphView.SetSnapshot(m.data.snapshot)
-		} else {
-			m.graphView.SetIssues(filteredIssues, &m.data.snapshot.Insights)
-		}
-
-		// Restore selection by ID against the visible (possibly filtered) view.
-		// Indexing into the unfiltered set would drive Paginator.Page out of
-		// bounds when the filter narrows results (bt-nzsy follow-up).
-		if selectedID != "" {
-			for i, it := range m.list.VisibleItems() {
-				if item, ok := it.(IssueItem); ok && item.Issue.ID == selectedID {
-					m.list.Select(i)
-					break
-				}
-			}
-		}
-
-		// Keep selection in bounds
-		if visible := m.list.VisibleItems(); len(visible) > 0 && m.list.Index() >= len(visible) {
-			m.list.Select(0)
-		}
+	// One apply path for every reload (bt-imh).
+	if m.filter.activeRecipe != nil && m.filter.activeBQLExpr == nil {
+		m.filter.currentFilter = "recipe:" + m.filter.activeRecipe.Name
 	}
+	m.applyFilter()
 
-	// Restore selection in recipe mode (applyRecipe rebuilds list items)
-	if m.filter.activeRecipe != nil && selectedID != "" {
+	// Restore selection by ID against the visible (possibly / searched) view.
+	// Indexing into the unfiltered set would drive Paginator.Page out of
+	// bounds when the filter narrows results (bt-nzsy follow-up).
+	if selectedID != "" {
 		for i, it := range m.list.VisibleItems() {
 			if item, ok := it.(IssueItem); ok && item.Issue.ID == selectedID {
 				m.list.Select(i)
@@ -342,18 +208,18 @@ func (m Model) handleSnapshotReady(msg SnapshotReadyMsg) (Model, tea.Cmd) {
 			}
 		}
 	}
+	if visible := m.list.VisibleItems(); len(visible) > 0 && m.list.Index() >= len(visible) {
+		m.list.Select(0)
+	}
 
 	// Restore board selection after SetIssues/applyRecipe rebuilds columns (bv-6n4c).
 	if boardSelectedID != "" {
 		_ = m.board.SelectIssueByID(boardSelectedID)
 	}
 
-	// If the tree view is active, rebuild it from the new snapshot while preserving
-	// user state (selection + persisted expand/collapse) (bv-6n4c). Routes through
-	// the activeRepos-aware helper so Dolt-poll refreshes do not reintroduce
-	// pruned repos (bt-dcby.2).
+	// applyFilter rebuilt the tree from the visible set, keeping selection and
+	// persisted expand/collapse state (bv-6n4c, bt-imh).
 	if m.focused == focusTree {
-		m.rebuildTreeForCurrentFilter()
 		m.tree.SetSize(m.width, m.height-2)
 	}
 
@@ -372,10 +238,6 @@ func (m Model) handleSnapshotReady(msg SnapshotReadyMsg) (Model, tea.Cmd) {
 		m.semanticIndexBuilding = true
 		cmds = append(cmds, BuildSemanticIndexCmd(m.issuesForAsync()))
 	}
-
-	// Keep the epics overview current on data reload, if it is the active
-	// view. Sourced from the filtered set, so no separate file load (bt-ryi5z).
-	m.refreshEpicsForCurrentFilter()
 
 	// A successful snapshot means the data layer recovered; drop any sticky
 	// Degraded toast (e.g. "Dolt unreachable, retrying"). bt-a3zi3.1.
@@ -454,13 +316,9 @@ func (m Model) handleDataSourceReload(msg DataSourceReloadMsg) (Model, tea.Cmd) 
 		return m, tea.Batch(cmds...)
 	}
 
-	// Filter state is preserved inside setListItems (bt-nzsy).
+	// replaceIssues re-applies the active filter (bt-hhg1r.1, bt-imh); the /
+	// search is preserved inside setListItems (bt-nzsy).
 	m.replaceIssues(msg.Issues)
-
-	// replaceIssues rebuilds items from the full corpus; re-apply any active
-	// BQL/recipe filter so a Dolt poll doesn't silently un-filter the view
-	// (bt-hhg1r.1).
-	m.reapplyActiveFilter()
 
 	// Settle any pending write whose reloaded state now reflects it
 	// (bt-oiaj.10, generalized to all write kinds by bt-oiaj.13).
@@ -763,37 +621,12 @@ func (m Model) handleFileChanged(msg FileChangedMsg) (Model, tea.Cmd) {
 		m.notificationsCursor = 0
 	}
 
-	// Rebuild list items (preserve triage data to avoid flicker)
+	// Rebuild list items through the single apply path (bt-imh); triage maps
+	// are kept, so badges don't flicker.
 	var listStart time.Time
 	if profileRefresh {
 		listStart = time.Now()
 	}
-	items := make([]list.Item, len(m.data.issues))
-	for i := range m.data.issues {
-		item := IssueItem{
-			Issue:      m.data.issues[i],
-			GraphScore: m.data.analysis.GetPageRankScore(m.data.issues[i].ID),
-			Impact:     m.data.analysis.GetCriticalPathScore(m.data.issues[i].ID),
-			RepoPrefix: ExtractRepoPrefix(m.data.issues[i].ID),
-		}
-		item.TriageScore = m.ac.triageScores[m.data.issues[i].ID]
-		if reasons, exists := m.ac.triageReasons[m.data.issues[i].ID]; exists {
-			item.TriageReason = reasons.Primary
-			item.TriageReasons = reasons.All
-		}
-		item.IsQuickWin = m.ac.quickWinSet[m.data.issues[i].ID]
-		item.IsBlocker = m.ac.blockerSet[m.data.issues[i].ID]
-		item.UnblocksCount = len(m.ac.unblocksMap[m.data.issues[i].ID])
-		if m.data.issues[i].IssueType == model.TypeEpic {
-			item.EpicDone, item.EpicTotal = epicProgress(m.data.issues[i].ID, m.data.issues)
-		}
-		item.GateAwaitType = gateAwaitFromBlockers(m.data.issues[i], m.data.issueMap)
-		items[i] = item
-	}
-	if profileRefresh {
-		recordTiming("list_items", time.Since(listStart))
-	}
-	m.updateSemanticIDs(items)
 	m.clearSemanticScores()
 	if m.semanticSearch != nil {
 		m.semanticSearch.ResetCache()
@@ -805,7 +638,10 @@ func (m Model) handleFileChanged(msg FileChangedMsg) (Model, tea.Cmd) {
 		m.semanticHybridBuilding = true
 		cmds = append(cmds, BuildHybridMetricsCmd(m.issuesForAsync()))
 	}
-	m.setListItems(items)
+	m.applyFilter()
+	if profileRefresh {
+		recordTiming("list_items", time.Since(listStart))
+	}
 
 	// Restore selection by ID against the visible (possibly filtered) view.
 	if selectedID != "" {
@@ -870,28 +706,6 @@ func (m Model) handleFileChanged(msg FileChangedMsg) (Model, tea.Cmd) {
 			recordTiming("attention_view", time.Since(attentionStart))
 		}
 	}
-	if needsGraph || m.mode == ViewBoard {
-		var graphStart time.Time
-		if profileRefresh {
-			graphStart = time.Now()
-		}
-		m.refreshBoardAndGraphForCurrentFilter()
-		if profileRefresh {
-			recordTiming("board_graph", time.Since(graphStart))
-		}
-	}
-
-	// Re-apply the active filter (recipe, BQL, or plain status/label) -- the
-	// item rebuild above ran straight from the full m.data.issues with no
-	// filter applied (bt-k9f6f); reapplyActiveFilter is the single dispatch
-	// point shared with handleDataSourceReload/handlePhase2Ready/
-	// rebuildListWithDiffInfo.
-	m.reapplyActiveFilter()
-
-	// Keep the epics overview current on data reload, if it is the active
-	// view. Sourced from the filtered set, so no separate file load (bt-ryi5z).
-	m.refreshEpicsForCurrentFilter()
-
 	// Keep semantic index current when enabled.
 	if m.semanticSearchEnabled && !m.semanticIndexBuilding {
 		m.semanticIndexBuilding = true

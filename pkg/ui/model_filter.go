@@ -19,8 +19,7 @@ import (
 )
 
 // setListItems sets list items while preserving any active Bubbles filter
-// (bt-nzsy) AND any active workspace project filter (bt-lwdy). It is the single
-// source of truth for what lands in the list view across all refresh paths.
+// (bt-nzsy).
 //
 //   - Bubbles filter (the `/` search): list.Model.SetItems clears the internal
 //     filteredItems slice when a filter is active but does not re-run the match,
@@ -28,37 +27,13 @@ import (
 //     text to trigger a re-match. SetFilterText synchronously re-runs the
 //     filter against the new items, restoring search persistence across
 //     background refreshes.
-//   - activeRepos (the project picker in workspace/global mode): some refresh
-//     paths (replaceIssues -> handleDataSourceReload, sync handleFileChanged)
-//     hand us the full unfiltered item set rebuilt straight from m.data.issues.
-//     Without this safety net the project picker selection is wiped on every
-//     Dolt poll. Filtering here keeps activeRepos sticky regardless of which
-//     path called us — already-filtered callers (applyFilter, applyRecipe,
-//     applyBQL, the recipe/non-recipe branches of handleSnapshotReady) pass
-//     items that already satisfy activeRepos, so the additional filter is a
-//     no-op for them.
+//   - Every caller passes items built from the visible set (bt-imh), so this
+//     function no longer filters.
 //
 // All refresh paths that replace list items MUST go through this wrapper.
 // A guard test (TestNoRawListSetItems) fails if m.list.SetItems is called
 // directly outside this function.
 func (m *Model) setListItems(items []list.Item) {
-	if m.workspaceMode && m.activeRepos != nil {
-		filtered := make([]list.Item, 0, len(items))
-		for _, it := range items {
-			issueItem, ok := it.(IssueItem)
-			if !ok {
-				// Non-IssueItem entries (none today, but be safe) pass through.
-				filtered = append(filtered, it)
-				continue
-			}
-			repoKey := IssueRepoKey(issueItem.Issue)
-			if repoKey == "" || m.activeRepos[repoKey] {
-				filtered = append(filtered, it)
-			}
-		}
-		items = filtered
-	}
-
 	// The footer's actionable triad is scoped to exactly what the list shows.
 	// setListItems is the single chokepoint for list contents, so computing the
 	// triad here keeps it in lockstep with TotalItems (= len(list items)) and
@@ -352,37 +327,6 @@ func matchesLabelFilter(issue model.Issue, labelFilter string) bool {
 		}
 	}
 	return false
-}
-
-// reapplyActiveFilter re-runs whichever filter (recipe, BQL, or plain
-// status/label) is currently active by dispatching to the same apply*
-// code paths the interactive filter UI uses (the BQL modal, the recipe
-// picker, the status/label filter keys). Reload paths that rebuild list
-// items straight from the full m.data.issues (e.g. replaceIssues) MUST call
-// this afterward -- setListItems only preserves the Bubbles `/` text filter
-// and the workspace activeRepos filter, not BQL, recipe, or plain-filter
-// state, so without this an active filter silently reverts to the full
-// unfiltered corpus on the next reload (bt-hhg1r.1, bt-k9f6f).
-//
-// This is the single reapply helper for every rebuild-from-scratch path
-// (handleDataSourceReload, handleFileChanged, handlePhase2Ready,
-// rebuildListWithDiffInfo) -- do not duplicate this recipe/BQL/plain
-// dispatch inline at a new call site; call this instead (bt-k9f6f).
-func (m *Model) reapplyActiveFilter() {
-	if m.filter.activeRecipe != nil {
-		m.applyRecipe(m.filter.activeRecipe)
-		return
-	}
-	if m.filter.activeBQLExpr != nil && strings.HasPrefix(m.filter.currentFilter, "bql:") {
-		queryStr := strings.TrimPrefix(m.filter.currentFilter, "bql:")
-		m.applyBQL(m.filter.activeBQLExpr, queryStr)
-		return
-	}
-	// No recipe or BQL active: fall back to the plain status/label filter
-	// path. applyFilter() reads m.filter.currentFilter/labelFilter directly
-	// against m.data.issues, so it's correct for "all" (no-op reapply) as
-	// well as "open"/"closed"/"ready"/"label:X" (bt-k9f6f).
-	m.applyFilter()
 }
 
 func (m *Model) refreshBoardAndGraphForCurrentFilter() {
@@ -980,12 +924,15 @@ func (m *Model) updateViewportContent() {
 		// neighbouring sections (Centrality, Search Scores). Only the
 		// numeric rows go through ANSI — labels in ColorMuted, values default —
 		// since that's where the lipgloss styling actually matters (bt-x5xc4).
-		pr := m.data.analysis.GetPageRankScore(item.ID)
-		bt := m.data.analysis.GetBetweennessScore(item.ID)
-		imp := m.data.analysis.GetCriticalPathScore(item.ID)
-		ev := m.data.analysis.GetEigenvectorScore(item.ID)
-		hub := m.data.analysis.GetHubScore(item.ID)
-		auth := m.data.analysis.GetAuthorityScore(item.ID)
+		var pr, bt, imp, ev, hub, auth float64
+		if m.data.analysis != nil {
+			pr = m.data.analysis.GetPageRankScore(item.ID)
+			bt = m.data.analysis.GetBetweennessScore(item.ID)
+			imp = m.data.analysis.GetCriticalPathScore(item.ID)
+			ev = m.data.analysis.GetEigenvectorScore(item.ID)
+			hub = m.data.analysis.GetHubScore(item.ID)
+			auth = m.data.analysis.GetAuthorityScore(item.ID)
+		}
 		// Rendered only when the graph actually says something. A bead with no
 		// edges has all six metrics structurally zero, and printing
 		// "PR 0.0000 - BW 0.0000 - EV 0.0000 - Hub 0.0000 - Authority 0.0000"
