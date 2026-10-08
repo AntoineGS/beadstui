@@ -23,6 +23,7 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/instance"
 	"github.com/seanmartinsmith/beadstui/pkg/loader"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/plugin"
 	"github.com/seanmartinsmith/beadstui/pkg/projects"
 	"github.com/seanmartinsmith/beadstui/pkg/recipe"
 	"github.com/seanmartinsmith/beadstui/pkg/search"
@@ -766,6 +767,9 @@ type Model struct {
 	renderer           *MarkdownRenderer
 	board              BoardModel
 	slotRegistry       *slots.Registry // row badge, section and BQL field providers; built-ins registered in NewModel
+	pluginHost         *plugin.Host    // nil when no plugin is configured
+	pluginSyncHash     string          // data hash last sent to pluginHost
+	popupMode          bool            // --popup: quit after a plugin action asks to
 	labelDashboard     LabelDashboardModel
 	velocityComparison VelocityComparisonModel // bv-125
 	shortcutsSidebar   ShortcutsSidebar        // bv-3qi5
@@ -1767,6 +1771,9 @@ func (m Model) Init() tea.Cmd {
 	if m.workDir != "" && !m.workspaceMode {
 		cmds = append(cmds, CheckAgentFileCmd(m.workDir))
 	}
+	if m.pluginHost != nil {
+		cmds = append(cmds, func() tea.Msg { return pluginSyncMsg{} })
+	}
 	return tea.Batch(cmds...)
 }
 
@@ -1785,6 +1792,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyMsg, tea.MouseMsg:
 			m.data.backgroundWorker.recordActivity()
 		}
+	}
+
+	if pm, pcmd, ok := m.handlePluginMsg(msg); ok {
+		return pm, pcmd
 	}
 
 	switch msg := msg.(type) {
