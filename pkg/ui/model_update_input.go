@@ -1641,6 +1641,12 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			// gate cannot drift from the per-view Map (bt-ift6.2).
 			ln := m.keys.ListNormal
 			switch {
+			case key.Matches(msg, ln.PaneLeft):
+				m.focusPaneLeftOfDetail()
+				return m, nil
+			case key.Matches(msg, ln.PaneRight):
+				// The details are the rightmost pane.
+				return m, nil
 			case key.Matches(msg,
 				ln.CopyID, ln.CopyIssue, ln.OpenInEditor, ln.RecipeTriage,
 				ln.TimeTravelInput, ln.EpicCard,

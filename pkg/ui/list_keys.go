@@ -24,6 +24,24 @@ func (m *Model) openSelectedDetail() {
 	m.updateViewportContent()
 }
 
+// focusPaneLeftOfDetail moves focus from the details to the pane on their
+// left (bt-tg0): the tree in tree view, the list otherwise. Single-pane
+// details close, as on Esc.
+func (m *Model) focusPaneLeftOfDetail() {
+	if m.fullscreen == fullscreenDetails {
+		m.toggleFullscreenPane(fullscreenIssues)
+		return
+	}
+	if m.showDetails && !m.isSplitView {
+		m.showDetails = false
+	}
+	if m.mode == ViewTree {
+		m.focused = focusTree
+		return
+	}
+	m.focused = focusList
+}
+
 // handleListKeys handles keyboard input when the main list is focused and
 // not in filter-typing mode (the dispatcher's filter-state guard at
 // model_update_input.go:822 prevents this from running while
@@ -42,6 +60,14 @@ func (m Model) handleListKeys(msg tea.KeyMsg) Model {
 	switch {
 	case key.Matches(msg, k.Enter):
 		m.openSelectedDetail()
+	case key.Matches(msg, k.PaneRight):
+		if m.fullscreen == fullscreenIssues {
+			m.toggleFullscreenPane(fullscreenDetails)
+		} else {
+			m.openSelectedDetail()
+		}
+	case key.Matches(msg, k.PaneLeft):
+		// The list is the leftmost pane.
 	case key.Matches(msg, k.EpicCard):
 		// Open the tier-2 focus card when the cursor is on an epic; on a
 		// non-epic it's a no-op with a hint (bt-gfxhz.3).

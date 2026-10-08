@@ -55,6 +55,10 @@ type ListNormalKeys struct {
 	Enter            key.Binding
 	EpicCard         key.Binding
 	SplitFocusToggle key.Binding
+	// PaneRight / PaneLeft move between the list and the details, like
+	// lazygit's panels (bt-tg0). The bubbles list no longer pages on them.
+	PaneRight        key.Binding
+	PaneLeft         key.Binding
 	SplitShrinkLeft  key.Binding
 	SplitShrinkRight key.Binding
 
@@ -150,6 +154,14 @@ func NewListNormalKeys() ListNormalKeys {
 			key.WithKeys("tab"),
 			key.WithHelp("⇥", "toggle split focus"),
 		),
+		PaneRight: key.NewBinding(
+			key.WithKeys("right"),
+			key.WithHelp("→", "go to details"),
+		),
+		PaneLeft: key.NewBinding(
+			key.WithKeys("left"),
+			key.WithHelp("←", "back to list"),
+		),
 		FieldEdit: key.NewBinding(
 			key.WithKeys("e"),
 			key.WithHelp("e", "edit field"),
@@ -233,7 +245,7 @@ func (k ListNormalKeys) FullHelp() [][]key.Binding {
 		// Filter
 		{k.FilterOpen, k.FilterClosed, k.FilterReady, k.CycleStatusFilter},
 		// Detail & pane
-		{k.Enter, k.EpicCard, k.SplitFocusToggle, k.SplitShrinkLeft, k.SplitShrinkRight, k.PaneFullscreenIssues, k.PaneFullscreenDetails},
+		{k.Enter, k.PaneRight, k.PaneLeft, k.EpicCard, k.SplitFocusToggle, k.SplitShrinkLeft, k.SplitShrinkRight, k.PaneFullscreenIssues, k.PaneFullscreenDetails},
 		// Sort / triage
 		{k.CycleSort, k.CycleSortReverse, k.RecipeTriage},
 		// Time travel

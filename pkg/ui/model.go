@@ -1275,6 +1275,9 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 	// hook for "render filtering UI differently".
 	l.SetShowFilter(false)
 	l.DisableQuitKeybindings()
+	// Left/Right move between panes (bt-tg0), so they no longer page.
+	l.KeyMap.PrevPage.SetKeys("h", "pgup", "b", "u")
+	l.KeyMap.NextPage.SetKeys("l", "pgdown", "f", "d")
 	// The Bubbles list ships a "Filter: " prompt; bt's affordance is a search
 	// bar (/) local to the Issues pane — so the
 	// prompt text matches the user's mental model (bt-imcn).

@@ -1,8 +1,10 @@
 package ui
 
 import (
+	"fmt"
 	"testing"
 
+	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
@@ -124,5 +126,85 @@ func TestFilterKeySameForRecipeStartupAndApplied(t *testing.T) {
 	m.filter.currentFilter = "recipe:" + r.Name
 	if got := m.filterKey(); got != startup {
 		t.Fatalf("filterKey changed from %q to %q for the same recipe", startup, got)
+	}
+}
+
+var (
+	keyLeft  = tea.KeyPressMsg{Code: tea.KeyLeft}
+	keyRight = tea.KeyPressMsg{Code: tea.KeyRight}
+)
+
+func TestArrowsMoveBetweenPanesInSplitView(t *testing.T) {
+	m := navModel(t, true)
+	m, _ = sendMsg(m, keyRight)
+	if m.focused != focusDetail {
+		t.Fatalf("focus after right = %v, want detail", m.focused)
+	}
+	m, _ = sendMsg(m, keyRight) // already rightmost
+	if m.focused != focusDetail {
+		t.Fatalf("focus after second right = %v, want detail", m.focused)
+	}
+	m, _ = sendMsg(m, keyLeft)
+	if m.focused != focusList || !m.isSplitView {
+		t.Fatalf("focus after left = %v (split %v), want list in split view", m.focused, m.isSplitView)
+	}
+}
+
+func TestArrowsOpenAndCloseDetailInSinglePane(t *testing.T) {
+	m := navModel(t, false)
+	m, _ = sendMsg(m, keyRight)
+	if m.focused != focusDetail || !m.showDetails {
+		t.Fatalf("after right: focus = %v showDetails = %v, want detail shown", m.focused, m.showDetails)
+	}
+	m, _ = sendMsg(m, keyLeft)
+	if m.focused != focusList || m.showDetails {
+		t.Fatalf("after left: focus = %v showDetails = %v, want list", m.focused, m.showDetails)
+	}
+}
+
+func TestArrowsNoLongerPageTheList(t *testing.T) {
+	var issues []model.Issue
+	for i := 0; i < 120; i++ {
+		issues = append(issues, model.Issue{ID: fmt.Sprintf("p-%03d", i), Title: "Bead", Status: model.StatusOpen, Priority: 2})
+	}
+	m := newSizedModel(t, issues, 140, 40)
+	m.list.Select(60)
+	page := m.list.Paginator.Page
+	m, _ = sendMsg(m, keyLeft)
+	if m.focused != focusList || m.list.Index() != 60 || m.list.Paginator.Page != page {
+		t.Fatalf("left on the list: focus = %v index = %d page = %d, want list/60/%d", m.focused, m.list.Index(), m.list.Paginator.Page, page)
+	}
+}
+
+func TestArrowsEditSearchText(t *testing.T) {
+	m := navModel(t, true)
+	m, _ = sendMsg(m, keyRune('/'))
+	m, _ = sendMsg(m, keyRune('n'))
+	m, _ = sendMsg(m, keyRight)
+	m, _ = sendMsg(m, keyLeft)
+	if m.focused != focusList || m.list.FilterState() != list.Filtering || m.list.FilterValue() != "n" {
+		t.Fatalf("focus = %v state = %v value = %q, want typing to continue", m.focused, m.list.FilterState(), m.list.FilterValue())
+	}
+}
+
+func TestRightLeavesFullscreenIssuesForDetails(t *testing.T) {
+	m := navModel(t, true)
+	m.toggleFullscreenPane(fullscreenIssues) // list already focused: maximizes
+	if m.fullscreen != fullscreenIssues {
+		t.Fatalf("setup: fullscreen = %v, want issues", m.fullscreen)
+	}
+	m, _ = sendMsg(m, keyRight)
+	if m.focused != focusDetail || m.fullscreen != fullscreenNone {
+		t.Fatalf("focus = %v fullscreen = %v, want detail in the restored split", m.focused, m.fullscreen)
+	}
+}
+
+func TestLeftFromTreeDetailReturnsToTree(t *testing.T) {
+	m := navModel(t, true)
+	m.mode = ViewTree
+	m.focused = focusDetail
+	m, _ = sendMsg(m, keyLeft)
+	if m.focused != focusTree {
+		t.Fatalf("focus = %v, want tree", m.focused)
 	}
 }
