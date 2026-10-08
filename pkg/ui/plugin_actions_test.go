@@ -284,16 +284,43 @@ func TestPluginActionInBoardShowsNotice(t *testing.T) {
 	}
 }
 
-func TestStateChangeClearsPluginPending(t *testing.T) {
+func TestStateChangeStopsPluginSpinner(t *testing.T) {
 	m := newPluginActionModel(t, &fakePluginActions{})
 	m.pendingWrites["proj-1"] = pendingWrite{Kind: writePluginAction, Field: "Dispatch", StartedAt: time.Now()}
 	m.pendingWrites["proj-2"] = pendingWrite{Kind: writeClaim, StartedAt: time.Now()}
 	m, _ = sendMsg(m, plugin.StateChangedMsg{Beads: []plugin.BeadKey{{DB: "proj", ID: "proj-1"}, {DB: "proj", ID: "proj-2"}}})
-	if _, ok := m.pendingWrites["proj-1"]; ok {
-		t.Fatal("state change did not clear the pending plugin action")
+	if ids := m.pendingWriteIDs(); ids["proj-1"] {
+		t.Fatal("state change did not stop the plugin action's spinner")
 	}
-	if _, ok := m.pendingWrites["proj-2"]; !ok {
-		t.Fatal("state change cleared a pending claim")
+	if ids := m.pendingWriteIDs(); !ids["proj-2"] {
+		t.Fatal("state change stopped a pending claim's spinner")
+	}
+}
+
+func TestStateChangeKeepsPluginActionGuard(t *testing.T) {
+	fake := &fakePluginActions{actions: []plugin.Action{dispatchAction}}
+	m := newPluginActionModel(t, fake)
+	id := selectedID(m)
+
+	m, cmd := sendMsg(m, keyRune('D'))
+	results := actionResults(cmd)
+	if len(results) != 1 {
+		t.Fatalf("results = %d, want 1", len(results))
+	}
+	// A plugin's replace push or crash names every bead it had state on.
+	m, _ = sendMsg(m, plugin.StateChangedMsg{Beads: []plugin.BeadKey{{DB: "proj", ID: id}}})
+	m, cmd = sendMsg(m, keyRune('D'))
+	if len(actionResults(cmd)) != 0 || len(fake.calls) != 1 {
+		t.Fatalf("second D after a state change dispatched again (calls %d)", len(fake.calls))
+	}
+	if want := "Dispatch already running on " + id; m.statusMsg != want {
+		t.Fatalf("status = %q, want %q", m.statusMsg, want)
+	}
+
+	m, _ = sendMsg(m, results[0])
+	m, cmd = sendMsg(m, keyRune('D'))
+	if len(actionResults(cmd)) != 1 || len(fake.calls) != 2 {
+		t.Fatalf("D after the result was refused (calls %d)", len(fake.calls))
 	}
 }
 

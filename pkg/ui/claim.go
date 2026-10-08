@@ -60,6 +60,9 @@ type pendingWrite struct {
 	Field     string
 	Target    string
 	StartedAt time.Time
+	// SpinnerCleared hides the row spinner while the entry still guards the
+	// bead: a plugin action whose plugin already pushed state for it.
+	SpinnerCleared bool
 }
 
 // label names pw for the timeout annunciator's toast copy (settlePendingWrites).
@@ -310,8 +313,10 @@ func (m *Model) pendingWriteIDs() map[string]bool {
 		return nil
 	}
 	ids := make(map[string]bool, len(m.pendingWrites))
-	for id := range m.pendingWrites {
-		ids[id] = true
+	for id, pw := range m.pendingWrites {
+		if !pw.SpinnerCleared {
+			ids[id] = true
+		}
 	}
 	return ids
 }

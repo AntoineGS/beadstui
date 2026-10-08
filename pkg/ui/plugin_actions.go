@@ -244,13 +244,15 @@ func pluginText(s string, multiline bool) string {
 	return b.String()
 }
 
-// clearPluginPending ends the pending state of plugin actions on beads whose
-// plugin state changed.
+// clearPluginPending stops the spinner of plugin actions on beads whose
+// plugin state changed. The entry stays, refusing a second action on the
+// bead, until the action's result arrives or it expires.
 func (m *Model) clearPluginPending(keys []plugin.BeadKey) {
 	changed := false
 	for _, k := range keys {
-		if pw, ok := m.pendingWrites[k.ID]; ok && pw.Kind == writePluginAction {
-			delete(m.pendingWrites, k.ID)
+		if pw, ok := m.pendingWrites[k.ID]; ok && pw.Kind == writePluginAction && !pw.SpinnerCleared {
+			pw.SpinnerCleared = true
+			m.pendingWrites[k.ID] = pw
 			changed = true
 		}
 	}

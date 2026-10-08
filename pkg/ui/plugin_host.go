@@ -48,7 +48,6 @@ func (m Model) handlePluginMsg(msg tea.Msg) (Model, tea.Cmd, bool) {
 		return m, nil, true
 
 	case plugin.StateChangedMsg:
-		// pending actions are cleared in clearPluginPending
 		m.clearPluginPending(msg.Beads)
 		if m.pluginFields != nil && m.filter.activeBQLExpr != nil && strings.HasPrefix(m.filter.currentFilter, "bql:") {
 			query := strings.TrimPrefix(m.filter.currentFilter, "bql:")
