@@ -20,12 +20,32 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/teatest/v2"
 
 	"github.com/seanmartinsmith/beadstui/internal/bdexec"
 	"github.com/seanmartinsmith/beadstui/internal/bdroute"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
+
+func TestLongformPopup_SizePreservesDraftAndGuard(t *testing.T) {
+	m := NewLongformEditModal("description", "Description", "original", DefaultTheme())
+	m.textarea.SetValue("edited draft")
+	m.escArmed = true
+	for _, size := range []PopupSize{{32, 12}, {80, 24}} {
+		m.SetSize(size.Width, size.Height)
+		if m.textarea.Value() != "edited draft" || m.original != "original" || !m.escArmed {
+			t.Fatal("sizing changed draft,baseline or guard")
+		}
+		assertPopupBounds(t, m.View(), size.Width, size.Height)
+		_, label := popupFindRow(t, m.View(), "Description:")
+		if x := ansi.StringWidth(label[:strings.Index(label, "Description:")]); x != 3 {
+			t.Fatalf("editor label starts at %d, want shared padded column 3", x)
+		}
+		popupFindRow(t, m.View(), "ctrl+s")
+		popupFindRow(t, m.View(), "esc")
+	}
+}
 
 // longformTestIssues seeds a target bead with non-empty content on every
 // long-form field so prefill, dirty-check, and notes-append target

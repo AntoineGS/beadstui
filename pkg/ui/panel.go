@@ -286,6 +286,42 @@ func RenderPopupMenu(entries []PopupMenuEntry, l PopupMenuLayout, theme Theme, w
 	return rows
 }
 
+// renderPopupMenuWindow keeps selection visible while measuring all entries.
+// The frozen outer size prevents a shorter page from moving the menu block.
+func renderPopupMenuWindow(entries []PopupMenuEntry, menuOpts PopupMenuOpts, cursor int, opts PopupOpts) string {
+	menu := MeasurePopupMenu(entries, menuOpts)
+	var shape []string
+	for _, e := range entries {
+		for i := 0; i < PopupMenuEntryRows(e); i++ {
+			shape = append(shape, "")
+		}
+	}
+	if len(shape) > 0 {
+		shape[0] = strings.Repeat(" ", menu.Width)
+	}
+	l := MeasurePopup(shape, opts)
+	if l.Compact || l.Height == 0 {
+		return RenderPopup(shape, opts)
+	}
+	start, end := 0, len(entries)
+	if len(shape) > l.BodyHeight {
+		cursor = min(max(0, cursor), max(0, len(entries)-1))
+		start = cursor
+		used := PopupMenuEntryRows(entries[cursor])
+		for start > 0 && used+PopupMenuEntryRows(entries[start-1]) <= l.BodyHeight {
+			start--
+			used += PopupMenuEntryRows(entries[start])
+		}
+		end = cursor + 1
+		for end < len(entries) && used+PopupMenuEntryRows(entries[end]) <= l.BodyHeight {
+			used += PopupMenuEntryRows(entries[end])
+			end++
+		}
+	}
+	opts.Width, opts.Height, opts.MinBodyRows = l.Width, l.Height, l.BodyHeight
+	return RenderPopup(RenderPopupMenu(entries[start:end], menu, opts.Theme, l.BodyWidth), opts)
+}
+
 // BorderVariant controls the weight of box-drawing characters.
 type BorderVariant int
 

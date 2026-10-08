@@ -55,43 +55,6 @@ var fieldEditEntries = []fieldEditEntry{
 	{Field: "acceptance", Label: "Acceptance Criteria", Key: "A"},
 }
 
-// renderFieldModalLines composes lines into a titled panel using the same
-// centering/padding shape as renderClaimConfirm (claim.go) — shared here so
-// the field-select, field-picker, and field-input modals don't each
-// reimplement the same box math.
-func renderFieldModalLines(title string, lines []string, theme Theme, maxInner int) string {
-	innerW := 0
-	for _, l := range lines {
-		if w := lipgloss.Width(l); w > innerW {
-			innerW = w
-		}
-	}
-	if innerW > maxInner {
-		innerW = maxInner
-	}
-
-	const sidePad = 4
-	panelWidth := innerW + 2 + sidePad
-	pad := strings.Repeat(" ", sidePad/2)
-	var body strings.Builder
-	for i, l := range lines {
-		if i > 0 {
-			body.WriteString("\n")
-		}
-		body.WriteString(pad + centerLine(l, innerW) + pad)
-	}
-	content := "\n" + body.String() + "\n"
-
-	return RenderTitledPanel(content, PanelOpts{
-		Title:       title,
-		Width:       panelWidth,
-		CenterTitle: true,
-		BorderColor: theme.Primary,
-		TitleColor:  theme.Primary,
-		Focused:     true,
-	})
-}
-
 // ---------------------------------------------------------------------------
 // Field-select modal (Pattern C hub — bt-88qn).
 // ---------------------------------------------------------------------------
@@ -102,6 +65,7 @@ type FieldSelectModal struct {
 	cursor        int
 	theme         Theme
 	width, height int
+	popupSize     *PopupSize
 }
 
 // NewFieldSelectModal creates a fresh field-select modal, cursor at the top.
@@ -110,7 +74,10 @@ func NewFieldSelectModal(theme Theme) FieldSelectModal {
 }
 
 // SetSize updates the modal's layout budget.
-func (m *FieldSelectModal) SetSize(w, h int) { m.width, m.height = w, h }
+func (m *FieldSelectModal) SetSize(w, h int) {
+	m.width, m.height = w, h
+	m.popupSize = &PopupSize{w, h}
+}
 
 // MoveUp moves the cursor up, wrapping to the bottom.
 func (m *FieldSelectModal) MoveUp() {
@@ -139,44 +106,11 @@ func (m *FieldSelectModal) SelectedField() string {
 // overlay (tui-modal-compositing.md step 1); Model.View() composites it via
 // OverlayCenterDimBackdrop at the bottom of its switch.
 func (m FieldSelectModal) View() string {
-	t := m.theme
-
-	maxInner := m.width - 8
-	if maxInner < 20 {
-		maxInner = 20
-	}
-
-	textStyle := lipgloss.NewStyle().Foreground(t.Base.GetForeground())
-	cursorLabelStyle := lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
-	keyStyle := lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
-	cursorStyle := lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
-	hintStyle := lipgloss.NewStyle().Foreground(t.Secondary).Italic(true)
-
-	var lines []string
+	entries := make([]PopupMenuEntry, len(fieldEditEntries))
 	for i, e := range fieldEditEntries {
-		cursor := "  "
-		labelStyle := textStyle
-		if i == m.cursor {
-			cursor = cursorStyle.Render("> ")
-			labelStyle = cursorLabelStyle
-		}
-		lines = append(lines, cursor+keyStyle.Render(e.Key)+"  "+labelStyle.Render(e.Label))
+		entries[i] = PopupMenuEntry{Label: e.Label, Shortcut: e.Key, Selected: i == m.cursor}
 	}
-	// Equal-width rows center the menu as one block, keeping the cursor,
-	// accelerator, and label columns aligned regardless of label length.
-	rowWidth := 0
-	for _, line := range lines {
-		if w := lipgloss.Width(line); w > rowWidth {
-			rowWidth = w
-		}
-	}
-	for i, line := range lines {
-		lines[i] = line + strings.Repeat(" ", rowWidth-lipgloss.Width(line))
-	}
-	lines = append(lines, "")
-	lines = append(lines, hintStyle.Render("j/k move  enter select  esc cancel"))
-
-	return renderFieldModalLines("Edit field", lines, t, maxInner)
+	return renderPopupMenuWindow(entries, PopupMenuOpts{Shortcuts: true}, m.cursor, PopupOpts{Title: "Edit field", Theme: m.theme, Available: m.popupSize, Footer: []string{"j/k move  enter select  esc cancel", "j/k enter esc"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +137,7 @@ type FieldPickerModal struct {
 	current       string
 	theme         Theme
 	width, height int
+	popupSize     *PopupSize
 }
 
 // newFieldPickerModal builds a picker with the cursor starting on current's
@@ -276,7 +211,10 @@ func NewPriorityPickerModal(current int, theme Theme) FieldPickerModal {
 }
 
 // SetSize updates the modal's layout budget.
-func (m *FieldPickerModal) SetSize(w, h int) { m.width, m.height = w, h }
+func (m *FieldPickerModal) SetSize(w, h int) {
+	m.width, m.height = w, h
+	m.popupSize = &PopupSize{w, h}
+}
 
 // MoveUp moves the cursor up, wrapping to the bottom.
 func (m *FieldPickerModal) MoveUp() {
@@ -310,36 +248,15 @@ func (m *FieldPickerModal) Selected() fieldPickerOption {
 // View renders the enum picker. Bare content only (tui-modal-compositing.md
 // step 1) — composited via OverlayCenterDimBackdrop in Model.View().
 func (m FieldPickerModal) View() string {
-	t := m.theme
-
-	maxInner := m.width - 8
-	if maxInner < 20 {
-		maxInner = 20
-	}
-
-	textStyle := lipgloss.NewStyle().Foreground(t.Base.GetForeground())
-	cursorLabelStyle := lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
-	currentStyle := lipgloss.NewStyle().Foreground(t.Secondary)
-	hintStyle := lipgloss.NewStyle().Foreground(t.Secondary).Italic(true)
-
-	var lines []string
+	entries := make([]PopupMenuEntry, len(m.options))
 	for i, o := range m.options {
-		cursor := "  "
-		labelStyle := textStyle
-		if i == m.cursor {
-			cursor = lipgloss.NewStyle().Foreground(t.Primary).Bold(true).Render("> ")
-			labelStyle = cursorLabelStyle
-		}
-		marker := "  "
+		marker := ""
 		if o.Value == m.current {
-			marker = currentStyle.Render("* ")
+			marker = "*"
 		}
-		lines = append(lines, cursor+marker+labelStyle.Render(o.Label))
+		entries[i] = PopupMenuEntry{Label: o.Label, Marker: marker, Selected: i == m.cursor}
 	}
-	lines = append(lines, "")
-	lines = append(lines, hintStyle.Render("j/k move  enter commit  esc back  * current"))
-
-	return renderFieldModalLines(m.title, lines, t, maxInner)
+	return renderPopupMenuWindow(entries, PopupMenuOpts{Markers: true}, m.cursor, PopupOpts{Title: m.title, Theme: m.theme, Available: m.popupSize, Footer: []string{"j/k move  enter commit  esc back  * current", "j/k enter commit esc back"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -356,6 +273,7 @@ type FieldInputModal struct {
 	theme         Theme
 	width, height int
 	err           string
+	popupSize     *PopupSize
 }
 
 // NewFieldInputModal creates a textinput modal prefilled with current,
@@ -372,7 +290,16 @@ func NewFieldInputModal(field, label, current string, theme Theme) FieldInputMod
 }
 
 // SetSize updates the modal's layout budget.
-func (m *FieldInputModal) SetSize(w, h int) { m.width, m.height = w, h }
+func (m *FieldInputModal) SetSize(w, h int) {
+	m.width, m.height = w, h
+	m.popupSize = &PopupSize{w, h}
+	layout := MeasurePopup(nil, m.popupOpts())
+	m.input.SetWidth(max(1, layout.BodyWidth-lipgloss.Width(m.input.Prompt)))
+}
+
+func (m FieldInputModal) popupOpts() PopupOpts {
+	return PopupOpts{Title: "Edit " + m.label, Theme: m.theme, Available: m.popupSize, Width: 50, Footer: []string{"enter apply  esc back", "enter esc"}}
+}
 
 // Focus activates the textinput's cursor/blink.
 func (m *FieldInputModal) Focus() tea.Cmd { return m.input.Focus() }
@@ -400,23 +327,14 @@ func (m FieldInputModal) Update(msg tea.Msg) (FieldInputModal, tea.Cmd) {
 func (m FieldInputModal) View() string {
 	t := m.theme
 
-	maxInner := m.width - 8
-	if maxInner < 24 {
-		maxInner = 24
-	}
-
 	labelStyle := lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
 	errStyle := lipgloss.NewStyle().Foreground(t.Warning)
-	hintStyle := lipgloss.NewStyle().Foreground(t.Secondary).Italic(true)
 
 	lines := []string{labelStyle.Render(m.label + ":"), m.input.View()}
 	if m.err != "" {
 		lines = append(lines, errStyle.Render(m.err))
 	}
-	lines = append(lines, "")
-	lines = append(lines, hintStyle.Render("enter apply  esc back"))
-
-	return renderFieldModalLines("Edit "+m.label, lines, t, maxInner)
+	return RenderPopup(lines, m.popupOpts())
 }
 
 // ---------------------------------------------------------------------------

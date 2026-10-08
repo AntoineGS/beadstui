@@ -24,6 +24,61 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
 
+func TestFieldPickerView_AlignedCurrentAndCursor(t *testing.T) {
+	for _, width := range []int{48, 80, 120} {
+		for _, tc := range []struct {
+			picker          FieldPickerModal
+			current, cursor string
+		}{{NewStatusPickerModal(model.StatusOpen, DefaultTheme()), "Open", "In Progress"}, {NewPriorityPickerModal(2, DefaultTheme()), "P2", "P3"}} {
+			p := tc.picker
+			p.SetSize(width, 24)
+			p.MoveDown()
+			out := p.View()
+			assertPopupBounds(t, out, width, 24)
+			_, a := popupFindRow(t, out, tc.current)
+			_, b := popupFindRow(t, out, tc.cursor)
+			x, y := ansi.StringWidth(a[:strings.Index(a, tc.current)]), ansi.StringWidth(b[:strings.Index(b, tc.cursor)])
+			if x != y || !strings.Contains(a, "*") || strings.Contains(a, ">") || !strings.Contains(b, ">") {
+				t.Fatalf("current/cursor columns or markers wrong:\n%s", ansi.Strip(out))
+			}
+		}
+	}
+}
+
+func TestFieldSelectView_ShortTerminalKeepsSelected(t *testing.T) {
+	m := NewFieldSelectModal(DefaultTheme())
+	m.SetSize(36, 10)
+	m.MoveUp()
+	out := m.View()
+	assertPopupBounds(t, out, 36, 10)
+	_, row := popupFindRow(t, out, "Acceptance Criteria")
+	if !strings.Contains(row, ">") || !strings.Contains(row, "A") {
+		t.Fatal("selected accelerator hidden")
+	}
+	popupFindRow(t, out, "esc")
+}
+
+func TestFieldInputPopup_LeftAlignedAndBounded(t *testing.T) {
+	m := NewFieldInputModal("title", "Title", "draft", DefaultTheme())
+	m.SetError(strings.Repeat("error ", 30))
+	for _, size := range []PopupSize{{32, 12}, {80, 24}} {
+		m.SetSize(size.Width, size.Height)
+		out := m.View()
+		assertPopupBounds(t, out, size.Width, size.Height)
+		_, label := popupFindRow(t, out, "Title:")
+		_, value := popupFindRow(t, out, "draft")
+		// textinput's prompt occupies two cells after the shared body origin.
+		if x, y := ansi.StringWidth(label[:strings.Index(label, "Title:")]), ansi.StringWidth(value[:strings.Index(value, "draft")]); y != x+2 {
+			t.Fatalf("input not aligned under label: %q / %q", label, value)
+		}
+		if m.Value() != "draft" {
+			t.Fatal("sizing changed input")
+		}
+		popupFindRow(t, out, "enter")
+		popupFindRow(t, out, "esc")
+	}
+}
+
 // fieldEditTestIssues seeds a target bead with non-default values on every
 // editable field (blocked status, P2, a title, no assignee) so picker
 // cursor-placement and commit-argv tests have something to move away from.
