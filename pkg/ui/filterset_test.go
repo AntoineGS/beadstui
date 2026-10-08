@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/seanmartinsmith/beadstui/pkg/bql"
+	"github.com/seanmartinsmith/beadstui/pkg/drift"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/recipe"
 )
@@ -381,5 +382,31 @@ func TestEpicsIgnoreStatusButFollowLabels(t *testing.T) {
 	}
 	if closed == 0 {
 		t.Fatal("epics source dropped closed children under the open filter")
+	}
+}
+
+func TestAlertsFollowVisibleSet(t *testing.T) {
+	m := newSizedModel(t, filterMatrixFixture(), 140, 40)
+	m.alerts = []drift.Alert{
+		{Type: drift.AlertStale, Severity: drift.SeverityWarning, IssueID: "proja-1"},
+		{Type: drift.AlertStale, Severity: drift.SeverityWarning, IssueID: "proja-2"},
+		{Type: drift.AlertIssueCountChange, Severity: drift.SeverityInfo}, // corpus-level
+	}
+	m.SetFilter("open") // hides closed proja-2
+	got := map[string]bool{}
+	for _, a := range m.visibleAlerts() {
+		got[a.IssueID] = true
+	}
+	if len(got) != 2 || !got["proja-1"] || !got[""] {
+		t.Fatalf("visible alert issue IDs = %v, want proja-1 and the corpus-level alert", got)
+	}
+}
+
+func TestAlertsBeforeFirstApplyAreNotHidden(t *testing.T) {
+	m := newSizedModel(t, filterMatrixFixture(), 140, 40)
+	m.filter.visibleIDs = nil
+	a := drift.Alert{Type: drift.AlertStale, Severity: drift.SeverityWarning, IssueID: "proja-2"}
+	if !m.passesAlertBaseScope(a) {
+		t.Fatal("alert hidden before the visible set exists")
 	}
 }
