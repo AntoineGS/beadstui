@@ -1129,7 +1129,7 @@ func (fd FooterData) Render() string {
 	// inside where the body's left border wall lands rather than flush under the
 	// corner, now that every ViewList surface is a bordered panel (bt-r5v9k).
 	// Counted in the width math below so the right zone stays pinned to the edge:
-	// the filler absorbs the indent, the total/hints/bell badges do not shift.
+	// the spacers absorb the indent without shifting the centered total or hints.
 	const footerLeftPad = 1
 
 	rightWidth := func() int {
@@ -1177,9 +1177,10 @@ func (fd FooterData) Render() string {
 
 	// nonHint sums everything except the ?/; slot; the anomaly badge and bell
 	// are reserved here so nothing can squeeze them out. The left indent counts
-	// too so the filler shrinks by it and the right zone stays edge-pinned.
-	nonHint := footerLeftPad + lipgloss.Width(lensSection) + lipgloss.Width(statsSection) +
-		lipgloss.Width(countBadge) + optionalWidth() +
+	// too so the spacers shrink by it and the right zone stays edge-pinned.
+	leftWidth := footerLeftPad + lipgloss.Width(lensSection) + lipgloss.Width(statsSection) + optionalWidth()
+	countWidth := lipgloss.Width(countBadge)
+	nonHint := leftWidth + countWidth +
 		lipgloss.Width(alertsSection) + bellWidth
 
 	// Right zone: static hints only. The Phase 4 embedded-toast override that
@@ -1190,16 +1191,22 @@ func (fd FooterData) Render() string {
 	// renders notification content at all; it keeps only the bell.
 	rightZone := hintsSection
 
-	// Filler pushes the count + right zone to the right edge.
+	// Split spare columns around the total so it is centered in the terminal,
+	// not just in the gap between the side zones. Clamp its position when either
+	// side is crowded; content never overlaps and the right zone stays pinned.
+	// Without a total (a per-view override), retain the existing single spacer.
 	remaining := fd.Width - nonHint - lipgloss.Width(rightZone)
 	if remaining < 0 {
 		remaining = 0
 	}
-	filler := lipgloss.NewStyle().Width(remaining).Render("")
+	beforeCount := 0
+	if countBadge != "" {
+		beforeCount = max(0, min(remaining, (fd.Width-countWidth)/2-leftWidth))
+	}
 
 	// Build the footer in display order (content may be empty after compression):
-	// lens (Zone 1) · center + daemon chrome · filler · total · ?/; hints (Zone 3)
-	// · anomaly · bell.
+	// lens (Zone 1) · stats + daemon chrome · spacer · total · spacer
+	// · ?/; hints (Zone 3) · anomaly · bell.
 	var parts []string
 	addIf := func(s string) {
 		if s != "" {
@@ -1217,8 +1224,9 @@ func (fd FooterData) Render() string {
 	addIf(optional["instanceSection"].content)
 	addIf(optional["sessionSection"].content)
 	addIf(optional["updateSection"].content)
-	parts = append(parts, filler)
+	parts = append(parts, strings.Repeat(" ", beforeCount))
 	addIf(countBadge)
+	parts = append(parts, strings.Repeat(" ", remaining-beforeCount))
 	addIf(rightZone)
 	addIf(alertsSection)
 	addIf(bellSection)

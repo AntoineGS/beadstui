@@ -134,6 +134,92 @@ func TestFooterData_NormalFooter(t *testing.T) {
 	}
 }
 
+func TestFooterData_IssueTotalCentered(t *testing.T) {
+	for _, tier := range []struct {
+		name   string
+		glyphs GlyphSet
+	}{
+		{"nerdfont", nerdfontGlyphs},
+		{"ascii", asciiGlyphs},
+	} {
+		t.Run(tier.name, func(t *testing.T) {
+			setGlyphs(t, tier.glyphs)
+			for _, tc := range []struct {
+				width int
+				total int
+				start int
+			}{
+				{120, 169, 55},
+				{121, 169, 55},
+				{160, 169, 75},
+				{161, 169, 75},
+				{160, 0, 76},
+				{160, 4921, 74},
+			} {
+				fd := FooterData{
+					Width:         tc.width,
+					ScopeLabel:    "工程",
+					CountReady:    5,
+					CountInFlight: 4,
+					CountBlocked:  2,
+					TotalItems:    tc.total,
+					BellCount:     3,
+				}
+				out := ansi.Strip(fd.Render())
+				count := fmt.Sprintf("%d issues", tc.total)
+				idx := strings.Index(out, count)
+				if idx < 0 {
+					t.Fatalf("width=%d: issue total missing: %q", tc.width, out)
+				}
+				if got := ansi.StringWidth(out[:idx]); got != tc.start {
+					t.Errorf("width=%d total=%d: total starts at column %d, want %d: %q", tc.width, tc.total, got, tc.start, out)
+				}
+				if !strings.HasPrefix(out, " 工程") {
+					t.Errorf("scope must stay left-aligned: %q", out)
+				}
+				if !strings.Contains(out, "? help") || !strings.HasSuffix(out, activeGlyphs.Bell+"3 ") {
+					t.Errorf("right hints and bell must remain intact: %q", out)
+				}
+				if got := ansi.StringWidth(out); got != tc.width {
+					t.Errorf("footer width=%d, want %d: %q", got, tc.width, out)
+				}
+			}
+		})
+	}
+}
+
+func TestFooterData_IssueTotalAvoidsCrowdedSides(t *testing.T) {
+	setGlyphs(t, asciiGlyphs)
+	for _, tc := range []struct {
+		name     string
+		scope    string
+		bell     int
+		warnings int
+		start    int
+	}{
+		{"crowded left", strings.Repeat("p", 52), 0, 0, 66},
+		{"crowded right", "bt", 1234567890123456789, 12345, 39},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fd := FooterData{Width: 100, ScopeLabel: tc.scope, TotalItems: 169, BellCount: tc.bell, WarningCount: tc.warnings}
+			out := ansi.Strip(fd.Render())
+			idx := strings.Index(out, "169 issues")
+			if idx < 0 {
+				t.Fatalf("issue total missing: %q", out)
+			}
+			if got := ansi.StringWidth(out[:idx]); got != tc.start {
+				t.Errorf("total starts at column %d, want %d: %q", got, tc.start, out)
+			}
+			if !strings.HasPrefix(out, " "+tc.scope) || !strings.Contains(out, "? help") {
+				t.Errorf("side content must survive without overlap: %q", out)
+			}
+			if strings.Contains(out, "\n") || ansi.StringWidth(out) != fd.Width {
+				t.Errorf("footer must fill exactly one row: %q", out)
+			}
+		})
+	}
+}
+
 func TestFooterData_WorkspaceScope(t *testing.T) {
 	// In workspace mode the active repo subset IS the lens scope, folding the
 	// old separate workspace-summary + repo-filter badges into one chip (bt-2vshd).
