@@ -97,7 +97,9 @@ the dimmed-backdrop pop-up effect. Non-modal overlays use the non-dim
 New row badges, detail sections and BQL fields come from providers in
 `pkg/ui/slots`; the existing gate, diff, progress and triage indicators remain
 in the renderers. See
-[docs/design/tui-slots.md](docs/design/tui-slots.md).
+[docs/design/tui-slots.md](docs/design/tui-slots.md). Out-of-process plugins
+live in `pkg/plugin` and feed these slots; the protocol is in
+[docs/plugins.md](docs/plugins.md).
 
 ## Naming
 
