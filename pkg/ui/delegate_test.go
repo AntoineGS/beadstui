@@ -159,33 +159,21 @@ func TestIssueDelegate_RenderDerivedGlobalBadge(t *testing.T) {
 }
 
 func TestIssueDelegate_CompactIDWidthFlowsToTitle(t *testing.T) {
-	const (
-		width           = 80
-		fixedWithoutID  = 20
-		rightWidth      = 10
-		canonicalID     = "portfolio-hhg1r.1"
-		compactID       = "hhg1r.1"
-		idCellSeparator = 1
-	)
-
-	fullLeftWidth := fixedWithoutID + lipgloss.Width(canonicalID) + idCellSeparator
-	compactLeftWidth := fixedWithoutID + lipgloss.Width(compactID) + idCellSeparator
-	fullTitleWidth := issueListTitleWidth(width, fullLeftWidth, rightWidth)
-	compactTitleWidth := issueListTitleWidth(width, compactLeftWidth, rightWidth)
-
-	wantGain := lipgloss.Width(canonicalID) - lipgloss.Width(compactID)
-	if got := compactTitleWidth - fullTitleWidth; got != wantGain {
-		t.Fatalf("title width gain = %d, want %d", got, wantGain)
-	}
-	if got := issueListTitleWidth(0, 100, 100); got != 5 {
-		t.Fatalf("minimum title width = %d, want 5", got)
+	item := newTestIssueItem("portfolio-hhg1r.1")
+	item.Issue.Title = strings.Repeat("Z", 100)
+	d := IssueDelegate{Theme: DefaultTheme()}
+	full := ansi.Strip(renderDelegateRow(t, d, item, 50))
+	item.RepoPrefix = "portfolio"
+	compact := ansi.Strip(renderDelegateRow(t, d, item, 50))
+	if gain := strings.Count(compact, "Z") - strings.Count(full, "Z"); gain != 10 {
+		t.Fatalf("removing portfolio- should return 10 cells to title, got %d:\nfull: %q\ncompact: %q", gain, full, compact)
 	}
 }
 
 func TestIssueListColumnHeaderUsesCompactIDCell(t *testing.T) {
 	for _, workspaceMode := range []bool{false, true} {
-		header := issueListColumnHeader(workspaceMode)
-		if !strings.Contains(header, "ID    TITLE") {
+		header := issueListColumnHeader(issueListLeftLayout(list.New(nil, IssueDelegate{}, 80, 10), workspaceMode))
+		if !strings.Contains(header, "ID TITLE") {
 			t.Fatalf("workspaceMode=%t header does not use compact ID cell: %q", workspaceMode, header)
 		}
 		if workspaceMode != strings.Contains(header, "REPO") {
@@ -244,7 +232,7 @@ func TestIssueDelegate_NoSelectionGutter(t *testing.T) {
 				t.Errorf("workspace=%t index=%d row has a selection gutter: %q", workspace, index, got)
 			}
 		}
-		if header := issueListColumnHeader(workspace); strings.HasPrefix(header, " ") {
+		if header := issueListColumnHeader(issueListLeftLayout(l, workspace)); strings.HasPrefix(header, " ") {
 			t.Errorf("workspace=%t header still reserves a gutter: %q", workspace, header)
 		}
 	}
@@ -382,14 +370,14 @@ func TestIssueDelegate_QuickWinDoesNotShiftColumns(t *testing.T) {
 	}
 }
 
-func TestIssueDelegate_PendingClaimKeepsFeedbackWithoutGutter(t *testing.T) {
+func TestIssueDelegate_PendingClaimKeepsFeedbackOnRight(t *testing.T) {
 	setGlyphs(t, asciiGlyphs)
 	item := newTestIssueItem("api-123")
 	item.RepoPrefix = "api"
 	d := IssueDelegate{Theme: DefaultTheme(), PendingClaims: map[string]bool{item.Issue.ID: true}, ClaimSpinner: "|"}
 	row := ansi.Strip(renderDelegateRow(t, d, item, 50))
-	if !strings.HasPrefix(row, "* o 1 123 | ") {
-		t.Fatalf("pending feedback should sit beside the title, not in a gutter: %q", row)
+	if !strings.HasPrefix(row, "* o 1 123 Short title for testing") || strings.Index(row, "|") < strings.Index(row, "testing") {
+		t.Fatalf("pending feedback should follow the title, not shift it: %q", row)
 	}
 	d.ClaimSpinner = ""
 	if row := renderDelegateRow(t, d, item, 50); !strings.Contains(row, claimSpinnerFrame(0)) {
@@ -601,5 +589,199 @@ func TestIssueDelegate_OverdueBadgeViaRegistry(t *testing.T) {
 
 	if out := renderDelegateRow(t, d, item, 120); !strings.Contains(out, "DUE") {
 		t.Fatalf("overdue row missing DUE badge: %q", out)
+	}
+}
+
+// These cases catch per-item prefix widths and optional left-side indicators:
+// neither IDs nor titles may move when a neighboring row has extra metadata.
+func TestIssueDelegate_SharedColumnsMoveIndicatorsRight(t *testing.T) {
+	setGlyphs(t, asciiGlyphs)
+	plain := newTestIssueItem("api-x")
+	plain.RepoPrefix = "api"
+	plain.Issue.Title = "TITLE plain"
+	plain.Issue.Comments = nil
+	decorated := newTestIssueItem("api-long.123")
+	decorated.RepoPrefix = "api"
+	decorated.Issue.Title = "TITLE decorated"
+	decorated.GateAwaitType = "human"
+	decorated.UnblocksCount = 12
+	decorated.IsBlocker = true
+	decorated.Issue.IssueType = model.TypeEpic
+	decorated.EpicDone, decorated.EpicTotal = 2, 10
+	decorated.DiffStatus = DiffStatusNew
+	d := IssueDelegate{
+		Theme: DefaultTheme(), Slots: waitRegistry(), ShowPriorityHints: true,
+		PriorityHints: map[string]*analysis.PriorityRecommendation{
+			decorated.Issue.ID: {Direction: "increase"},
+		},
+		PendingClaims: map[string]bool{decorated.Issue.ID: true}, ClaimSpinner: "|",
+	}
+	l := list.New([]list.Item{plain, decorated}, d, 180, 10)
+	l.Paginator.PerPage = 2
+	var rows []string
+	for index, item := range []IssueItem{plain, decorated} {
+		var buf bytes.Buffer
+		d.Render(&buf, l, index, item)
+		rows = append(rows, ansi.Strip(buf.String()))
+	}
+	for index, row := range rows {
+		if got := strings.Index(row, "TITLE"); got != 15 {
+			t.Errorf("row %d title starts at %d, want 15 after shared 8-cell ID: %q", index, got, row)
+		}
+		if lipgloss.Width(row) != 180 {
+			t.Errorf("row %d width = %d, want 180", index, lipgloss.Width(row))
+		}
+	}
+	for _, indicator := range []string{"↑", "o12", "@", "WAIT", "2/10", "+", "|"} {
+		if got := strings.Index(rows[1], indicator); got <= strings.Index(rows[1], "TITLE") {
+			t.Errorf("indicator %q must follow title, got %q", indicator, rows[1])
+		}
+	}
+}
+
+func TestIssueDelegate_CommentsDoNotShiftAge(t *testing.T) {
+	for _, glyphs := range []GlyphSet{asciiGlyphs, nerdfontGlyphs} {
+		setGlyphs(t, glyphs)
+		var items []list.Item
+		for _, count := range []int{0, 1, 12, 123} {
+			item := newTestIssueItem("api-abc")
+			item.Issue.UpdatedAt = time.Now().Add(-2 * time.Hour)
+			item.Issue.CreatedAt = item.Issue.UpdatedAt
+			item.Issue.Comments = make([]*model.Comment, count)
+			items = append(items, item)
+		}
+		d := IssueDelegate{Theme: DefaultTheme()}
+		l := list.New(items, d, 90, 12)
+		l.Paginator.PerPage = 4
+		ageColumn := -1
+		for index, item := range items {
+			var buf bytes.Buffer
+			d.Render(&buf, l, index, item)
+			row := ansi.Strip(buf.String())
+			at := strings.Index(row, "2h ago")
+			if at < 0 {
+				t.Fatalf("missing age: %q", row)
+			}
+			cell := lipgloss.Width(row[:at])
+			if ageColumn < 0 {
+				ageColumn = cell
+			} else if cell != ageColumn {
+				t.Errorf("comments=%d age starts at %d, want %d: %q", len(item.(IssueItem).Issue.Comments), cell, ageColumn, row)
+			}
+		}
+	}
+}
+
+func TestIssueDelegate_EditedAgeHasNoTilde(t *testing.T) {
+	item := newTestIssueItem("api-abc")
+	item.Issue.UpdatedAt = time.Now().Add(-time.Hour)
+	item.Issue.CreatedAt = item.Issue.UpdatedAt.Add(-time.Hour)
+	d := IssueDelegate{Theme: DefaultTheme()}
+	l := list.New([]list.Item{item, item}, d, 90, 10)
+	var buf bytes.Buffer
+	d.Render(&buf, l, 1, item) // nonselected row retains italic styling
+	row := buf.String()
+	if strings.Contains(ansi.Strip(row), "~") {
+		t.Fatalf("edited age must not have tilde: %q", row)
+	}
+	if !strings.Contains(ansi.Strip(row), "1h ago") {
+		t.Fatalf("missing edited age: %q", row)
+	}
+	italic := false
+	for _, cell := range uv.NewStyledString(row).Lines(ansi.GraphemeWidth)[0] {
+		if cell.Content == "h" && cell.Style.Attrs&uv.AttrItalic != 0 {
+			italic = true
+		}
+	}
+	if !italic {
+		t.Fatalf("edited age lost italic styling: %q", row)
+	}
+}
+
+func TestIssueListHeaderTracksDisplayedIDWidth(t *testing.T) {
+	setGlyphs(t, asciiGlyphs)
+	d := IssueDelegate{Theme: DefaultTheme()}
+	var items []list.Item
+	for _, id := range []string{"api-a", "api-12345678", "api-xy"} {
+		item := newTestIssueItem(id)
+		item.RepoPrefix = "api"
+		items = append(items, item)
+	}
+	l := list.New(items, d, 80, 10)
+	l.Paginator.PerPage = 2
+	m := Model{theme: DefaultTheme(), list: l}
+	if got := strings.Index(ansi.Strip(m.splitViewHeader()), "TITLE"); got != 15 {
+		t.Errorf("first page header TITLE starts at %d, want 15", got)
+	}
+	m.list.Paginator.Page = 1
+	if got := strings.Index(ansi.Strip(m.splitViewHeader()), "TITLE"); got != 9 {
+		t.Errorf("second page header TITLE starts at %d, want 9", got)
+	}
+}
+
+func TestIssueDelegate_StyledMetadataUsesDisplayCellPadding(t *testing.T) {
+	setGlyphs(t, nerdfontGlyphs)
+	var items []list.Item
+	for index, assignee := range []string{"李", "alice", ""} {
+		item := newTestIssueItem("api-abc")
+		item.RepoPrefix = "api"
+		item.Issue.Title = "TITLE " + strings.Repeat("words ", 40)
+		item.Issue.UpdatedAt = time.Now().Add(-2 * time.Hour)
+		item.Issue.CreatedAt = item.Issue.UpdatedAt
+		item.Issue.Assignee = assignee
+		item.Issue.Author = "王"
+		item.Issue.Labels = []string{"LABEL"}
+		item.UnblocksCount = []int{1, 123, 0}[index]
+		item.IsBlocker = true
+		item.Issue.Comments = make([]*model.Comment, []int{1, 123, 0}[index])
+		items = append(items, item)
+	}
+	d := IssueDelegate{Theme: DefaultTheme()}
+	l := list.New(items, d, 160, 12)
+	l.Paginator.PerPage = 3
+	anchors := map[string]int{}
+	for index, item := range items {
+		var buf bytes.Buffer
+		d.Render(&buf, l, index, item)
+		row := ansi.Strip(buf.String())
+		for _, token := range []string{"TITLE", "2h ago", "王", "LABEL"} {
+			at := strings.Index(row, token)
+			if at < 0 {
+				t.Fatalf("row %d missing %q: %q", index, token, row)
+			}
+			cell := lipgloss.Width(row[:at])
+			if index == 0 {
+				anchors[token] = cell
+			} else if cell != anchors[token] {
+				t.Errorf("row %d %q starts at cell %d, want %d: %q", index, token, cell, anchors[token], row)
+			}
+		}
+	}
+}
+
+func TestIssuesPanelMeasuresBadgeColumnsOncePerPage(t *testing.T) {
+	var issues []model.Issue
+	for _, id := range []string{"api-a", "api-b", "api-c", "api-d", "api-e", "api-f", "api-g", "api-h"} {
+		item := newTestIssueItem(id)
+		issues = append(issues, item.Issue)
+	}
+	m := NewModel(issues, nil, "", nil, nil)
+	m.list.SetSize(100, 20)
+	m.list.Paginator.PerPage = 8
+	reg := slots.NewRegistry()
+	calls := 0
+	reg.AddBadges(slots.BadgeFunc(func(*model.Issue) []slots.Badge {
+		calls++
+		return []slots.Badge{{Text: "WAIT"}}
+	}))
+	m.slotRegistry = reg
+	m.updateListDelegate()
+	out := ansi.Strip(m.renderIssuesPanel(104, 24, true))
+	if !strings.Contains(out, "WAIT") {
+		t.Fatalf("panel did not render slot badges: %q", out)
+	}
+	// At most two measurement passes plus one rendering pass over this page.
+	if calls > 3*len(issues) {
+		t.Fatalf("badge providers called %d times for %d rows; layout must be measured once per page", calls, len(issues))
 	}
 }

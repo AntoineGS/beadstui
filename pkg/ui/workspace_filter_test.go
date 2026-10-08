@@ -85,8 +85,10 @@ func TestRepoColumnSingleProjectReclaimsTitleWidth(t *testing.T) {
 		m.SetActiveRepos(nil)
 		before := visibleTitleWidth()
 		m.SetActiveRepos(map[string]bool{"statsengine": true})
-		if gain := visibleTitleWidth() - before; gain != 5 {
-			t.Errorf("width=%d: title gained %d cells, want 5 ([SE] plus separator)", width, gain)
+		// The displayed workspace also contains [WEB], so [SE] shares its
+		// five-cell repo column. Hiding that column reclaims six cells.
+		if gain := visibleTitleWidth() - before; gain != 6 {
+			t.Errorf("width=%d: title gained %d cells, want 6 (shared [WEB] width plus separator)", width, gain)
 		}
 		row := ansi.Strip(m.list.View())
 		if !strings.HasPrefix(row, "t o 0 ") || !strings.Contains(row, "123 ") {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
@@ -524,6 +525,10 @@ func (m Model) renderSearchRow(width int) string {
 // the literal header would wrap to a second row, putting mouse click math
 // off by 1 (bt-i138, bt-ej61). Clip to fit before rendering.
 func (m Model) splitViewHeader() string {
+	return m.issueListHeader(issueListLeftLayout(m.list, m.showRepoColumn()))
+}
+
+func (m Model) issueListHeader(layout issueListLayout) string {
 	t := m.theme
 	listInnerWidth := m.list.Width()
 
@@ -531,9 +536,9 @@ func (m Model) splitViewHeader() string {
 		Foreground(t.Subtext).
 		Width(listInnerWidth)
 
-	headerText := issueListColumnHeader(m.showRepoColumn())
-	if listInnerWidth > 0 && len(headerText) > listInnerWidth {
-		headerText = headerText[:listInnerWidth]
+	headerText := issueListColumnHeader(layout)
+	if listInnerWidth > 0 {
+		headerText = ansi.Truncate(headerText, listInnerWidth, "")
 	}
 	return headerStyle.Render(headerText)
 }
@@ -543,11 +548,12 @@ func (m Model) splitViewHeader() string {
 // badges; those are now one compact chip (bt-evuf.2). T, S and P label its type,
 // status and priority marks with matching spacing. Keep this in step with the
 // delegate: it is what tells the reader what the glyphs mean.
-func issueListColumnHeader(showRepoColumn bool) string {
-	if showRepoColumn {
-		return "REPO T S P ID    TITLE"
+func issueListColumnHeader(layout issueListLayout) string {
+	header := ""
+	if layout.repoWidth > 0 {
+		header = padRight("REPO", layout.repoWidth) + " "
 	}
-	return "T S P ID    TITLE"
+	return header + padRight("T S P", layout.chipWidth) + " " + padRight("ID", layout.idWidth) + " TITLE"
 }
 
 // renderListWithHeader renders the width-driven single-pane issues list — the
@@ -589,7 +595,13 @@ func (m Model) renderIssuesPanel(outerWidth, panelHeight int, focused bool) stri
 
 	// m.list.Width() is the inner width (set by applyListDetailSizing).
 	listInnerWidth := m.list.Width()
-	header := m.splitViewHeader()
+	// Prepare a frame-local delegate on this value copy of the list. No cached
+	// widths survive pagination, filtering, resize, claims, or provider updates.
+	d := m.issueListDelegate()
+	now := time.Now()
+	d.prepared = &issueListRender{layout: d.listLayout(m.list, max(1, listInnerWidth), now), now: now}
+	m.list.SetDelegate(d)
+	header := m.issueListHeader(d.prepared.layout)
 
 	// Page info for list
 	totalItems := len(m.list.VisibleItems())
@@ -804,6 +816,7 @@ func (m Model) helpGlobalGroups() []helpGroup {
 		},
 	})
 
+	groups = append(groups, helpGroup{title: "ICONS", rows: []helpRow{{left: "l", right: "icon legend"}}})
 	return groups
 }
 
@@ -859,6 +872,9 @@ func renderHelpGroupColumn(groups []helpGroup, colWidth, keyW int, t Theme) []st
 // selector in renderHelpOverlay falls back to the mini.
 // The same flat-lines contract the scroll window consumes.
 func (m Model) helpOverlayBodyLines() []string {
+	if m.helpLegend {
+		return m.helpOverlayBodyLinesForCols(iconLegendGroups(), 1)
+	}
 	groups := m.helpGlobalGroups()
 	if len(groups) == 0 {
 		return nil
@@ -1034,6 +1050,9 @@ func (m Model) helpOverlayAvailBody() int {
 }
 
 func (m Model) helpPopupOpts() PopupOpts {
+	if m.helpLegend {
+		return PopupOpts{Title: "icon legend", Theme: m.theme, Available: &PopupSize{m.width, max(0, m.height-1)}, Footer: []string{"l shortcuts  -  j/k scroll  -  Esc / q close", "l back - j/k scroll - Esc close", "l back; j/k scroll"}}
+	}
 	return PopupOpts{Title: "shortcuts", Theme: m.theme, Available: &PopupSize{m.width, max(0, m.height-1)}, Footer: []string{"; per-view  -  Esc / q to close", "; Esc/q close"}}
 }
 
@@ -1152,7 +1171,7 @@ func (m Model) renderHelpMini() string {
 	}
 
 	// Nudge line: communicates the tier relationship (grow terminal → full sheet).
-	nudge := dimStyle.Render("↓ expand   ·   ; per-view")
+	nudge := dimStyle.Render("l legend · ↓ expand · ; per-view")
 
 	lines = append(lines, nudge)
 	opts := m.helpPopupOpts()
@@ -1172,7 +1191,7 @@ func (m *Model) renderHelpOverlay() string {
 	// Mini tier: when the full body overflows the available height, render the
 	// compact non-scrolling mini card instead. Mirrors yazi's (area.h-2) < POPUP_H
 	// selector — size-driven, no new keypress or toggle.
-	if len(bodyLines) > m.helpOverlayAvailBody() {
+	if !m.helpLegend && len(bodyLines) > m.helpOverlayAvailBody() {
 		return m.renderHelpMini()
 	}
 
@@ -1205,7 +1224,9 @@ func (m *Model) renderHelpOverlay() string {
 		footerText = fmt.Sprintf("; per-view  -  j/k scroll %d%%  -  Esc / q close", pct)
 	}
 	opts := m.helpPopupOpts()
-	opts.Footer = []string{footerText, "; Esc/q close"}
+	if !m.helpLegend {
+		opts.Footer = []string{footerText, "; Esc/q close"}
+	}
 	return RenderPopup(window, opts)
 }
 

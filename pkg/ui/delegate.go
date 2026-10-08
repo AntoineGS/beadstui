@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"image/color"
 	"io"
 	"strings"
 	"time"
@@ -25,7 +24,7 @@ type IssueDelegate struct {
 	ShowRepoBadges    bool // Row display policy, independent of workspace mode
 
 	// PendingClaims marks bead IDs awaiting a write settle (bt-oiaj.10); a
-	// pending row shows ClaimSpinner beside its title. Both are
+	// pending row shows ClaimSpinner in its right-side indicator column. Both are
 	// zero-value safe: a nil map and empty frame render exactly as before.
 	PendingClaims map[string]bool
 	ClaimSpinner  string
@@ -33,6 +32,9 @@ type IssueDelegate struct {
 	// Slots supplies row badges (overdue/stale and any registered provider).
 	// Nil renders no slot badges.
 	Slots *slots.Registry
+
+	// prepared is local to one list render, never retained across updates.
+	prepared *issueListRender
 }
 
 func (d IssueDelegate) Height() int {
@@ -60,325 +62,49 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 	}
 	isSelected := index == m.Index()
 
-	// ══════════════════════════════════════════════════════════════════════════
-	// POLISHED ROW LAYOUT - Stripe-level visual hierarchy
-	// Layout: [repo] [type status priority] [ID] [title...] [meta] [quick win]
-	// ══════════════════════════════════════════════════════════════════════════
-
-	// Get all the data. Type, status and priority render as one chip
-	// (bt-evuf.2) rather than three separately-padded badges; see
-	// RenderIssueChip for why.
-	chip := RenderIssueChip(string(i.Issue.IssueType), string(i.Issue.Status), i.Issue.Priority)
-	idStr := CompactIssueID(i.Issue.ID, i.RepoPrefix)
-	title := i.Issue.Title
-	ageStr := FormatTimeRel(i.Issue.UpdatedAt)
-	commentCount := len(i.Issue.Comments)
-
-	// Measure actual display width; glyphs vary between 1 and 2 cells.
-	chipWidth := lipgloss.Width(chip)
-
-	// Reserve the same right-edge quick-win cell on every row, including a
-	// separator when it fits. Keep it outside the body that narrow rows clip.
-	markerWidth := min(width, lipgloss.Width(activeGlyphs.Bolt)+1)
-	quickWinMarker := strings.Repeat(" ", markerWidth)
-	if i.IsQuickWin && lipgloss.Width(activeGlyphs.Bolt) <= markerWidth {
-		quickWinMarker = strings.Repeat(" ", markerWidth-lipgloss.Width(activeGlyphs.Bolt)) +
-			t.TriageStar.Render(activeGlyphs.Bolt)
+	now := time.Now()
+	var layout issueListLayout
+	if d.prepared != nil {
+		layout, now = d.prepared.layout, d.prepared.now
+	} else {
+		layout = d.listLayout(m, width, now)
 	}
-
-	// Calculate widths for right-side columns (fixed)
-	rightWidth := markerWidth
+	repo, chip, id := issueListLeftCells(i, d.ShowRepoBadges)
+	left := ""
+	if layout.repoWidth > 0 {
+		left = padIssueListCell(repo, layout.repoWidth) + " "
+	}
+	left += padIssueListCell(chip, layout.chipWidth) + " " + t.SecondaryText.Render(padIssueListCell(id, layout.idWidth)) + " "
+	cells := d.issueListRightCells(i, width, layout.slotBudget, now)
 	var rightParts []string
-
-	// Show Age and Comments only if we have reasonable width
-	if width > 60 {
-		// When the bead has been edited since creation (UpdatedAt !=
-		// CreatedAt), prefix the age cell with '~' AND render italic so the
-		// signal carries on terminals that don't render italic (the prefix
-		// alone suffices) and reads more strongly on those that do. Cell
-		// widened to 9 to fit the longest possible value "~11mo ago"
-		// (bt-v7um).
-		ageStyle := t.MutedText
-		if !i.Issue.UpdatedAt.Equal(i.Issue.CreatedAt) {
-			ageStr = "~" + ageStr
-			ageStyle = t.MutedTextItalic
+	for column, cellWidth := range layout.rightWidths {
+		if cellWidth == 0 {
+			continue
 		}
-		rightParts = append(rightParts, ageStyle.Render(fmt.Sprintf("%9s", ageStr)))
-		rightWidth += 10
-
-		// Comments with icon - use lipgloss.Width for accurate emoji measurement
-		if commentCount > 0 {
-			commentStr := fmt.Sprintf("%s%d", activeGlyphs.Comment, commentCount)
-			rightParts = append(rightParts, t.InfoText.Render(commentStr))
-			rightWidth += lipgloss.Width(commentStr) + 1 // +1 for spacing
+		cell := cells[column]
+		if column == issueColAge {
+			cell = strings.Repeat(" ", max(0, cellWidth-lipgloss.Width(cell))) + cell
 		} else {
-			rightParts = append(rightParts, "   ")
-			rightWidth += 3
+			cell = padIssueListCell(cell, cellWidth)
 		}
+		rightParts = append(rightParts, cell)
 	}
-
-	// Sparkline (Graph Score) - visualization of importance
-	if width > 120 {
-		spark := RenderSparkline(i.GraphScore, 5)
-		sparkColor := GetHeatmapColor(i.GraphScore, t)
-		sparkStyle := lipgloss.NewStyle().Foreground(sparkColor)
-		rightParts = append(rightParts, sparkStyle.Render(spark))
-		rightWidth += 6 // 5 + 1 spacing
-	}
-
-	// Assignee column - reserved when above width threshold so columns stay
-	// aligned across rows (bt-foit). Rows with no assignee render blank
-	// padding of the same cell width as a populated cell.
-	if width > 100 {
-		if i.Issue.Assignee != "" {
-			assignee := truncateRunesHelper(i.Issue.Assignee, 12, "…")
-			rightParts = append(rightParts, t.SecondaryText.Render(fmt.Sprintf("@%-12s", assignee)))
-		} else {
-			rightParts = append(rightParts, strings.Repeat(" ", 13))
-		}
-		rightWidth += 14
-	}
-
-	// Author column - creation-time actor, distinct from Assignee. Gated at
-	// width > 120. Rendered only when Author differs from Assignee to avoid
-	// visual duplication (bt-aw4h). Reserve column space even when hidden so
-	// later columns stay aligned across rows (bt-foit).
-	if width > 120 {
-		if i.Issue.Author != "" && i.Issue.Author != i.Issue.Assignee {
-			author := truncateRunesHelper(i.Issue.Author, 10, "…")
-			rightParts = append(rightParts, t.MutedText.Render(fmt.Sprintf("%s%-10s", activeGlyphs.Pencil, author)))
-		} else {
-			rightParts = append(rightParts, strings.Repeat(" ", 11))
-		}
-		rightWidth += 12
-	}
-
-	// Labels column - render as mini tags. Reserve full label-tag width
-	// (20 chars + 2 padding = 22 cells) even when row has no labels so the
-	// column anchor stays fixed across rows (bt-foit).
-	if width > 140 {
-		if len(i.Issue.Labels) > 0 {
-			labelStr := truncateRunesHelper(strings.Join(i.Issue.Labels, ","), 20, "…")
-			labelStyle := lipgloss.NewStyle().
-				Foreground(ColorPrimary).
-				Background(ColorBgSubtle).
-				Padding(0, 1)
-			rendered := labelStyle.Render(labelStr)
-			// Pad to a stable 22-cell width so column right-edge is aligned.
-			if w := lipgloss.Width(rendered); w < 22 {
-				rendered = rendered + strings.Repeat(" ", 22-w)
-			}
-			rightParts = append(rightParts, rendered)
-		} else {
-			rightParts = append(rightParts, strings.Repeat(" ", 22))
-		}
-		rightWidth += 23
-	}
-
-	// Left side fixed columns.
-	// [repo-badge 0-6] [chip measured] [hint 1-2] [id dynamic] [space]
-	// Use the measured chip width rather than a hardcoded value so 2-cell
-	// glyphs stay aligned.
-	leftFixedWidth := chipWidth + 1 // chip(measured) + space(1)
-
-	// Pending writes use an inline indicator, not a permanent gutter.
-	var pendingIndicator string
-	if d.PendingClaims[i.Issue.ID] {
-		pendingIndicator = d.ClaimSpinner
-		if pendingIndicator == "" {
-			pendingIndicator = claimSpinnerFrame(0)
-		}
-		leftFixedWidth += lipgloss.Width(pendingIndicator) + 1
-	}
-
-	// Account for repo width only when the current project scope needs it.
-	var repoBadge string
-	if d.ShowRepoBadges && i.RepoPrefix != "" {
-		// Create a compact repo badge like [API] or [WEB]. DisplayRepoName
-		// aliases the beads_global namespace's bare ID-prefix "global" to
-		// "atlas" for display (bt-z1pzj) - RepoPrefix is always ID-derived
-		// (ExtractRepoPrefix), so this is the only place it can surface.
-		repoBadge = RenderRepoBadge(model.DisplayRepoName(i.RepoPrefix))
-		leftFixedWidth += lipgloss.Width(repoBadge) + 1
-	}
-
-	// Priority hint indicator
-	if d.ShowPriorityHints {
-		leftFixedWidth += 2
-	}
-
-	// Quick wins use the reserved right-edge cell, not an optional left badge.
-	if !i.IsQuickWin && i.IsBlocker && i.UnblocksCount > 0 {
-		leftFixedWidth += lipgloss.Width(fmt.Sprintf("%s%d", activeGlyphs.Unlock, i.UnblocksCount)) + 1 // glyph+count + space
-	} else if !i.IsQuickWin && i.UnblocksCount > 0 {
-		leftFixedWidth += lipgloss.Width(fmt.Sprintf("↪%d", i.UnblocksCount)) + 1 // arrow+count + space
-	}
-
-	// Gate/human indicator width (bt-c69c) - only at width > 80
-	var gateBadge string
-	if width > 80 {
-		if i.GateAwaitType != "" {
-			gateBadge = RenderGateBadge(i.GateAwaitType)
-			leftFixedWidth += lipgloss.Width(gateBadge) + 1
-		} else if i.Issue.AwaitType != nil {
-			gateBadge = RenderGateBadge(*i.Issue.AwaitType)
-			leftFixedWidth += lipgloss.Width(gateBadge) + 1
-		} else if hasHumanLabel(i.Issue.Labels) {
-			gateBadge = RenderHumanAdvisoryBadge()
-			leftFixedWidth += lipgloss.Width(gateBadge) + 1
-		}
-	}
-
-	// Epic progress indicator (bt-waeh) - only at width > 80
-	var epicBadge string
-	if width > 80 && i.Issue.IssueType == model.TypeEpic && i.EpicTotal > 0 {
-		epicLabel := fmt.Sprintf("%d/%d", i.EpicDone, i.EpicTotal)
-		var epicFg color.Color
-		if i.EpicDone == i.EpicTotal {
-			epicFg = ColorSuccess
-		} else if i.EpicDone > 0 {
-			epicFg = ColorInfo
-		} else {
-			epicFg = ColorMuted
-		}
-		epicBadge = lipgloss.NewStyle().Foreground(epicFg).Render(epicLabel)
-		leftFixedWidth += lipgloss.Width(epicBadge) + 1
-	}
-
-	// Slot badges (overdue/stale and registered providers) - only at width > 80.
-	// Their budget is settled after the ID and diff badge are measured, below.
-	var slotBadges []slots.Badge
-	if width > 80 {
-		slotBadges = d.Slots.Badges(&i.Issue)
-	}
-
-	// ID width - use actual visual width, but cap reasonably
-	idWidth := lipgloss.Width(idStr)
-	if idWidth > 35 {
-		idWidth = 35
-		idStr = truncateRunesHelper(idStr, 35, "…")
-	}
-	leftFixedWidth += idWidth + 1
-
-	// Diff badge width adjustment
-	if badge := i.DiffStatus.Badge(); badge != "" {
-		leftFixedWidth += lipgloss.Width(badge) + 1
-	}
-
-	// Badges only get cells the title can spare above its protected minimum.
-	badgeStrip, badgeWidth := renderBadgeStrip(slotBadges,
-		width-leftFixedWidth-rightWidth-2-minTitleWidthWithBadges, time.Now())
-	if badgeWidth > 0 {
-		leftFixedWidth += badgeWidth + 1
-	}
-
-	// Title gets everything in between
-	titleWidth := issueListTitleWidth(width, leftFixedWidth, rightWidth)
-
-	// Truncate title if needed
-	title = truncateRunesHelper(title, titleWidth, "…")
-
-	// Pad title to fill space
-	currentWidth := lipgloss.Width(title)
-	if currentWidth < titleWidth {
-		title = title + strings.Repeat(" ", titleWidth-currentWidth)
-	}
-
-	// ══════════════════════════════════════════════════════════════════════════
-	// BUILD THE ROW
-	// ══════════════════════════════════════════════════════════════════════════
-	var leftSide strings.Builder
-
-	// Repo badge (workspace mode)
-	if repoBadge != "" {
-		leftSide.WriteString(repoBadge)
-		leftSide.WriteString(" ")
-	}
-
-	// Type + status + priority as one chip (bt-evuf.2)
-	leftSide.WriteString(chip)
-	leftSide.WriteString(" ")
-
-	// Priority hint indicator (↑/↓) - using pre-computed styles
-	if d.ShowPriorityHints && d.PriorityHints != nil {
-		if hint, ok := d.PriorityHints[i.Issue.ID]; ok {
-			if hint.Direction == "increase" {
-				leftSide.WriteString(t.PriorityUpArrow.Render("↑"))
-			} else if hint.Direction == "decrease" {
-				leftSide.WriteString(t.PriorityDownArrow.Render("↓"))
-			}
-		} else {
-			leftSide.WriteString(" ")
-		}
-		leftSide.WriteString(" ")
-	}
-
-	// Unblocks indicators retain their existing left-side placement. Quick
-	// wins take precedence, but their bolt is rendered in the right-edge cell.
-	triageIndicator := ""
-	if !i.IsQuickWin && i.IsBlocker && i.UnblocksCount > 0 {
-		triageIndicator = t.TriageUnblocks.Render(fmt.Sprintf("%s%d", activeGlyphs.Unlock, i.UnblocksCount))
-	} else if !i.IsQuickWin && i.UnblocksCount > 0 {
-		triageIndicator = t.TriageUnblocksAlt.Render(fmt.Sprintf("↪%d", i.UnblocksCount))
-	}
-	if triageIndicator != "" {
-		leftSide.WriteString(triageIndicator)
-		leftSide.WriteString(" ")
-	}
-
-	// Gate/human indicator (bt-c69c)
-	if gateBadge != "" {
-		leftSide.WriteString(gateBadge)
-		leftSide.WriteString(" ")
-	}
-
-	// Slot badges (overdue/stale and registered providers)
-	if badgeStrip != "" {
-		leftSide.WriteString(badgeStrip)
-		leftSide.WriteString(" ")
-	}
-
-	// Epic progress (bt-waeh)
-	if epicBadge != "" {
-		leftSide.WriteString(epicBadge)
-		leftSide.WriteString(" ")
-	}
-
-	// ID with secondary styling (using pre-computed style base)
-	leftSide.WriteString(t.SecondaryText.Render(idStr))
-	leftSide.WriteString(" ")
-
-	// Diff badge (time-travel mode)
-	if badge := i.DiffStatus.Badge(); badge != "" {
-		leftSide.WriteString(badge)
-		leftSide.WriteString(" ")
-	}
-
-	if pendingIndicator != "" {
-		leftSide.WriteString(lipgloss.NewStyle().Foreground(t.Warning).Render(pendingIndicator))
-		leftSide.WriteString(" ")
-	}
-
+	right := strings.Join(rightParts, " ")
+	titleWidth := max(0, width-lipgloss.Width(left)-layout.rightWidth())
+	title := padIssueListCell(truncateRunesHelper(i.Issue.Title, titleWidth, "…"), titleWidth)
 	titleStyle := lipgloss.NewStyle().Foreground(ColorTextSecondary)
-	// bt-9kdo: dim wisps
 	if i.Issue.Ephemeral != nil && *i.Issue.Ephemeral {
 		titleStyle = titleStyle.Foreground(ColorMuted).Italic(true)
 	}
-	leftSide.WriteString(titleStyle.Render(title))
-
-	// Right side
-	rightSide := strings.Join(rightParts, " ")
-
-	// Combine: left + padding + right
-	leftLen := lipgloss.Width(leftSide.String())
-	rightLen := lipgloss.Width(rightSide)
-	padding := width - leftLen - rightLen - markerWidth
-	if padding < 0 {
-		padding = 0
+	row := left + titleStyle.Render(title)
+	if right != "" {
+		row += " " + right
 	}
-
-	// Construct the row string
-	row := leftSide.String() + strings.Repeat(" ", padding) + rightSide
+	markerWidth := layout.markerWidth
+	quickWinMarker := strings.Repeat(" ", markerWidth)
+	if i.IsQuickWin && lipgloss.Width(activeGlyphs.Bolt) <= markerWidth {
+		quickWinMarker = strings.Repeat(" ", markerWidth-lipgloss.Width(activeGlyphs.Bolt)) + t.TriageStar.Render(activeGlyphs.Bolt)
+	}
 
 	// Clip and pad the body before appending the reserved marker so even an
 	// ultra-narrow row cannot wrap or clip the quick-win bolt off the edge.
@@ -398,12 +124,203 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 	fmt.Fprint(w, row)
 }
 
-func issueListTitleWidth(width, leftFixedWidth, rightWidth int) int {
-	titleWidth := width - leftFixedWidth - rightWidth - 2
-	if titleWidth < 5 {
-		return 5
+// Column widths are shared by the rows on the current page. Empty columns take
+// no space; empty cells in populated columns retain their neighbors' anchors.
+const (
+	issueColHint = iota
+	issueColTriage
+	issueColGate
+	issueColSlots
+	issueColEpic
+	issueColDiff
+	issueColPending
+	issueColAge
+	issueColComments
+	issueColSpark
+	issueColAssignee
+	issueColAuthor
+	issueColLabels
+	issueColCount
+)
+
+type issueListLayout struct {
+	repoWidth, chipWidth, idWidth int
+	markerWidth, slotBudget       int
+	rightWidths                   [issueColCount]int
+}
+
+type issueListRender struct {
+	layout issueListLayout
+	now    time.Time
+}
+
+// Unlike plain-text padding, metadata padding must ignore its ANSI styling.
+func padIssueListCell(s string, width int) string {
+	s = ansi.Truncate(s, width, "")
+	return s + strings.Repeat(" ", max(0, width-lipgloss.Width(s)))
+}
+
+func (l issueListLayout) leftWidth() int {
+	w := l.chipWidth + 1 + l.idWidth + 1
+	if l.repoWidth > 0 {
+		w += l.repoWidth + 1
 	}
-	return titleWidth
+	return w
+}
+
+func (l issueListLayout) rightWidth() int {
+	w := l.markerWidth
+	for _, cellWidth := range l.rightWidths {
+		if cellWidth > 0 {
+			w += cellWidth + 1
+		}
+	}
+	return w
+}
+
+func displayedIssueItems(m list.Model) []list.Item {
+	items := m.VisibleItems()
+	start := min(len(items), max(0, m.Paginator.Page)*max(1, m.Paginator.PerPage))
+	end := min(len(items), start+max(1, m.Paginator.PerPage))
+	return items[start:end]
+}
+
+func issueListLeftCells(i IssueItem, showRepo bool) (repo, chip, id string) {
+	if showRepo && i.RepoPrefix != "" {
+		repo = RenderRepoBadge(model.DisplayRepoName(i.RepoPrefix))
+	}
+	chip = RenderIssueChip(string(i.Issue.IssueType), string(i.Issue.Status), i.Issue.Priority)
+	id = truncateRunesHelper(CompactIssueID(i.Issue.ID, i.RepoPrefix), 35, "…")
+	return
+}
+
+func issueListLeftLayout(m list.Model, showRepo bool) issueListLayout {
+	return measureIssueListLeft(displayedIssueItems(m), showRepo)
+}
+
+func measureIssueListLeft(items []list.Item, showRepo bool) issueListLayout {
+	l := issueListLayout{chipWidth: 5, idWidth: 2}
+	if showRepo {
+		l.repoWidth = 4 // REPO header when the page is empty
+	}
+	for _, item := range items {
+		if i, ok := item.(IssueItem); ok {
+			repo, chip, id := issueListLeftCells(i, showRepo)
+			l.repoWidth = max(l.repoWidth, lipgloss.Width(repo))
+			l.chipWidth = max(l.chipWidth, lipgloss.Width(chip))
+			l.idWidth = max(l.idWidth, lipgloss.Width(id))
+		}
+	}
+	return l
+}
+
+func (d IssueDelegate) listLayout(m list.Model, width int, now time.Time) issueListLayout {
+	// VisibleItems copies filtered results, so fetch once and reuse the page.
+	items := displayedIssueItems(m)
+	l := measureIssueListLeft(items, d.ShowRepoBadges)
+	l.markerWidth = min(width, lipgloss.Width(activeGlyphs.Bolt)+1)
+	l.slotBudget = maxBadgeStripWidth
+	for _, item := range items {
+		if i, ok := item.(IssueItem); ok {
+			cells := d.issueListRightCells(i, width, l.slotBudget, now)
+			for column, cell := range cells {
+				l.rightWidths[column] = max(l.rightWidths[column], lipgloss.Width(cell))
+			}
+		}
+	}
+	// Slot providers only get space above the protected title minimum. Measure
+	// their reduced strips again so a dropped badge cannot leave a phantom gap.
+	l.rightWidths[issueColSlots] = 0
+	l.slotBudget = max(0, width-l.leftWidth()-l.rightWidth()-minTitleWidthWithBadges-1)
+	for _, item := range items {
+		if i, ok := item.(IssueItem); ok && width > 80 {
+			_, w := renderBadgeStrip(d.Slots.Badges(&i.Issue), l.slotBudget, now)
+			l.rightWidths[issueColSlots] = max(l.rightWidths[issueColSlots], w)
+		}
+	}
+	// When unusually long IDs/metadata exhaust the title, drop lower-value
+	// columns consistently for the whole page, not independently per row.
+	for _, column := range []int{issueColLabels, issueColAuthor, issueColSpark, issueColAssignee, issueColSlots, issueColEpic, issueColComments, issueColAge, issueColHint, issueColDiff, issueColTriage, issueColGate, issueColPending} {
+		if width-l.leftWidth()-l.rightWidth() >= minTitleWidthWithBadges {
+			break
+		}
+		l.rightWidths[column] = 0
+	}
+	return l
+}
+
+func (d IssueDelegate) issueListRightCells(i IssueItem, width, slotBudget int, now time.Time) [issueColCount]string {
+	t := d.Theme
+	var cells [issueColCount]string
+	if d.ShowPriorityHints {
+		if hint := d.PriorityHints[i.Issue.ID]; hint != nil {
+			switch hint.Direction {
+			case "increase":
+				cells[issueColHint] = t.PriorityUpArrow.Render("↑")
+			case "decrease":
+				cells[issueColHint] = t.PriorityDownArrow.Render("↓")
+			}
+		}
+	}
+	if !i.IsQuickWin && i.UnblocksCount > 0 {
+		if i.IsBlocker {
+			cells[issueColTriage] = t.TriageUnblocks.Render(fmt.Sprintf("%s%d", activeGlyphs.Unlock, i.UnblocksCount))
+		} else {
+			cells[issueColTriage] = t.TriageUnblocksAlt.Render(fmt.Sprintf("↪%d", i.UnblocksCount))
+		}
+	}
+	if width > 80 {
+		switch {
+		case i.GateAwaitType != "":
+			cells[issueColGate] = RenderGateBadge(i.GateAwaitType)
+		case i.Issue.AwaitType != nil:
+			cells[issueColGate] = RenderGateBadge(*i.Issue.AwaitType)
+		case hasHumanLabel(i.Issue.Labels):
+			cells[issueColGate] = RenderHumanAdvisoryBadge()
+		}
+		cells[issueColSlots], _ = renderBadgeStrip(d.Slots.Badges(&i.Issue), slotBudget, now)
+		if i.Issue.IssueType == model.TypeEpic && i.EpicTotal > 0 {
+			fg := ColorMuted
+			if i.EpicDone == i.EpicTotal {
+				fg = ColorSuccess
+			} else if i.EpicDone > 0 {
+				fg = ColorInfo
+			}
+			cells[issueColEpic] = lipgloss.NewStyle().Foreground(fg).Render(fmt.Sprintf("%d/%d", i.EpicDone, i.EpicTotal))
+		}
+	}
+	cells[issueColDiff] = i.DiffStatus.Badge()
+	if d.PendingClaims[i.Issue.ID] {
+		spinner := d.ClaimSpinner
+		if spinner == "" {
+			spinner = claimSpinnerFrame(0)
+		}
+		cells[issueColPending] = lipgloss.NewStyle().Foreground(t.Warning).Render(spinner)
+	}
+	if width > 60 {
+		ageStyle := t.MutedText
+		if !i.Issue.UpdatedAt.Equal(i.Issue.CreatedAt) {
+			ageStyle = t.MutedTextItalic
+		}
+		cells[issueColAge] = ageStyle.Render(FormatTimeRel(i.Issue.UpdatedAt))
+		if len(i.Issue.Comments) > 0 {
+			cells[issueColComments] = t.InfoText.Render(fmt.Sprintf("%s%d", activeGlyphs.Comment, len(i.Issue.Comments)))
+		}
+	}
+	if width > 100 && i.Issue.Assignee != "" {
+		cells[issueColAssignee] = t.SecondaryText.Render("@" + truncateRunesHelper(i.Issue.Assignee, 12, "…"))
+	}
+	if width > 120 {
+		cells[issueColSpark] = lipgloss.NewStyle().Foreground(GetHeatmapColor(i.GraphScore, t)).Render(RenderSparkline(i.GraphScore, 5))
+		if i.Issue.Author != "" && i.Issue.Author != i.Issue.Assignee {
+			cells[issueColAuthor] = t.MutedText.Render(activeGlyphs.Pencil + truncateRunesHelper(i.Issue.Author, 10, "…"))
+		}
+	}
+	if width > 140 && len(i.Issue.Labels) > 0 {
+		cells[issueColLabels] = lipgloss.NewStyle().Foreground(ColorPrimary).Background(ColorBgSubtle).Padding(0, 1).
+			Render(truncateRunesHelper(strings.Join(i.Issue.Labels, ","), 20, "…"))
+	}
+	return cells
 }
 
 // hasHumanLabel returns true if labels contains "human".

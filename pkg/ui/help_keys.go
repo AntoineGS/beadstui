@@ -54,6 +54,9 @@ func (m Model) restoreFocusFromHelp() focus {
 // dispatch via key.Matches against m.keys.Help lands in bt-ift6.9.
 func (m Model) handleHelpKeys(msg tea.KeyMsg) Model {
 	switch msg.String() {
+	case "l":
+		m.helpLegend = !m.helpLegend
+		m.helpScroll = 0
 	case "j", "down":
 		m.helpScroll++
 		if max := m.helpScrollMax(); m.helpScroll > max {
