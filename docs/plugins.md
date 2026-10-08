@@ -58,12 +58,14 @@ listed.
 
 ## Lifecycle
 
-1. After the first snapshot is ready, bt starts every enabled plugin with bt's
-   working directory.
+1. bt starts every enabled plugin when it starts, in bt's working directory,
+   without waiting for the issues to load.
 2. bt sends `initialize`. The plugin must answer within 5 seconds with its
    manifest. Until the manifest is validated, bt sends the plugin nothing else
    and refuses everything the plugin sends (requests get a `not_ready` error).
-3. bt sends `beads.sync`, then again whenever the data changes. A plugin must not
+3. bt sends the first `beads.sync` once the manifest is accepted and the issues
+   are loaded (it may list no beads), then again whenever the data changes. A
+   plugin must not
    push `state.set` or `ui.toast` until its manifest is accepted: they are
    refused with a `not_ready` error before that. Waiting for the first
    `beads.sync` is recommended, since that is when the plugin learns which beads
@@ -75,7 +77,9 @@ listed.
    reports its in-flight actions as "result unknown" and restarts it. The policy
    is the first start plus 3 restarts, after 1s, 5s and 25s. After the third
    restart fails the plugin stays failed until bt restarts, and bt shows a footer
-   notice.
+   notice. A plugin that stayed active for 60 seconds before failing starts the
+   count over. A command that does not exist fails at once, without restarts,
+   with the error `command not found: <command>`.
 
 All plugin I/O happens in background goroutines. The UI never waits on a plugin.
 
@@ -172,6 +176,8 @@ If validation fails, the manifest is rejected and the plugin counts as failed
 - `tone` is one of `accent`, `ok`, `warn`, `error`, `muted`; bt maps it to theme
   colors.
 - `badge` is at most 6 cells wide.
+- Labels, titles and badges contain no control characters (escape sequences
+  included).
 - An action's `key` is not empty.
 
 A field is exposed in BQL as `<plugin>.<field>`, for example
@@ -194,8 +200,8 @@ means no metadata is sent.
 }
 ```
 
-Always the full set of beads matching `subscribe`. It is sent once after the
-manifest is accepted and again whenever a snapshot's data changes. `revision`
+Always the full set of beads matching `subscribe`. It is sent once the manifest
+is accepted and the issues are loaded, and again whenever the data changes. `revision`
 increases by one each time. Descriptions and comments are never sent.
 
 ### `state.set` and `state.clear` (plugin to bt, notifications)
@@ -217,7 +223,8 @@ increases by one each time. Descriptions and comments are never sent.
 - `fields` values must be declared in the manifest. An unknown field or value
   drops that field and logs a debug line. `since` is optional; when present the
   badge shows an age ("WAIT 4m").
-- `sections` values are markdown, at most 16 KiB each.
+- `sections` values are markdown, at most 16 KiB each. Escape sequences and
+  control characters other than newline and tab are removed.
 - `actions` lists the actions available on this bead. A bead without an entry
   from the plugin has none of the plugin's actions.
 - Entries for beads bt does not currently hold are kept and show up if the bead
@@ -245,11 +252,13 @@ before it is drawn, so control sequences cannot reach the terminal.
 An error result shows its `message` as an error toast.
 
 While the call runs, a list row shows bt's pending spinner; in the board, tree
-and epics views bt shows a notice instead. The pending state clears on the
-result, on the next `state.set` entry for that bead, or after 65 seconds,
-whichever comes first. A timeout (60s) or a plugin crash is reported as "result
-unknown" and the action is never retried or replayed. Only one action per bead
-runs at a time; a second request on the same bead is refused with a notice.
+and epics views bt shows a notice instead. The spinner stops on the result, on
+the next state change for that bead, or after 65 seconds, whichever comes first.
+A timeout (60s) or a plugin crash is reported as "result unknown" and the action
+is never retried or replayed. Only one action per bead runs at a time: until the
+result arrives (or 65 seconds pass), a second request on the same bead is
+refused with a notice, even after the spinner stopped. An action on a plugin
+that is not running is not sent; bt says so in a notice.
 
 `dismiss: true` quits bt only when bt was started with `--popup`; otherwise it
 is ignored.
@@ -263,6 +272,9 @@ otherwise they fail with `-32000` and `data.type` `no_action`.
   `false`, or `null` if the user dismissed it.
 - `ui.select`: `{ "title", "options": [{ "value", "label", "description"? }] }`
   returns the chosen `value`, or `null` if dismissed.
+
+bt answers `null` at once, without showing the prompt, while another dialog is
+open or the user is typing in a filter or search box.
 
 Send these as **requests** with an `id`, never as notifications. bt handles
 notifications on the same reader that delivers the plugin's other messages, and
@@ -302,7 +314,8 @@ Without the flag, `dismiss` is ignored. Plugins receive the flag as `popup` in
 - A plugin that fails to start, answers `initialize` late, sends an invalid
   manifest or crashes counts as a failure and is restarted as described in
   [Lifecycle](#lifecycle). Once the restarts are used up it is marked failed and
-  bt shows one footer notice; details are in the debug log.
+  bt shows one footer notice; details are in the debug log. The count starts
+  over after 60 seconds active, and a missing command fails at once.
 - An action in flight when the plugin goes away is reported as "result unknown".
   bt does not know whether it took effect and never repeats it.
 - A plugin never blocks rendering or input.
