@@ -2,7 +2,7 @@
 
 Date: 2026-10-08
 
-Status: conversational design approved; written spec awaiting user review.
+Status: written spec approved by the user; implementation plan awaiting review.
 
 Issue tracking is explicitly waived for this work because the configured beads
 database is unavailable.
