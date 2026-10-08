@@ -296,6 +296,92 @@ func TestIssueDelegate_SelectedRowUsesCustomThemeText(t *testing.T) {
 	}
 }
 
+func TestIssueDelegate_QuickWinBoltStaysAtRightEdge(t *testing.T) {
+	wideGlyphs := nerdfontGlyphs
+	wideGlyphs.Bolt = "⚡"
+	for _, tier := range []struct {
+		name   string
+		glyphs GlyphSet
+	}{
+		{"nerdfont", nerdfontGlyphs},
+		{"ascii", asciiGlyphs},
+		{"wide-bolt", wideGlyphs},
+	} {
+		t.Run(tier.name, func(t *testing.T) {
+			setGlyphs(t, tier.glyphs)
+			item := newTestIssueItem("api-0hx")
+			item.RepoPrefix = "api"
+			item.Issue.Title = strings.Repeat("long title words ", 10)
+			item.IsQuickWin = true
+			item.IsBlocker = true
+			item.UnblocksCount = 3
+			d := IssueDelegate{Theme: DefaultTheme(), WorkspaceMode: true, Slots: waitRegistry()}
+			for _, width := range []int{1, 2, 12, 24, 50, 60, 61, 80, 81, 100, 101, 120, 121, 140, 141, 160} {
+				for _, selected := range []bool{false, true} {
+					l := list.New([]list.Item{item, item}, d, width, 2)
+					index := 1
+					if selected {
+						index = 0
+					}
+					var buf bytes.Buffer
+					d.Render(&buf, l, index, item)
+					row := buf.String()
+					lines := uv.NewStyledString(row).Lines(ansi.GraphemeWidth)
+					rowWidth := 0
+					if len(lines) == 1 {
+						for _, cell := range lines[0] {
+							rowWidth += cell.Width
+						}
+					}
+					if len(lines) != 1 || rowWidth != width {
+						t.Errorf("width=%d selected=%t: row must occupy exactly one line: %q", width, selected, row)
+					}
+					plain := ansi.Strip(row)
+					if width < lipgloss.Width(tier.glyphs.Bolt) {
+						if plain != strings.Repeat(" ", width) {
+							t.Errorf("width=%d: oversized bolt must leave a blank cell: %q", width, plain)
+						}
+						continue
+					}
+					if !strings.HasSuffix(plain, tier.glyphs.Bolt) || strings.Count(plain, tier.glyphs.Bolt) != 1 {
+						t.Errorf("width=%d selected=%t: quick-win bolt must appear once at the right edge: %q", width, selected, plain)
+					}
+					if !selected && len(lines) == 1 && rowWidth == width {
+						cell := lines[0][len(lines[0])-1]
+						if !cell.Style.Equal(&uv.Style{Fg: ThemeFg("#f0c674")}) {
+							t.Errorf("width=%d: quick-win bolt must retain its gold style: %+v", width, cell.Style)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestIssueDelegate_QuickWinDoesNotShiftColumns(t *testing.T) {
+	for _, glyphs := range []GlyphSet{nerdfontGlyphs, asciiGlyphs} {
+		setGlyphs(t, glyphs)
+		item := newTestIssueItem("api-0hx")
+		item.RepoPrefix = "api"
+		item.Issue.Title = "TITLE " + strings.Repeat("long words ", 20)
+		d := IssueDelegate{Theme: DefaultTheme(), WorkspaceMode: true}
+		for _, width := range []int{30, 50, 80, 120, 160} {
+			item.IsQuickWin = false
+			ordinary := ansi.Strip(renderDelegateRow(t, d, item, width))
+			item.IsQuickWin = true
+			quickWin := ansi.Strip(renderDelegateRow(t, d, item, width))
+			cellWidth := lipgloss.Width(glyphs.Bolt) + 1
+			bodyWidth := width - cellWidth
+			if ansi.Truncate(ordinary, bodyWidth, "") != ansi.Truncate(quickWin, bodyWidth, "") {
+				t.Errorf("width=%d: quick-win flag shifted columns or changed title truncation:\nordinary: %q\nquickwin: %q", width, ordinary, quickWin)
+			}
+			if !strings.HasSuffix(ordinary, strings.Repeat(" ", cellWidth)) {
+				t.Errorf("width=%d: ordinary row must reserve a blank marker cell: %q", width, ordinary)
+			}
+		}
+	}
+}
+
 func TestIssueDelegate_PendingClaimKeepsFeedbackWithoutGutter(t *testing.T) {
 	setGlyphs(t, asciiGlyphs)
 	item := newTestIssueItem("api-123")

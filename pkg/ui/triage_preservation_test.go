@@ -4,12 +4,38 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+
+	"charm.land/bubbles/v2/list"
+	"github.com/charmbracelet/x/ansi"
 )
+
+func TestQuickWinDetailUsesBolt(t *testing.T) {
+	for _, glyphs := range []GlyphSet{nerdfontGlyphs, asciiGlyphs} {
+		setGlyphs(t, glyphs)
+		item := newTestIssueItem("api-0hx")
+		item.IsQuickWin = true
+		m := NewModel([]model.Issue{item.Issue}, nil, "", nil, nil)
+		defer m.Stop()
+		m.list.SetItems([]list.Item{item})
+		m.viewport.SetWidth(100)
+		m.viewport.SetHeight(100)
+		m.renderer.SetWidthWithTheme(100, m.theme)
+		m.updateViewportContent()
+		out := ansi.Strip(m.viewport.View())
+		if !strings.Contains(out, glyphs.Bolt+" Quick Win") {
+			t.Errorf("detail pane must use a bolt for the quick-win flag: %q", out)
+		}
+		if strings.Contains(out, glyphs.Star+" Quick Win") {
+			t.Errorf("detail pane still shows the quick-win star: %q", out)
+		}
+	}
+}
 
 func writeTempBeadsFile(t *testing.T, dir string, issue model.Issue) string {
 	t.Helper()

@@ -1204,7 +1204,7 @@ func (m *Model) updateViewportContent() {
 
 			// Special flags
 			if issueItem.IsQuickWin {
-				sb.WriteString("- **" + activeGlyphs.Star + " Quick Win** — Low effort, high impact opportunity\n")
+				sb.WriteString("- **" + activeGlyphs.Bolt + " Quick Win** — Low effort, high impact opportunity\n")
 			}
 			if issueItem.IsBlocker {
 				sb.WriteString("- **" + activeGlyphs.DotBlocked + " Critical Blocker** — Completing this unblocks significant downstream work\n")
