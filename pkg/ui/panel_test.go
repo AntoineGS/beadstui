@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -38,6 +39,52 @@ func TestPopupMenuRespectsTextAttributes(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("menu ignored role %q: %q", want, got)
 		}
+	}
+}
+
+func TestPopupMenuSelectedRowCoherentCells(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Selected = lipgloss.NewStyle().Foreground(theme.TextColor).Background(theme.Highlight).Bold(false).Italic(false).Underline(false)
+	theme.Text.Heading = lipgloss.NewStyle().Foreground(theme.Primary).Background(theme.Warning).Bold(true)
+	theme.Text.Metadata = lipgloss.NewStyle().Foreground(theme.Secondary).Background(theme.Blocked).Italic(true).Underline(true)
+	chipStyle := lipgloss.NewStyle().Foreground(theme.Open).Background(theme.Blocked).Bold(true)
+	selectedStyle := uv.NewStyledString(theme.Text.Selected.Render("X")).Lines(ansi.GraphemeWidth)[0][0].Style
+	semanticStyle := uv.NewStyledString(chipStyle.Render("X")).Lines(ansi.GraphemeWidth)[0][0].Style
+	for _, semantic := range []bool{false, true} {
+		t.Run(fmt.Sprintf("semantic=%v", semantic), func(t *testing.T) {
+			label := "Choice"
+			if semantic {
+				label = chipStyle.Render("CHIP")
+			}
+			entries := []PopupMenuEntry{{Label: label, Shortcut: "a", Marker: "*", Suffix: " (3)", Selected: true}, {Label: "Longer choice", Shortcut: "xyz", Marker: "++"}}
+			layout := MeasurePopupMenu(entries, PopupMenuOpts{Shortcuts: true, Markers: true})
+			for _, width := range []int{7, layout.LabelX + 2, layout.Width, layout.Width + 12} {
+				row := RenderPopupMenu(entries, layout, theme, width)[0]
+				blockWidth := min(layout.Width, width)
+				left := max(0, (width-blockWidth)/2)
+				raw := "> " + popupPadCell("a", layout.ShortcutWidth) + "  " + popupPadCell("*", layout.MarkerWidth) + " " + ansi.Strip(label) + " (3)"
+				wantText := popupPadCell(strings.Repeat(" ", left)+popupPadCell(raw, blockWidth), width)
+				if ansi.Strip(row) != wantText {
+					t.Fatalf("width=%d: changed alignment/content: got %q want %q", width, ansi.Strip(row), wantText)
+				}
+				cells := uv.NewStyledString(row).Lines(ansi.GraphemeWidth)
+				if len(cells) != 1 || len(cells[0]) != width {
+					t.Fatalf("width=%d: changed row geometry: %q", width, row)
+				}
+				for x, cell := range cells[0] {
+					want := selectedStyle
+					if semantic && x >= left+layout.LabelX && x < left+layout.LabelX+4 {
+						want = semanticStyle
+					}
+					if !cell.Style.Equal(&want) {
+						t.Fatalf("width=%d cell=%d %q: style=%+v want=%+v", width, x, cell.Content, cell.Style, want)
+					}
+				}
+				if width >= layout.Width && !strings.Contains(ansi.Strip(row), " (3)") {
+					t.Fatalf("suffix lost: %q", row)
+				}
+			}
+		})
 	}
 }
 

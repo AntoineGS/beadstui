@@ -284,19 +284,34 @@ func RenderPopupMenu(entries []PopupMenuEntry, l PopupMenuLayout, theme Theme, w
 	for _, e := range entries {
 		e = popupSingleRow(e)
 		cursor, labelStyle := "  ", idle
+		shortcutStyle, metadataStyle := primary, secondary
+		paddingStyle := lipgloss.NewStyle()
 		if e.Selected {
 			cursor = theme.Text.Selected.Render("> ")
 			labelStyle = theme.Text.Selected
+			shortcutStyle, metadataStyle = theme.Text.Selected, theme.Text.Selected
+			paddingStyle = theme.Text.Selected
+		}
+		// Style ordinary gaps separately so semantic ANSI chips retain their
+		// own colors, while their resets cannot leave holes in selected padding.
+		padCell := func(text string, cellWidth int) string {
+			text = ansi.Truncate(text, max(0, cellWidth), "")
+			return text + paddingStyle.Render(strings.Repeat(" ", max(0, cellWidth-ansi.StringWidth(text))))
 		}
 		row := cursor
 		if l.Shortcuts {
-			row += popupPadCell(popupStyledText(e.Shortcut, primary), l.ShortcutWidth) + "  "
+			row += padCell(popupStyledText(e.Shortcut, shortcutStyle), l.ShortcutWidth) + paddingStyle.Render("  ")
 		}
 		if l.Markers {
-			row += popupPadCell(popupStyledText(e.Marker, secondary), l.MarkerWidth) + " "
+			row += padCell(popupStyledText(e.Marker, metadataStyle), l.MarkerWidth) + paddingStyle.Render(" ")
 		}
-		row += popupStyledText(e.Label, labelStyle) + popupStyledText(e.Suffix, secondary)
-		rows = append(rows, fit(row))
+		row += popupStyledText(e.Label, labelStyle) + popupStyledText(e.Suffix, metadataStyle)
+		if e.Selected {
+			row = ansi.Truncate(row, blockWidth, "")
+			rows = append(rows, paddingStyle.Render(left)+row+paddingStyle.Render(strings.Repeat(" ", max(0, width-len(left)-ansi.StringWidth(row)))))
+		} else {
+			rows = append(rows, fit(row))
+		}
 		if e.Detail != "" {
 			rows = append(rows, fit(strings.Repeat(" ", max(0, l.LabelX))+popupStyledText(e.Detail, detail)))
 		}
