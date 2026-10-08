@@ -1663,7 +1663,7 @@ func (m *Model) refreshThemeConsumers() {
 		state.Placeholder = t.Text.Metadata
 		state.Suggestion = t.Text.Metadata
 	}
-	for _, input := range []*textinput.Model{&m.list.FilterInput, &m.fieldInput.input, &m.bqlQuery.input, &m.memories.searchInput, &m.historyView.searchInput, &m.timeTravelInput} {
+	for _, input := range []*textinput.Model{&m.list.FilterInput, &m.fieldInput.input, &m.bqlQuery.input, &m.labelPicker.input, &m.repoPicker.input, &m.memories.searchInput, &m.historyView.searchInput, &m.timeTravelInput} {
 		styles := input.Styles()
 		for _, state := range []*textinput.StyleState{&styles.Focused, &styles.Blurred} {
 			state.Prompt = t.Text.Heading

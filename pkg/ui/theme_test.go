@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
@@ -84,6 +85,31 @@ func TestThemeRefreshAllRetainedConsumers(t *testing.T) {
 	t.Setenv("BT_THEME", "")
 	m := epicsTestModel(epicsFixture())
 	assertRetainedThemes(t, &m) // Startup must initialize even unopened models.
+	pickerInputs := map[string]*textinput.Model{
+		"label": &m.labelPicker.input,
+		"repo":  &m.repoPicker.input,
+	}
+	assertPickerStyles := func() {
+		t.Helper()
+		for name, input := range pickerInputs {
+			styles := input.Styles()
+			for stateName, state := range map[string]textinput.StyleState{"focused": styles.Focused, "blurred": styles.Blurred} {
+				if !reflect.DeepEqual(state.Text, m.theme.Text.Body) || !reflect.DeepEqual(state.Prompt, m.theme.Text.Heading) || !reflect.DeepEqual(state.Placeholder, m.theme.Text.Metadata) || !reflect.DeepEqual(state.Suggestion, m.theme.Text.Metadata) {
+					t.Errorf("%s picker %s widget styles stale", name, stateName)
+				}
+			}
+		}
+	}
+	assertPickerStyles() // These retained search widgets also need startup roles.
+	// Repository selection is initialized lazily; use a real opened picker for
+	// cursor/focus retention rather than focusing its zero-value startup input.
+	m.repoPicker = NewRepoPickerModel([]string{"repo"}, m.theme)
+	m.labelPicker.input.SetValue("label search")
+	m.labelPicker.input.SetCursor(3)
+	m.labelPicker.input.Focus()
+	m.repoPicker.input.SetValue("repo search")
+	m.repoPicker.input.SetCursor(5)
+	m.repoPicker.input.Blur()
 	m.list.Select(1)
 	m.list.SetFilterText("ep")
 	index, filterState := m.list.Index(), m.list.FilterState()
@@ -107,12 +133,20 @@ func TestThemeRefreshAllRetainedConsumers(t *testing.T) {
 	m.updateViewportContent()
 	m.viewport.SetYOffset(2)
 	offset := m.viewport.YOffset()
-	for _, tf := range []*ThemeFile{
+	for i, tf := range []*ThemeFile{
 		{Text: TextRoleConfigs{Body: TextRoleConfig{Foreground: "danger", Underline: hptr(true)}, Metadata: TextRoleConfig{Italic: hptr(true)}}},
 		{Text: TextRoleConfigs{Body: TextRoleConfig{Foreground: "success", Underline: hptr(false)}}},
 	} {
+		if i == 1 {
+			m.labelPicker.input.Blur()
+			m.repoPicker.input.Focus()
+		}
 		m.applyThemeConfig(tf)
 		assertRetainedThemes(t, &m)
+		assertPickerStyles()
+		if m.labelPicker.input.Value() != "label search" || m.labelPicker.input.Position() != 3 || m.labelPicker.input.Focused() != (i == 0) || m.repoPicker.input.Value() != "repo search" || m.repoPicker.input.Position() != 5 || m.repoPicker.input.Focused() != (i == 1) {
+			t.Fatal("picker search text/cursor/focus reset")
+		}
 		if m.list.Index() != index || m.list.FilterState() != filterState || m.list.FilterInput.Value() != "ep" {
 			t.Fatal("list selection/filter reset")
 		}
