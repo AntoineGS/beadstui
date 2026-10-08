@@ -109,9 +109,9 @@ type GlyphSet struct {
 	RepoDrawer   string // repo filter drawer
 	Workspace    string // workspace summary
 	Bell         string // unread events
-	Star         string // self-update / quick-win star
+	Star         string // self-update star
 	Session      string // cass session count
-	Bolt         string // secondary alert / "blocks N"
+	Bolt         string // quick win / secondary alert / "blocks N"
 	Unlock       string // unblocks indicator
 	Comment      string // comment count
 	Clock        string // time-travel / timer

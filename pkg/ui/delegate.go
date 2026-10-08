@@ -62,7 +62,7 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 
 	// ══════════════════════════════════════════════════════════════════════════
 	// POLISHED ROW LAYOUT - Stripe-level visual hierarchy
-	// Layout: [repo] [type status priority] [ID] [title...] [meta]
+	// Layout: [repo] [type status priority] [ID] [title...] [meta] [quick win]
 	// ══════════════════════════════════════════════════════════════════════════
 
 	// Get all the data. Type, status and priority render as one chip
@@ -77,8 +77,17 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 	// Measure actual display width; glyphs vary between 1 and 2 cells.
 	chipWidth := lipgloss.Width(chip)
 
+	// Reserve the same right-edge quick-win cell on every row, including a
+	// separator when it fits. Keep it outside the body that narrow rows clip.
+	markerWidth := min(width, lipgloss.Width(activeGlyphs.Bolt)+1)
+	quickWinMarker := strings.Repeat(" ", markerWidth)
+	if i.IsQuickWin && lipgloss.Width(activeGlyphs.Bolt) <= markerWidth {
+		quickWinMarker = strings.Repeat(" ", markerWidth-lipgloss.Width(activeGlyphs.Bolt)) +
+			t.TriageStar.Render(activeGlyphs.Bolt)
+	}
+
 	// Calculate widths for right-side columns (fixed)
-	rightWidth := 0
+	rightWidth := markerWidth
 	var rightParts []string
 
 	// Show Age and Comments only if we have reasonable width
@@ -198,12 +207,10 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 		leftFixedWidth += 2
 	}
 
-	// Triage indicator width (bv-151) - use lipgloss.Width for accurate glyph measurement
-	if i.IsQuickWin {
-		leftFixedWidth += lipgloss.Width(activeGlyphs.Star) + 1 // glyph + space
-	} else if i.IsBlocker && i.UnblocksCount > 0 {
+	// Quick wins use the reserved right-edge cell, not an optional left badge.
+	if !i.IsQuickWin && i.IsBlocker && i.UnblocksCount > 0 {
 		leftFixedWidth += lipgloss.Width(fmt.Sprintf("%s%d", activeGlyphs.Unlock, i.UnblocksCount)) + 1 // glyph+count + space
-	} else if i.UnblocksCount > 0 {
+	} else if !i.IsQuickWin && i.UnblocksCount > 0 {
 		leftFixedWidth += lipgloss.Width(fmt.Sprintf("↪%d", i.UnblocksCount)) + 1 // arrow+count + space
 	}
 
@@ -306,13 +313,12 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 		leftSide.WriteString(" ")
 	}
 
-	// Triage indicators (bv-151): Quick win star and Unblocks count - using pre-computed styles
+	// Unblocks indicators retain their existing left-side placement. Quick
+	// wins take precedence, but their bolt is rendered in the right-edge cell.
 	triageIndicator := ""
-	if i.IsQuickWin {
-		triageIndicator = t.TriageStar.Render(activeGlyphs.Star)
-	} else if i.IsBlocker && i.UnblocksCount > 0 {
+	if !i.IsQuickWin && i.IsBlocker && i.UnblocksCount > 0 {
 		triageIndicator = t.TriageUnblocks.Render(fmt.Sprintf("%s%d", activeGlyphs.Unlock, i.UnblocksCount))
-	} else if i.UnblocksCount > 0 {
+	} else if !i.IsQuickWin && i.UnblocksCount > 0 {
 		triageIndicator = t.TriageUnblocksAlt.Render(fmt.Sprintf("↪%d", i.UnblocksCount))
 	}
 	if triageIndicator != "" {
@@ -366,7 +372,7 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 	// Combine: left + padding + right
 	leftLen := lipgloss.Width(leftSide.String())
 	rightLen := lipgloss.Width(rightSide)
-	padding := width - leftLen - rightLen
+	padding := width - leftLen - rightLen - markerWidth
 	if padding < 0 {
 		padding = 0
 	}
@@ -374,9 +380,11 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 	// Construct the row string
 	row := leftSide.String() + strings.Repeat(" ", padding) + rightSide
 
-	// Clip before styling: Width wraps overflowing content before MaxWidth can
-	// clamp it, which would turn an ultra-narrow list item into multiple rows.
-	row = ansi.Truncate(row, width, "")
+	// Clip and pad the body before appending the reserved marker so even an
+	// ultra-narrow row cannot wrap or clip the quick-win bolt off the edge.
+	bodyWidth := width - markerWidth
+	row = ansi.Truncate(row, bodyWidth, "")
+	row += strings.Repeat(" ", bodyWidth-lipgloss.Width(row)) + quickWinMarker
 
 	// Classic full-row selection replaces inline styles so nested ANSI resets
 	// and badge backgrounds cannot punch holes in the highlight.

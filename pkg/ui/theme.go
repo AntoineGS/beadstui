@@ -123,7 +123,7 @@ type Theme struct {
 	PrimaryBold       lipgloss.Style // Selection indicator
 	PriorityUpArrow   lipgloss.Style // Priority hint up
 	PriorityDownArrow lipgloss.Style // Priority hint down
-	TriageStar        lipgloss.Style // Top pick star
+	TriageStar        lipgloss.Style // Gold quick-win marker
 	TriageUnblocks    lipgloss.Style // Unblocks indicator
 	TriageUnblocksAlt lipgloss.Style // Secondary unblocks
 }
