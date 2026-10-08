@@ -1446,11 +1446,11 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			}
 			if m.activeRepos != nil {
 				// Currently filtered - expand to all
-				m.activeRepos = nil
+				m.SetActiveRepos(nil)
 				m.setStatus("Showing all projects")
 			} else {
 				// Currently showing all - filter to home project
-				m.activeRepos = map[string]bool{m.currentProjectDB: true}
+				m.SetActiveRepos(map[string]bool{m.currentProjectDB: true})
 				m.setStatus(fmt.Sprintf("Showing project: %s", m.currentProjectDB))
 			}
 			if m.filter.activeRecipe != nil {

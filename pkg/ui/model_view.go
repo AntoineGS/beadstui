@@ -584,7 +584,7 @@ func (m Model) splitViewHeader() string {
 		Foreground(t.Subtext).
 		Width(listInnerWidth)
 
-	headerText := issueListColumnHeader(m.workspaceMode)
+	headerText := issueListColumnHeader(m.showRepoColumn())
 	if listInnerWidth > 0 && len(headerText) > listInnerWidth {
 		headerText = headerText[:listInnerWidth]
 	}
@@ -596,8 +596,8 @@ func (m Model) splitViewHeader() string {
 // badges; those are now one compact chip (bt-evuf.2). T, S and P label its type,
 // status and priority marks with matching spacing. Keep this in step with the
 // delegate: it is what tells the reader what the glyphs mean.
-func issueListColumnHeader(workspaceMode bool) string {
-	if workspaceMode {
+func issueListColumnHeader(showRepoColumn bool) string {
+	if showRepoColumn {
 		return "REPO T S P ID    TITLE"
 	}
 	return "T S P ID    TITLE"

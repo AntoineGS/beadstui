@@ -1240,7 +1240,7 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 	slotRegistry := slots.NewRegistry()
 	registerBuiltinSlots(slotRegistry)
 
-	delegate := IssueDelegate{Theme: theme, WorkspaceMode: false, Slots: slotRegistry}
+	delegate := IssueDelegate{Theme: theme, Slots: slotRegistry}
 	l := list.New(items, delegate, defaultWidth, defaultHeight-3)
 	l.Title = ""
 	l.SetShowTitle(false)

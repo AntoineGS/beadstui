@@ -741,7 +741,7 @@ func (m *Model) updateListDelegate() {
 		Theme:             m.theme,
 		ShowPriorityHints: m.ac.showPriorityHints,
 		PriorityHints:     m.ac.priorityHints,
-		WorkspaceMode:     m.workspaceMode,
+		ShowRepoBadges:    m.showRepoColumn(),
 		PendingClaims:     m.pendingWriteIDs(),
 		ClaimSpinner:      claimSpinnerFrame(m.writeSpinnerIdx),
 		Slots:             m.slotRegistry,

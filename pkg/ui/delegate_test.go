@@ -50,7 +50,7 @@ func TestIssueDelegate_RenderWorkspaceWithPriorityHints(t *testing.T) {
 		PriorityHints: map[string]*analysis.PriorityRecommendation{
 			item.Issue.ID: {IssueID: item.Issue.ID, Direction: "increase"},
 		},
-		WorkspaceMode: true,
+		ShowRepoBadges: true,
 	}
 
 	items := []list.Item{item}
@@ -115,7 +115,7 @@ func TestIssueDelegate_RenderSingleProjectUsesCompactIDWithoutBadge(t *testing.T
 func TestIssueDelegate_RenderAliasesAtlasNamespaceBadge(t *testing.T) {
 	item := newTestIssueItem("global-42")
 	item.RepoPrefix = "global"
-	delegate := IssueDelegate{Theme: DefaultTheme(), WorkspaceMode: true}
+	delegate := IssueDelegate{Theme: DefaultTheme(), ShowRepoBadges: true}
 
 	l := list.New([]list.Item{item}, delegate, 0, 0)
 	l.SetWidth(120)
@@ -141,7 +141,7 @@ func TestIssueDelegate_RenderDerivedGlobalBadge(t *testing.T) {
 
 	item := newTestIssueItem("global-42")
 	item.RepoPrefix = "global"
-	delegate := IssueDelegate{Theme: DefaultTheme(), WorkspaceMode: true}
+	delegate := IssueDelegate{Theme: DefaultTheme(), ShowRepoBadges: true}
 
 	l := list.New([]list.Item{item}, delegate, 0, 0)
 	l.SetWidth(120)
@@ -231,7 +231,7 @@ func TestIssueDelegate_NoSelectionGutter(t *testing.T) {
 	item := newTestIssueItem("api-123")
 	item.RepoPrefix = "api"
 	for _, workspace := range []bool{false, true} {
-		d := IssueDelegate{Theme: DefaultTheme(), WorkspaceMode: workspace}
+		d := IssueDelegate{Theme: DefaultTheme(), ShowRepoBadges: workspace}
 		l := list.New([]list.Item{item, item}, d, 80, 2)
 		for _, index := range []int{0, 1} {
 			var buf bytes.Buffer
@@ -254,7 +254,7 @@ func TestIssueDelegate_SelectedRowHasUniformHighlight(t *testing.T) {
 	item := newTestIssueItem("api-123")
 	item.IsQuickWin = true
 	item.RepoPrefix = "api"
-	d := IssueDelegate{Theme: DefaultTheme(), WorkspaceMode: true, Slots: waitRegistry()}
+	d := IssueDelegate{Theme: DefaultTheme(), ShowRepoBadges: true, Slots: waitRegistry()}
 	for _, width := range []int{12, 50, 80, 120, 160} {
 		row := renderDelegateRow(t, d, item, width)
 		lines := uv.NewStyledString(row).Lines(ansi.GraphemeWidth)

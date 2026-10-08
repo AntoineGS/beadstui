@@ -22,7 +22,7 @@ type IssueDelegate struct {
 	Theme             Theme
 	ShowPriorityHints bool
 	PriorityHints     map[string]*analysis.PriorityRecommendation
-	WorkspaceMode     bool // When true, shows repo prefix badges
+	ShowRepoBadges    bool // Row display policy, independent of workspace mode
 
 	// PendingClaims marks bead IDs awaiting a write settle (bt-oiaj.10); a
 	// pending row shows ClaimSpinner beside its title. Both are
@@ -182,9 +182,9 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 		leftFixedWidth += lipgloss.Width(pendingIndicator) + 1
 	}
 
-	// Repo badge width (workspace mode)
+	// Account for repo width only when the current project scope needs it.
 	var repoBadge string
-	if d.WorkspaceMode && i.RepoPrefix != "" {
+	if d.ShowRepoBadges && i.RepoPrefix != "" {
 		// Create a compact repo badge like [API] or [WEB]. DisplayRepoName
 		// aliases the beads_global namespace's bare ID-prefix "global" to
 		// "atlas" for display (bt-z1pzj) - RepoPrefix is always ID-derived

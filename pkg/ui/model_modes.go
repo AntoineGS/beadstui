@@ -173,9 +173,29 @@ func (m *Model) SetCurrentProjectDB(db string) {
 	m.currentProjectDB = db
 }
 
-// SetActiveRepos sets the active repo filter. nil means all repos visible.
+// showRepoColumn follows committed project scope, not the current result set.
+// A single selected project already supplies the rows' source context.
+func (m Model) showRepoColumn() bool {
+	if !m.workspaceMode {
+		return false
+	}
+	if m.activeRepos == nil {
+		return true
+	}
+	selected := 0
+	for _, enabled := range m.activeRepos {
+		if enabled {
+			selected++
+		}
+	}
+	return selected != 1
+}
+
+// SetActiveRepos sets the active repo filter and updates its row display policy.
+// nil means all repos visible.
 func (m *Model) SetActiveRepos(repos map[string]bool) {
 	m.activeRepos = repos
+	m.updateListDelegate()
 }
 
 // historyContext builds the HistoryContext snapshot used by the History

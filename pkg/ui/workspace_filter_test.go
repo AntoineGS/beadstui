@@ -1,14 +1,195 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/recipe"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
+
+func repoColumnFixture() (Model, []model.Issue) {
+	issues := []model.Issue{
+		{ID: "se-123", SourceRepo: "statsengine", Title: strings.Repeat("x", 220), Status: model.StatusOpen, IssueType: model.TypeTask, UpdatedAt: time.Now()},
+		{ID: "web-456", SourceRepo: "web", Title: "Other project", Status: model.StatusClosed, IssueType: model.TypeTask, UpdatedAt: time.Now()},
+	}
+	m := NewModel(issues, nil, "", nil, nil)
+	m.EnableWorkspaceMode(WorkspaceInfo{
+		Enabled: true, RepoCount: 3, RepoPrefixes: []string{"statsengine", "web", "api"},
+	})
+	m.list.SetSize(80, 10)
+	return m, issues
+}
+
+func assertRepoColumn(t *testing.T, m Model, want bool) {
+	t.Helper()
+	if header := ansi.Strip(m.splitViewHeader()); strings.Contains(header, "REPO") != want {
+		t.Errorf("repo header visibility = %t, want %t: %q", strings.Contains(header, "REPO"), want, header)
+	}
+	if rows := ansi.Strip(m.list.View()); strings.Contains(rows, "[SE]") != want {
+		t.Errorf("repo badge visibility = %t, want %t: %q", strings.Contains(rows, "[SE]"), want, rows)
+	}
+}
+
+// Catch using workspace mode alone, result counts, or map length for visibility.
+func TestRepoColumnFollowsCommittedProjectScope(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		workspace bool
+		scope     map[string]bool
+		want      bool
+	}{
+		{"local", false, nil, false},
+		{"all", true, nil, true},
+		{"empty", true, map[string]bool{}, true},
+		{"single", true, map[string]bool{"statsengine": true}, false},
+		{"multiple", true, map[string]bool{"statsengine": true, "web": true}, true},
+		{"single with disabled entry", true, map[string]bool{"statsengine": true, "web": false}, false},
+		{"no enabled entries", true, map[string]bool{"statsengine": false}, true},
+		{"unavailable single project", true, map[string]bool{"missing": true}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, _ := repoColumnFixture()
+			m.EnableWorkspaceMode(WorkspaceInfo{
+				Enabled: tc.workspace, RepoCount: 1, RepoPrefixes: []string{"statsengine"},
+			})
+			// Startup sets scope before applying the initial issue filter.
+			m.SetActiveRepos(tc.scope)
+			assertRepoColumn(t, m, tc.want)
+			m.updateListDelegate()
+			assertRepoColumn(t, m, tc.want)
+		})
+	}
+}
+
+func TestRepoColumnSingleProjectReclaimsTitleWidth(t *testing.T) {
+	setGlyphs(t, asciiGlyphs)
+	m, _ := repoColumnFixture()
+	visibleTitleWidth := func() int {
+		widest := 0
+		for _, line := range strings.Split(ansi.Strip(m.list.View()), "\n") {
+			if n := strings.Count(line, "x"); n > widest {
+				widest = n
+			}
+		}
+		return widest
+	}
+	for _, width := range []int{50, 80, 120, 160} {
+		m.list.SetWidth(width)
+		m.SetActiveRepos(nil)
+		before := visibleTitleWidth()
+		m.SetActiveRepos(map[string]bool{"statsengine": true})
+		if gain := visibleTitleWidth() - before; gain != 5 {
+			t.Errorf("width=%d: title gained %d cells, want 5 ([SE] plus separator)", width, gain)
+		}
+		row := ansi.Strip(m.list.View())
+		if !strings.HasPrefix(row, "t o 0 ") || !strings.Contains(row, "123 ") {
+			t.Errorf("width=%d: hidden repo left a gutter or changed the compact ID: %q", width, row)
+		}
+		for _, line := range strings.Split(row, "\n") {
+			if got := lipgloss.Width(line); got > width {
+				t.Errorf("row width=%d exceeds available width=%d", got, width)
+			}
+		}
+	}
+	item := m.list.Items()[0].(IssueItem)
+	if got := issueIDForClipboard(item); got != "se-123" {
+		t.Errorf("canonical clipboard ID changed: %q", got)
+	}
+}
+
+func TestRepoColumnProjectPickerCommitsVisibility(t *testing.T) {
+	m, _ := repoColumnFixture()
+	for _, tc := range []struct {
+		name   string
+		scope  map[string]bool
+		before bool
+		want   bool
+	}{
+		{"single", map[string]bool{}, true, false}, // No checkmarks commits the cursor project.
+		{"multiple", map[string]bool{"statsengine": true, "web": true}, false, true},
+		{"all", map[string]bool{"statsengine": true, "web": true, "api": true}, true, true},
+		{"single again", map[string]bool{"statsengine": true}, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m.repoPicker = NewRepoPickerModel(m.availableRepos, m.theme)
+			m.repoPicker.selected = tc.scope
+			for i, repo := range m.repoPicker.filtered {
+				if repo == "statsengine" {
+					m.repoPicker.selectedIndex = i
+				}
+			}
+			assertRepoColumn(t, m, tc.before) // Uncommitted selection must not affect layout.
+			m = m.applyRepoPickerSelection()
+			assertRepoColumn(t, m, tc.want)
+			if !m.workspaceMode {
+				t.Fatal("hiding repo badges disabled workspace mode")
+			}
+		})
+	}
+}
+
+func TestRepoColumnHomeAllToggleWithRecipe(t *testing.T) {
+	for _, useRecipe := range []bool{false, true} {
+		m, _ := repoColumnFixture()
+		m.SetCurrentProjectDB("statsengine")
+		if useRecipe {
+			m.setActiveRecipe(&recipe.Recipe{Name: "all"})
+		}
+		for _, want := range []bool{false, true, false} {
+			updated, _ := m.Update(tea.KeyPressMsg{Code: 'W', Text: "W"})
+			m = updated.(Model)
+			assertRepoColumn(t, m, want)
+			if !want && (len(m.list.Items()) != 1 || m.list.Items()[0].(IssueItem).Issue.ID != "se-123") {
+				t.Fatalf("home filter used the displayed prefix instead of the database key: %v", m.list.Items())
+			}
+		}
+	}
+}
+
+func TestRepoColumnScopeSurvivesRefreshAndSecondaryFilters(t *testing.T) {
+	m, issues := repoColumnFixture()
+	m.SetActiveRepos(map[string]bool{"statsengine": true})
+	m.applyFilter()
+	m, _ = m.handleDataSourceReload(DataSourceReloadMsg{Issues: issues})
+	assertRepoColumn(t, m, false)
+	for _, width := range []int{60, 160} {
+		updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 40})
+		m = updated.(Model)
+		assertRepoColumn(t, m, false)
+	}
+	m.SetActiveRepos(nil)
+	m.filter.currentFilter = "open" // Only statsengine has an open issue.
+	m.applyFilter()
+	if len(m.list.Items()) != 1 {
+		t.Fatalf("expected secondary filter to leave one issue, got %d", len(m.list.Items()))
+	}
+	assertRepoColumn(t, m, true)
+	m.filter.currentFilter = "all"
+	m.applyFilter()
+	if got := len(m.list.VisibleItems()); got != 2 {
+		t.Fatalf("expected two projects before searching, got %d visible issues", got)
+	}
+	m.list.SetFilterText("xxxxxxxx")
+	if got := len(m.list.VisibleItems()); got != 1 {
+		t.Fatalf("expected search to leave one project's issue, got %d visible issues", got)
+	}
+	assertRepoColumn(t, m, true)
+	m.SetActiveRepos(map[string]bool{"missing": true})
+	m.applyFilter()
+	if len(m.list.Items()) != 0 {
+		t.Fatal("unavailable project must leave the issue list empty")
+	}
+	if header := ansi.Strip(m.splitViewHeader()); strings.Contains(header, "REPO") {
+		t.Errorf("empty single-project scope restored the repo header: %q", header)
+	}
+}
 
 // buildRecommendationFixture returns a "blocker" issue plus three dependents
 // under the given repo prefix. This mirrors

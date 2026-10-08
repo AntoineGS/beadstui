@@ -102,15 +102,15 @@ func (m Model) applyRepoPickerSelection() Model {
 		// No checkmarks: enter jumps to the cursor project (single-project switch)
 		cursorRepo := m.repoPicker.CursorRepo()
 		if cursorRepo != "" {
-			m.activeRepos = map[string]bool{cursorRepo: true}
+			m.SetActiveRepos(map[string]bool{cursorRepo: true})
 			m.setStatus(fmt.Sprintf("Project filter: %s", cursorRepo))
 		}
 	} else if len(selected) == len(m.availableRepos) {
 		// All selected: clear filter (nil = all)
-		m.activeRepos = nil
+		m.SetActiveRepos(nil)
 		m.setStatus("Project filter: all projects")
 	} else {
-		m.activeRepos = selected
+		m.SetActiveRepos(selected)
 		m.setStatus(fmt.Sprintf("Project filter: %s", formatRepoList(sortedRepoKeys(selected), 3)))
 	}
 
