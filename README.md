@@ -141,6 +141,7 @@ Supports `=`, `!=`, `<`, `>`, `~` (substring), `in`, `not in`, `and`/`or`/`not`,
 | `j`/`k` or arrows | Navigate |
 | `Enter` | Open detail (focuses the detail pane in split view) |
 | `left` / `right` | Move between the list and the details |
+| `,` / `.` | Page the details up / down from either pane |
 | `b` / `g` / `i` / `h` | Board / Graph / Insights / History |
 | `a` | Actionable view |
 | `f` | Flow matrix |

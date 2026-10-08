@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"charm.land/bubbles/v2/list"
@@ -196,6 +197,29 @@ func TestRightLeavesFullscreenIssuesForDetails(t *testing.T) {
 	m, _ = sendMsg(m, keyRight)
 	if m.focused != focusDetail || m.fullscreen != fullscreenNone {
 		t.Fatalf("focus = %v fullscreen = %v, want detail in the restored split", m.focused, m.fullscreen)
+	}
+}
+
+func TestCommaPeriodPageDetailsFromEitherPane(t *testing.T) {
+	issues := navIssues()
+	issues[0].Description = strings.Repeat("A long paragraph line.\n\n", 200)
+	m := newSizedModel(t, issues, 140, 40)
+	m.list.Select(0)
+	m.updateViewportContent()
+	m, _ = sendMsg(m, keyRune('.'))
+	afterDown := m.viewport.YOffset()
+	if m.focused != focusList || afterDown == 0 {
+		t.Fatalf("after . on list: focus = %v offset = %d, want list focus and details paged down", m.focused, afterDown)
+	}
+	m.focused = focusDetail
+	m, _ = sendMsg(m, keyRune('.'))
+	if got := m.viewport.YOffset(); got <= afterDown {
+		t.Fatalf("after . on details: offset = %d, want > %d", got, afterDown)
+	}
+	m, _ = sendMsg(m, keyRune(','))
+	m, _ = sendMsg(m, keyRune(','))
+	if got := m.viewport.YOffset(); got != 0 {
+		t.Fatalf("after two , presses: offset = %d, want 0", got)
 	}
 }
 

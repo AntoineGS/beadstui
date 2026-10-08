@@ -68,6 +68,14 @@ func (m Model) handleListKeys(msg tea.KeyMsg) Model {
 		}
 	case key.Matches(msg, k.PaneLeft):
 		// The list is the leftmost pane.
+	case key.Matches(msg, k.DetailPageUp):
+		if m.isSplitView || m.showDetails {
+			m.viewport.PageUp()
+		}
+	case key.Matches(msg, k.DetailPageDown):
+		if m.isSplitView || m.showDetails {
+			m.viewport.PageDown()
+		}
 	case key.Matches(msg, k.EpicCard):
 		// Open the tier-2 focus card when the cursor is on an epic; on a
 		// non-epic it's a no-op with a hint (bt-gfxhz.3).

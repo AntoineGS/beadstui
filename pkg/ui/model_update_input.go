@@ -1652,7 +1652,8 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				ln.TimeTravelInput, ln.EpicCard,
 				ln.SelfUpdate, ln.CassSession, ln.Claim, ln.FieldEdit,
 				ln.SplitFocusToggle, ln.SplitShrinkLeft, ln.SplitShrinkRight,
-				ln.PaneFullscreenIssues, ln.PaneFullscreenDetails):
+				ln.PaneFullscreenIssues, ln.PaneFullscreenDetails,
+				ln.DetailPageUp, ln.DetailPageDown):
 				m = m.handleListKeys(msg)
 				return m, nil
 			}
