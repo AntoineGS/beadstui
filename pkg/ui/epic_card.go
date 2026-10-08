@@ -2,23 +2,20 @@ package ui
 
 import (
 	"fmt"
-	"strings"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
 )
 
 // renderEpicCard renders the tier-2 epic focus card (ModalEpicCard): the epic's
-// children as status pills (the shared buildEpicProgressANSI), with a cursor on
+// children as status pills, with a cursor on
 // the drillable child. Composited via OverlayCenterDimBackdrop in View() per
 // docs/design/tui-modal-compositing.md, so this returns just the titled panel.
 //
 // The child rows are windowed around the cursor (with ↑/↓ "N more" indicators)
 // so a large epic still fits a scrunched terminal - the user routinely runs
-// 14-30 row windows. buildEpicProgressANSI stays the single source of truth for
-// the row styling; the windowing lives here (bt-gfxhz.3).
+// 14-30 row windows. The shared child ordering and status/priority pill helpers
+// retain domain semantics; ordinary spans use this model's resolved text roles.
 func (m Model) renderEpicCard() string {
 	epic, ok := m.data.issueMap[m.epicCardID]
 	if !ok || epic == nil {
@@ -26,14 +23,25 @@ func (m Model) renderEpicCard() string {
 	}
 
 	opts := PopupOpts{Title: "Epic " + epic.ID, Theme: m.theme, Available: &PopupSize{m.width, max(0, m.height-1)}, Width: 70, Footer: []string{"j/k move · enter drill · esc close", "j/k enter esc"}}
-	body := buildEpicProgressANSI(*epic, m.data.issues, -1, 0)
-	if body == "" {
-		return RenderPopup([]string{lipgloss.NewStyle().Foreground(m.theme.Muted).Render("No children.")}, opts)
+	children := epicChildrenSorted(epic.ID, m.data.issues)
+	if len(children) == 0 {
+		return RenderPopup([]string{m.theme.Text.Metadata.Render("No children.")}, opts)
 	}
-	lines := strings.Split(body, "\n")
-	entries := make([]PopupMenuEntry, len(lines)-2)
-	for i, row := range lines[2:] {
-		entries[i] = PopupMenuEntry{Label: ansi.TruncateLeft(row, 2, ""), Selected: i == m.epicCardCursor}
+	done := 0
+	entries := make([]PopupMenuEntry, len(children))
+	for i, child := range children {
+		selected := i == m.epicCardCursor
+		idStyle, titleStyle := m.theme.Text.Metadata, m.theme.Text.Body
+		if child.Status.IsClosed() {
+			done++
+			idStyle, titleStyle = idStyle.Faint(true), titleStyle.Faint(true)
+		}
+		if selected {
+			idStyle, titleStyle = m.theme.Text.Selected, m.theme.Text.Selected
+		}
+		gap := titleStyle.Render(" ")
+		label := RenderStatusBadge(string(child.Status)) + gap + RenderPriorityBadge(child.Priority) + gap + idStyle.Render(child.ID) + titleStyle.Render(" — ") + titleStyle.Render(child.Title)
+		entries[i] = PopupMenuEntry{Label: label, Selected: selected}
 	}
 	shape := make([]string, len(entries)+4)
 	opts.MinBodyRows = 5
@@ -44,8 +52,8 @@ func (m Model) renderEpicCard() string {
 		return RenderPopup(shape, opts)
 	}
 	start, end := popupMenuWindowRange(entries, m.epicCardCursor, l.BodyHeight-4)
-	content := []string{lines[0], "", ""}
-	muted := lipgloss.NewStyle().Foreground(m.theme.Muted)
+	muted := m.theme.Text.Metadata
+	content := []string{muted.Render(fmt.Sprintf("%d / %d children complete (%d%%)", done, len(children), done*100/len(children))), "", ""}
 	if start > 0 {
 		content[2] = muted.Render(fmt.Sprintf("↑ %d more", start))
 	}

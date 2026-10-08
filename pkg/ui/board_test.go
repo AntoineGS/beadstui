@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/lipgloss/v2"
+
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/ui"
 
@@ -18,6 +20,22 @@ func createTime(hoursAgo int) time.Time {
 
 func createTheme() ui.Theme {
 	return ui.DefaultTheme()
+}
+
+func TestBoardBodyTextRole(t *testing.T) {
+	theme := ui.DefaultTheme()
+	theme.Text.Body = lipgloss.NewStyle().Foreground(lipgloss.Color("#123456")).Underline(true).Bold(false)
+	theme.Text.Metadata = lipgloss.NewStyle().Foreground(lipgloss.Color("#654321")).Underline(true)
+	theme.Text.Selected = lipgloss.NewStyle().Foreground(lipgloss.Color("#abcdef")).Background(lipgloss.Color("#234567")).Underline(true).Bold(false).Italic(false)
+	theme.Text.Heading = theme.Text.Heading.Bold(false).Underline(true)
+	theme.Text.Title = theme.Text.Title.Bold(false).Underline(true)
+	b := ui.NewBoardModel([]model.Issue{{ID: "one", Title: "Selected", Status: model.StatusOpen}, {ID: "two", Title: "Ordinary body", Status: model.StatusOpen}}, theme)
+	out := b.View(120, 30)
+	for _, want := range []string{theme.Text.Body.Render("Ordinary body"), theme.Text.Metadata.Render("two"), theme.Text.Selected.Render("Selected"), theme.Text.Selected.Render("one"), theme.Text.Title.Render("Board [by: Status]"), theme.Text.Heading.Foreground(theme.Open).Render(fmt.Sprintf("%s OPEN (2) 2%s", ui.Glyphs().Clipboard, ui.Glyphs().PrCritical))} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing role span %q in %q", want, out)
+		}
+	}
 }
 
 // TestBoardModelBlackbox tests basic selection and update behavior

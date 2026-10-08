@@ -307,18 +307,17 @@ func (g *GraphModel) View(width, height int) string {
 	t := g.theme
 
 	if len(g.sortedIDs) == 0 {
-		return lipgloss.NewStyle().
+		return t.Text.Metadata.
 			Width(width).
 			Height(height).
 			Align(lipgloss.Center, lipgloss.Center).
-			Foreground(t.Secondary).
 			Render("No issues to display")
 	}
 
 	selectedID := g.sortedIDs[g.selectedIdx]
 	selectedIssue := g.issueMap[selectedID]
 	if selectedIssue == nil {
-		return "Error: selected issue not found"
+		return t.Text.Metadata.Render("Error: selected issue not found")
 	}
 
 	// Layout: Left panel (node list) | Right panel (visual graph + metrics)
@@ -355,9 +354,7 @@ func (g *GraphModel) View(width, height int) string {
 func (g *GraphModel) renderNodeList(width, height int, t Theme) string {
 	var lines []string
 
-	headerStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(t.Primary).
+	headerStyle := t.Text.Heading.
 		Width(width)
 	lines = append(lines, headerStyle.Render(fmt.Sprintf("%s Nodes (%d)", activeGlyphs.BarChart, len(g.sortedIDs))))
 	lines = append(lines, strings.Repeat("─", width))
@@ -391,28 +388,19 @@ func (g *GraphModel) renderNodeList(width, height int, t Theme) string {
 		statusIcon := getStatusIcon(issue.Status)
 		maxIDLen := width - 4
 		displayID := smartTruncateID(id, maxIDLen)
-		line := fmt.Sprintf("%s %s", statusIcon, displayID)
-
-		var style lipgloss.Style
+		style := t.Text.Metadata
 		if isSelected {
-			style = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(t.Primary).
-				Background(t.Highlight).
-				Width(width)
-		} else {
-			style = lipgloss.NewStyle().
-				Foreground(t.GetStatusColor(string(issue.Status))).
-				Width(width)
+			style = t.Text.Selected
 		}
-		lines = append(lines, style.Render(line))
+		// Status remains semantic; the ordinary ID and gaps use the row role.
+		icon := lipgloss.NewStyle().Foreground(t.GetStatusColor(string(issue.Status))).Render(statusIcon)
+		line := icon + style.Render(" ") + style.Render(displayID)
+		lines = append(lines, lipgloss.NewStyle().Background(style.GetBackground()).Width(width).Render(line))
 	}
 
 	if len(g.sortedIDs) > visibleItems {
 		scrollInfo := fmt.Sprintf("(%d-%d of %d)", startIdx+1, endIdx, len(g.sortedIDs))
-		scrollStyle := lipgloss.NewStyle().
-			Foreground(t.Secondary).
-			Italic(true).
+		scrollStyle := t.Text.Metadata.
 			Width(width).
 			Align(lipgloss.Center)
 		lines = append(lines, scrollStyle.Render(scrollInfo))
@@ -459,9 +447,7 @@ func (g *GraphModel) renderVisualGraph(id string, issue *model.Issue, width, hei
 	sections = append(sections, g.renderMetricsPanel(id, width, t))
 
 	// Navigation hint
-	navStyle := lipgloss.NewStyle().
-		Foreground(t.Secondary).
-		Italic(true)
+	navStyle := t.Text.Metadata
 	sections = append(sections, "")
 	sections = append(sections, navStyle.Render("j/k: navigate • enter: view details • g: back to list"))
 
@@ -470,9 +456,7 @@ func (g *GraphModel) renderVisualGraph(id string, issue *model.Issue, width, hei
 
 // renderBlockersVisual renders blocker nodes as boxes
 func (g *GraphModel) renderBlockersVisual(blockerIDs []string, width int, t Theme) string {
-	headerStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(t.Feature).
+	headerStyle := t.Text.Heading.
 		Width(width).
 		Align(lipgloss.Center)
 
@@ -505,9 +489,7 @@ func (g *GraphModel) renderBlockersVisual(blockerIDs []string, width int, t Them
 	for i, bid := range blockerIDs {
 		if i >= 5 {
 			remaining := len(blockerIDs) - 5
-			boxes = append(boxes, lipgloss.NewStyle().
-				Foreground(t.Secondary).
-				Italic(true).
+			boxes = append(boxes, t.Text.Metadata.
 				Render(fmt.Sprintf("+%d more", remaining)))
 			break
 		}
@@ -548,9 +530,7 @@ func (g *GraphModel) renderDependentsVisual(dependentIDs []string, width int, t 
 	for i, did := range dependentIDs {
 		if i >= 5 {
 			remaining := len(dependentIDs) - 5
-			boxes = append(boxes, lipgloss.NewStyle().
-				Foreground(t.Secondary).
-				Italic(true).
+			boxes = append(boxes, t.Text.Metadata.
 				Render(fmt.Sprintf("+%d more", remaining)))
 			break
 		}
@@ -560,9 +540,7 @@ func (g *GraphModel) renderDependentsVisual(dependentIDs []string, width int, t 
 	boxRow := lipgloss.JoinHorizontal(lipgloss.Center, boxes...)
 	centered := lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(boxRow)
 
-	headerStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(t.Feature).
+	headerStyle := t.Text.Heading.
 		Width(width).
 		Align(lipgloss.Center)
 
@@ -593,16 +571,20 @@ func (g *GraphModel) renderNodeBox(id string, boxWidth int, t Theme, isEgo bool)
 	}
 
 	// Build box content
-	line1 := fmt.Sprintf("%s %s", statusIcon, displayID)
+	// Node status/wave identity stays on glyphs and borders; ordinary node
+	// labels must not inherit those semantic colors or override text roles.
+	idStyle, titleStyle := t.Text.Metadata, t.Text.Body
+	if isEgo {
+		idStyle, titleStyle = t.Text.Selected, t.Text.Selected
+	}
+	line1 := lipgloss.NewStyle().Foreground(statusColor).Render(statusIcon) + " " + idStyle.Render(displayID)
 
 	var boxStyle lipgloss.Style
 	if isEgo {
 		// Ego node gets double-line border and highlight
-		boxStyle = lipgloss.NewStyle().
+		boxStyle = lipgloss.NewStyle().Background(t.Text.Selected.GetBackground()).
 			Border(lipgloss.DoubleBorder()).
 			BorderForeground(t.Primary).
-			Foreground(t.Primary).
-			Bold(true).
 			Width(boxWidth).
 			Align(lipgloss.Center).
 			Padding(0, 1)
@@ -610,7 +592,6 @@ func (g *GraphModel) renderNodeBox(id string, boxWidth int, t Theme, isEgo bool)
 		boxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(statusColor).
-			Foreground(statusColor).
 			Width(boxWidth).
 			Align(lipgloss.Center).
 			Padding(0, 0)
@@ -620,15 +601,15 @@ func (g *GraphModel) renderNodeBox(id string, boxWidth int, t Theme, isEgo bool)
 	if g.swarmEnabled && g.swarmWaves != nil {
 		if wave, ok := g.swarmWaves[id]; ok {
 			waveColor := swarmColorForWave(wave)
-			boxStyle = boxStyle.BorderForeground(waveColor).Foreground(waveColor)
+			boxStyle = boxStyle.BorderForeground(waveColor)
 		} else {
-			boxStyle = boxStyle.BorderForeground(ColorMuted).Foreground(ColorMuted)
+			boxStyle = boxStyle.BorderForeground(ColorMuted)
 		}
 	}
 
 	content := line1
 	if title != "" && boxWidth > 14 {
-		content = line1 + "\n" + title
+		content = line1 + "\n" + titleStyle.Render(title)
 	}
 
 	return boxStyle.Render(content)
@@ -662,21 +643,20 @@ func (g *GraphModel) renderEgoNode(id string, issue *model.Issue, width int, t T
 		title = truncateRunesHelper(issue.Title, egoWidth-4, "…")
 	}
 
-	content := icons + " " + displayID
+	// Type/status/priority glyphs retain their graph-semantic accent.
+	content := lipgloss.NewStyle().Foreground(t.Primary).Render(icons) + t.Text.Selected.Render(" ") + t.Text.Selected.Render(displayID)
 	if title != "" {
-		content += "\n" + title
+		content += "\n" + t.Text.Selected.Render(title)
 	}
 
 	// Add connection counts
 	blockerCount := len(g.blockers[id])
 	dependentCount := len(g.dependents[id])
-	content += fmt.Sprintf("\n↑%d  ↓%d", blockerCount, dependentCount)
+	content += "\n" + t.Text.Selected.Render(fmt.Sprintf("↑%d  ↓%d", blockerCount, dependentCount))
 
-	egoStyle := lipgloss.NewStyle().
+	egoStyle := lipgloss.NewStyle().Background(t.Text.Selected.GetBackground()).
 		Border(lipgloss.DoubleBorder()).
 		BorderForeground(t.Primary).
-		Foreground(t.Primary).
-		Bold(true).
 		Width(egoWidth).
 		Align(lipgloss.Center).
 		Padding(0, 1)
@@ -731,19 +711,14 @@ func (g *GraphModel) renderMetricsPanel(id string, width int, t Theme) string {
 	// ══════════════════════════════════════════════════════════════════════════
 
 	// Panel header with accent background
-	panelHeaderStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(ColorText).
-		Background(ColorPrimary).
+	panelHeaderStyle := t.Text.Title.
 		Padding(0, 2).
 		Width(width - 4)
 
 	panelTitle := panelHeaderStyle.Render(activeGlyphs.BarChart + " GRAPH METRICS")
 
 	if g.insights == nil || g.insights.Stats == nil {
-		noDataStyle := lipgloss.NewStyle().
-			Foreground(ColorMuted).
-			Italic(true).
+		noDataStyle := t.Text.Metadata.
 			Padding(1, 2).
 			Width(width - 4).
 			Align(lipgloss.Center)
@@ -800,7 +775,7 @@ func (g *GraphModel) renderMetricsPanel(id string, width int, t Theme) string {
 	// Helper to render a metric row with mini-bar visualization
 	renderMetricRow := func(name string, value float64, rank int, maxVal float64, isInt bool) string {
 		// Name with fixed width
-		nameStyle := lipgloss.NewStyle().Foreground(ColorSecondary).Width(14)
+		nameStyle := t.Text.Metadata.Width(14)
 
 		// Value formatting
 		var valStr string
@@ -811,7 +786,7 @@ func (g *GraphModel) renderMetricsPanel(id string, width int, t Theme) string {
 		} else {
 			valStr = fmt.Sprintf("%.4f", value)
 		}
-		valueStyle := lipgloss.NewStyle().Foreground(ColorText).Bold(true).Width(8).Align(lipgloss.Right)
+		valueStyle := t.Text.Body.Width(8).Align(lipgloss.Right)
 
 		// Mini-bar for relative importance (normalize to 0-1)
 		normalized := 0.0
@@ -861,9 +836,7 @@ func (g *GraphModel) renderMetricsPanel(id string, width int, t Theme) string {
 	rows = append(rows, RenderDivider(width-4))
 
 	// Section: Importance Metrics
-	sectionStyle := lipgloss.NewStyle().
-		Foreground(ColorPrimary).
-		Bold(true).
+	sectionStyle := t.Text.Heading.
 		Padding(0, 1)
 	rows = append(rows, sectionStyle.Render("Importance"))
 	rows = append(rows, "  "+renderMetricRow("Critical Path", critPath, rankCP, maxCP, false))
@@ -901,14 +874,11 @@ func (g *GraphModel) renderMetricsPanel(id string, width int, t Theme) string {
 			currentWave = w
 		}
 
-		swarmHeaderStyle := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(ColorPrimary).
+		swarmHeaderStyle := t.Text.Heading.
 			Padding(0, 1)
 		rows = append(rows, swarmHeaderStyle.Render("Swarm Analysis"))
 
-		swarmDetailStyle := lipgloss.NewStyle().
-			Foreground(ColorText).
+		swarmDetailStyle := t.Text.Body.
 			Padding(0, 2)
 
 		waveStr := "—"
@@ -924,9 +894,7 @@ func (g *GraphModel) renderMetricsPanel(id string, width int, t Theme) string {
 	}
 
 	// Legend
-	legendStyle := lipgloss.NewStyle().
-		Foreground(ColorMuted).
-		Italic(true).
+	legendStyle := t.Text.Metadata.
 		Width(width - 4)
 
 	rows = append(rows, legendStyle.Render("█ relative score │ #N rank of "+fmt.Sprintf("%d", total)+" issues"))

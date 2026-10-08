@@ -529,8 +529,8 @@ func (e *EpicsTreeModel) moveCursor(delta int) {
 func (e *EpicsTreeModel) View() string {
 	t := e.theme
 	e.computeIDColW()
-	muted := lipgloss.NewStyle().Foreground(t.Muted)
-	title := lipgloss.NewStyle().Bold(true).Foreground(t.Primary)
+	muted := t.Text.Metadata
+	title := t.Text.Title
 
 	// Header: EPICS · <scope> · <mode>    N epics
 	head := "EPICS"
@@ -560,7 +560,7 @@ func (e *EpicsTreeModel) View() string {
 			if i == e.cursor && e.width > 0 {
 				// Full-width highlight bar for the cursor row (clamp first so the
 				// background pads to exactly width without wrapping or shifting).
-				line = lipgloss.NewStyle().Background(t.Highlight).Width(e.width).Render(line)
+				line = lipgloss.NewStyle().Background(t.Text.Selected.GetBackground()).Width(e.width).Render(line)
 			}
 			body = append(body, line)
 		}
@@ -622,7 +622,7 @@ func (e *EpicsTreeModel) footer() string {
 	if e.width > 0 && lipgloss.Width(full) > e.width {
 		hint = compact
 	}
-	return e.clamp(lipgloss.NewStyle().Foreground(e.theme.Muted).Italic(true).Render(hint))
+	return e.clamp(e.theme.Text.Metadata.Render(hint))
 }
 
 // pluralEpics renders "N epic" / "N epics" with correct pluralization.
@@ -637,7 +637,7 @@ func pluralEpics(n int) string {
 func (e *EpicsTreeModel) renderRow(r epicTreeRow, selected bool) string {
 	switch r.kind {
 	case rowProjectHeader:
-		return e.renderHeaderRow(r)
+		return e.renderHeaderRow(r, selected)
 	case rowEpic:
 		return e.renderEpicRow(r, selected)
 	default:
@@ -647,7 +647,7 @@ func (e *EpicsTreeModel) renderRow(r epicTreeRow, selected bool) string {
 
 // renderHeaderRow renders a swimlane header: expand glyph, lane name, a
 // width-filling rule, and the lane rollup (epic count + aggregate %).
-func (e *EpicsTreeModel) renderHeaderRow(r epicTreeRow) string {
+func (e *EpicsTreeModel) renderHeaderRow(r epicTreeRow, selected bool) string {
 	t := e.theme
 	glyph := "▾"
 	if !r.expanded {
@@ -666,9 +666,12 @@ func (e *EpicsTreeModel) renderHeaderRow(r epicTreeRow) string {
 	}
 	rule := strings.Repeat("─", ruleW)
 
-	nameStyle := lipgloss.NewStyle().Bold(true).Foreground(t.Primary)
+	nameStyle := t.Text.Heading
 	ruleStyle := lipgloss.NewStyle().Foreground(t.Border)
-	rollStyle := lipgloss.NewStyle().Foreground(t.Muted)
+	rollStyle := t.Text.Metadata
+	if selected {
+		nameStyle, rollStyle = t.Text.Selected, t.Text.Selected
+	}
 	return nameStyle.Render(left) + ruleStyle.Render(rule) + rollStyle.Render(right)
 }
 
@@ -733,40 +736,44 @@ func (e *EpicsTreeModel) renderEpicRow(r epicTreeRow, selected bool) string {
 	}
 	title := truncateString(r.issue.Title, titleBudget)
 
-	glyphStyle := lipgloss.NewStyle().Foreground(t.Secondary)
-	idStyle := lipgloss.NewStyle().Foreground(t.Secondary)
-	pctStyle := lipgloss.NewStyle().Foreground(t.Base.GetForeground())
-	countStyle := lipgloss.NewStyle().Foreground(t.Muted)
+	glyphStyle := t.Text.Metadata
+	idStyle := t.Text.Metadata
+	pctStyle := t.Text.Body
+	countStyle := t.Text.Metadata
 	riskStyle := lipgloss.NewStyle().Foreground(t.Feature)
-	titleStyle := lipgloss.NewStyle().Foreground(t.Base.GetForeground())
+	titleStyle := t.Text.Body
 	if selected {
-		idStyle = idStyle.Bold(true)
-		titleStyle = titleStyle.Bold(true)
-		glyphStyle = lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
+		idStyle, titleStyle, glyphStyle = t.Text.Selected, t.Text.Selected, t.Text.Selected
+		pctStyle, countStyle = t.Text.Selected, t.Text.Selected
 	}
+	gapStyle := lipgloss.NewStyle()
+	if selected {
+		gapStyle = t.Text.Selected
+	}
+	gap := gapStyle.Render(" ")
 
 	var sb strings.Builder
 	sb.WriteString(prefix)
 	sb.WriteString(glyphStyle.Render(glyph))
-	sb.WriteString(" ")
+	sb.WriteString(gap)
 	sb.WriteString(idStyle.Render(id))
 	if idPad > 0 {
-		sb.WriteString(strings.Repeat(" ", idPad))
+		sb.WriteString(gapStyle.Render(strings.Repeat(" ", idPad)))
 	}
-	sb.WriteString(" ")
+	sb.WriteString(gap)
 	sb.WriteString(bar)
-	sb.WriteString(" ")
+	sb.WriteString(gap)
 	sb.WriteString(pctStyle.Render(pctStr))
-	sb.WriteString(" ")
+	sb.WriteString(gap)
 	sb.WriteString(countStyle.Render(countStr))
 	if countPad > 0 {
-		sb.WriteString(strings.Repeat(" ", countPad))
+		sb.WriteString(gapStyle.Render(strings.Repeat(" ", countPad)))
 	}
 	if risk != "" {
 		sb.WriteString(riskStyle.Render(risk))
 	}
 	if title != "" {
-		sb.WriteString(" ")
+		sb.WriteString(gap)
 		sb.WriteString(titleStyle.Render(title))
 	}
 	return sb.String()
@@ -776,6 +783,10 @@ func (e *EpicsTreeModel) renderEpicRow(r epicTreeRow, selected bool) string {
 // Closed children render faint so completed work recedes.
 func (e *EpicsTreeModel) renderChildRow(r epicTreeRow, selected bool) string {
 	t := e.theme
+	gapStyle := lipgloss.NewStyle()
+	if selected {
+		gapStyle = t.Text.Selected
+	}
 	prefix := buildEpicTreePrefix(r.lastKid, t)
 	prefixW := 4 * len(r.lastKid)
 
@@ -797,10 +808,10 @@ func (e *EpicsTreeModel) renderChildRow(r epicTreeRow, selected bool) string {
 	var sb strings.Builder
 	sb.WriteString(prefix)
 	sb.WriteString(lipgloss.NewStyle().Foreground(statusColor).Render(glyph))
-	sb.WriteString(" ")
+	sb.WriteString(gapStyle.Render(" "))
 	if strip != "" {
 		sb.WriteString(strip)
-		sb.WriteString(" ")
+		sb.WriteString(gapStyle.Render(" "))
 	}
 
 	if isClosedLikeStatus(r.issue.Status) {
@@ -808,17 +819,20 @@ func (e *EpicsTreeModel) renderChildRow(r epicTreeRow, selected bool) string {
 		if title != "" {
 			body += " — " + title
 		}
-		sb.WriteString(lipgloss.NewStyle().Faint(true).Render(body))
-	} else {
-		idStyle := lipgloss.NewStyle().Foreground(t.Secondary)
-		titleStyle := lipgloss.NewStyle().Foreground(t.Base.GetForeground())
+		style := t.Text.Body.Faint(true) // Completed-state dimming is semantic.
 		if selected {
-			idStyle = idStyle.Bold(true)
-			titleStyle = titleStyle.Bold(true)
+			style = t.Text.Selected
+		}
+		sb.WriteString(style.Render(body))
+	} else {
+		idStyle := t.Text.Metadata
+		titleStyle := t.Text.Body
+		if selected {
+			idStyle, titleStyle = t.Text.Selected, t.Text.Selected
 		}
 		sb.WriteString(idStyle.Render(id))
 		if title != "" {
-			sb.WriteString(" — ")
+			sb.WriteString(gapStyle.Render(" — "))
 			sb.WriteString(titleStyle.Render(title))
 		}
 	}

@@ -5,9 +5,26 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
+
+func TestEpicCardTextRole(t *testing.T) {
+	m := epicCardModel(epicCardFixture())
+	m.theme.Text.Body = lipgloss.NewStyle().Foreground(lipgloss.Color("#123456")).Underline(true).Bold(false)
+	m.theme.Text.Metadata = lipgloss.NewStyle().Foreground(lipgloss.Color("#654321")).Underline(true)
+	m.theme.Text.Selected = lipgloss.NewStyle().Foreground(lipgloss.Color("#abcdef")).Background(lipgloss.Color("#234567")).Underline(true).Bold(false).Italic(false)
+	m.theme.Text.Heading = m.theme.Text.Heading.Bold(false).Underline(true)
+	m.openEpicCard("ep1")
+	m.epicCardCursor = 1
+	out := m.renderEpicCard()
+	for _, want := range []string{m.theme.Text.Body.Render("Child ten"), m.theme.Text.Metadata.Render("ep1.10"), m.theme.Text.Selected.Render("Child two"), m.theme.Text.Heading.Render("Epic ep1"), "OPEN", "P0"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing role span %q in %q", want, out)
+		}
+	}
+}
 
 // epicCardFixture: one epic with 3 children (natural order .1 .2 .10) plus a
 // standalone task, all visible under the "all" filter.

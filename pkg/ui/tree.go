@@ -501,8 +501,15 @@ func (t *TreeModel) View() string {
 		line := t.renderNode(node, isSelected)
 
 		if isSelected {
-			// Highlight selected row using theme's Selected style
-			line = t.theme.Selected.Render(line)
+			// Only paint the container background: applying text attributes to
+			// nested ANSI spans can corrupt underline output. Ordinary spans
+			// already carry Selected; semantic chips keep their own styles.
+			line = lipgloss.NewStyle().
+				Background(t.theme.Text.Selected.GetBackground()).
+				Border(lipgloss.ThickBorder(), false, false, false, true).
+				BorderForeground(t.theme.Primary).
+				PaddingLeft(1).
+				Render(line)
 		}
 
 		// Clamp the assembled row to the viewport width so deep prefixes,
@@ -537,20 +544,15 @@ func (t *TreeModel) renderPositionIndicator(start, end int) string {
 	displayEnd := end
 
 	indicator := fmt.Sprintf(" [%d-%d of %d]", displayStart, displayEnd, total)
-	return lipgloss.NewStyle().
-		Foreground(t.theme.Muted).
+	return t.theme.Text.Metadata.
 		Render(indicator)
 }
 
 // renderEmptyState renders the view when there are no issues.
 func (t *TreeModel) renderEmptyState() string {
 
-	titleStyle := lipgloss.NewStyle().
-		Foreground(t.theme.Primary).
-		Bold(true)
-
-	mutedStyle := lipgloss.NewStyle().
-		Foreground(t.theme.Muted)
+	titleStyle := t.theme.Text.Title
+	mutedStyle := t.theme.Text.Metadata
 
 	var sb strings.Builder
 	sb.WriteString(titleStyle.Render("Tree View"))
@@ -573,6 +575,12 @@ func (t *TreeModel) renderNode(node *IssueTreeNode, isSelected bool) string {
 	}
 
 	issue := node.Issue
+	idStyle, titleStyle := t.theme.Text.Metadata, t.theme.Text.Body
+	gap := " "
+	if isSelected {
+		idStyle, titleStyle = t.theme.Text.Selected, t.theme.Text.Selected
+		gap = t.theme.Text.Selected.Render(gap)
+	}
 	var sb strings.Builder
 
 	// Build the tree prefix (indentation + branch characters)
@@ -581,15 +589,15 @@ func (t *TreeModel) renderNode(node *IssueTreeNode, isSelected bool) string {
 
 	// Expand/collapse indicator
 	indicator := t.getExpandIndicator(node)
-	indicatorStyle := lipgloss.NewStyle().Foreground(t.theme.Secondary)
+	indicatorStyle := idStyle
 	sb.WriteString(indicatorStyle.Render(indicator))
-	sb.WriteString(" ")
+	sb.WriteString(gap)
 
 	// Type icon
 	icon, iconColor := t.theme.GetTypeIcon(string(issue.IssueType))
 	iconStyle := lipgloss.NewStyle().Foreground(iconColor)
 	sb.WriteString(iconStyle.Render(icon))
-	sb.WriteString(" ")
+	sb.WriteString(gap)
 
 	// Priority badge (P0, P1, P2, etc.)
 	prioText := fmt.Sprintf("P%d", issue.Priority)
@@ -600,7 +608,7 @@ func (t *TreeModel) renderNode(node *IssueTreeNode, isSelected bool) string {
 		prioStyle = prioStyle.Foreground(t.theme.Muted)
 	}
 	sb.WriteString(prioStyle.Render(prioText))
-	sb.WriteString(" ")
+	sb.WriteString(gap)
 
 	// Title budget (computed first so badges can only take what the title spares)
 	// Use lipgloss.Width for proper display width (handles ANSI codes + Unicode)
@@ -612,20 +620,19 @@ func (t *TreeModel) renderNode(node *IssueTreeNode, isSelected bool) string {
 	// Slot badges, before the ID
 	if strip, w := renderBadgeStrip(t.slots.Badges(issue), maxTitleLen-minTitleWidthWithBadges-1, time.Now()); w > 0 {
 		sb.WriteString(strip)
-		sb.WriteString(" ")
+		sb.WriteString(gap)
 		maxTitleLen -= w + 1
 	}
 
 	// Issue ID
-	idStyle := lipgloss.NewStyle().Foreground(t.theme.Highlight)
 	sb.WriteString(idStyle.Render(issue.ID))
-	sb.WriteString(" ")
+	sb.WriteString(gap)
 
 	// Title (truncated if needed)
 	title := t.truncateTitle(issue.Title, maxTitleLen)
 
-	// Title uses base style foreground
-	sb.WriteString(title)
+	// Ordinary titles use Body, or Selected on the cursor row.
+	sb.WriteString(titleStyle.Render(title))
 
 	// Status indicator (colored dot at end)
 	statusColor := t.theme.GetStatusColor(string(issue.Status))
