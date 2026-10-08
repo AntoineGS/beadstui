@@ -1,7 +1,5 @@
-sync:
-    mode: dolt-native
-sync.mode: simple
-
+# Fork-only tracking: do not adopt or sync to the upstream git remote.
+dolt.local-only: true
 dolt.shared-server: true
 
 create.require-description: true
@@ -11,5 +9,3 @@ validation.on-create: "warn"
 validation.on-close: "warn"
 
 export.auto: false
-
-sync.remote: "git+ssh://git@github.com/seanmartinsmith/beadstui-beads.git"
