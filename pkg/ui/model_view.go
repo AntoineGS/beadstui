@@ -570,8 +570,8 @@ func (m Model) renderSearchRow(width int) string {
 	return lipgloss.NewStyle().MaxWidth(width).Render(out)
 }
 
-// splitViewHeader renders the split-view list column header ("TYPE PRI STATUS
-// ID TITLE" strip). Extracted so splitViewListChromeHeight can measure the
+// splitViewHeader renders the list's subdued column labels ("T S P ID TITLE").
+// Extracted so splitViewListChromeHeight can measure the
 // actual rendered height via lipgloss.Height — lipgloss Style.Width only sets
 // background fill and does NOT truncate long text, so at narrow pane widths
 // the literal header would wrap to a second row, putting mouse click math
@@ -581,9 +581,7 @@ func (m Model) splitViewHeader() string {
 	listInnerWidth := m.list.Width()
 
 	headerStyle := lipgloss.NewStyle().
-		Background(t.Primary).
-		Foreground(ColorBgContrast).
-		Bold(true).
+		Foreground(t.Subtext).
 		Width(listInnerWidth)
 
 	headerText := issueListColumnHeader(m.workspaceMode)
@@ -595,9 +593,9 @@ func (m Model) splitViewHeader() string {
 
 // issueListColumnHeader labels the row layout produced by IssueDelegate.Render.
 // The three-letter "TYPE PRI STATUS" run described the old three separate
-// badges; those are now one 3-cell chip (bt-evuf.2), so the header names the
-// chip once rather than advertising columns that no longer exist. Keep this in
-// step with the delegate: it is what tells the reader what the glyphs mean.
+// badges; those are now one compact chip (bt-evuf.2). T, S and P label its type,
+// status and priority marks with matching spacing. Keep this in step with the
+// delegate: it is what tells the reader what the glyphs mean.
 func issueListColumnHeader(workspaceMode bool) string {
 	if workspaceMode {
 		return "REPO T S P ID    TITLE"

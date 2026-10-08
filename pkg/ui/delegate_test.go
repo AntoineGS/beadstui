@@ -194,6 +194,38 @@ func TestIssueListColumnHeaderUsesCompactIDCell(t *testing.T) {
 	}
 }
 
+func TestIssueListHeaderIsQuietAndSingleLine(t *testing.T) {
+	for _, workspace := range []bool{false, true} {
+		for _, width := range []int{1, 12, 30, 80} {
+			m := Model{
+				theme: DefaultTheme(),
+				list:  list.New(nil, IssueDelegate{}, width, 10),
+			}
+			m.workspaceMode = workspace
+			header := m.splitViewHeader()
+			lines := uv.NewStyledString(header).Lines(ansi.GraphemeWidth)
+			if len(lines) != 1 || len(lines[0]) != width {
+				t.Fatalf("workspace=%t width=%d: header must occupy one full row: %q", workspace, width, header)
+			}
+			for x, cell := range lines[0] {
+				if cell.Style.Bg != nil || cell.Style.Attrs != 0 {
+					t.Fatalf("workspace=%t width=%d cell=%d: header must have no fill or bold: %+v", workspace, width, x, cell.Style)
+				}
+				if cell.Content != " " && !cell.Style.Equal(&uv.Style{Fg: m.theme.Subtext}) {
+					t.Fatalf("workspace=%t width=%d cell=%d: column label must use subdued text: %+v", workspace, width, x, cell.Style)
+				}
+			}
+			wantPrefix := "T"
+			if workspace {
+				wantPrefix = "R"
+			}
+			if plain := ansi.Strip(header); !strings.HasPrefix(plain, wantPrefix) {
+				t.Errorf("workspace=%t width=%d: missing column label: %q", workspace, width, plain)
+			}
+		}
+	}
+}
+
 func TestIssueDelegate_NoSelectionGutter(t *testing.T) {
 	setGlyphs(t, asciiGlyphs)
 	item := newTestIssueItem("api-123")
