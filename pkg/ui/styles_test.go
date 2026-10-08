@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
@@ -73,6 +75,37 @@ func TestRenderIssueChipIsCompactAndLossless(t *testing.T) {
 	// An unknown priority must not panic or silently read as P0.
 	if got := RenderIssueChip("task", "open", 99); got == RenderIssueChip("task", "open", 0) {
 		t.Error("out-of-range priority renders identically to P0")
+	}
+}
+
+func TestRenderIssueChipIconsHaveBreathingRoom(t *testing.T) {
+	for name, glyphs := range map[string]GlyphSet{"nerdfont": nerdfontGlyphs, "ascii": asciiGlyphs} {
+		t.Run(name, func(t *testing.T) {
+			setGlyphs(t, glyphs)
+			chip := RenderIssueChip("bug", "open", 1)
+			want := glyphs.TypeBug + " " + glyphs.StOpen + " 1"
+			if got := ansi.Strip(chip); got != want {
+				t.Fatalf("chip = %q, want separated icons %q", got, want)
+			}
+			cells := uv.NewStyledString(chip).Lines(ansi.GraphemeWidth)[0]
+			for _, x := range []int{0, 2} {
+				if cells[x].Style.Attrs&uv.AttrBold == 0 {
+					t.Errorf("icon at cell %d must use a heavier weight", x)
+				}
+			}
+		})
+	}
+}
+
+func TestRenderIssueChipUnknownTypeUsesVisibleFileIcon(t *testing.T) {
+	for name, glyphs := range map[string]GlyphSet{"nerdfont": nerdfontGlyphs, "ascii": asciiGlyphs} {
+		t.Run(name, func(t *testing.T) {
+			setGlyphs(t, glyphs)
+			got := ansi.Strip(RenderIssueChip("custom", "open", 2))
+			if !strings.HasPrefix(got, glyphs.TypeDefault+" ") {
+				t.Fatalf("unknown type must use a visible file icon, got %q", got)
+			}
+		})
 	}
 }
 

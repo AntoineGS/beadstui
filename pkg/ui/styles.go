@@ -370,14 +370,15 @@ func RenderStatusBadge(status string) string {
 	).Render(label)
 }
 
-// RenderIssueChip renders type, status and priority as one dense cluster:
-// <type glyph><status glyph><priority digit>, each colored by its own scale.
+// RenderIssueChip renders type, status and priority as one compact cluster:
+// <type glyph> <status glyph> <priority digit>, each colored by its own scale.
 //
 // It replaces the separate type icon + "P0" badge + "OPEN" badge in list rows
 // (bt-evuf.2). Those three consumed roughly 15 cells of a ~48-cell pane and
 // repeated near-identically down the whole list, leaving about 13 cells for
 // the one field that actually differs per row. This says the same three things
-// in 3 cells.
+// in 5 cells. Bold icons and a cell of breathing room keep the small marks
+// legible without relying on per-glyph font sizing (unavailable in terminals).
 //
 // Deliberately foreground-only. The badges it replaces filled backgrounds on
 // every row, which striped the pane and made the list read as noise; color
@@ -427,8 +428,8 @@ func RenderIssueChip(issueType, status string, priority int) string {
 		prioLabel = strconv.Itoa(priority)
 	}
 
-	return lipgloss.NewStyle().Foreground(typeColor).Render(typeGlyph) +
-		lipgloss.NewStyle().Foreground(statusColor).Render(GetStatusIcon(status)) +
+	return lipgloss.NewStyle().Foreground(typeColor).Bold(true).Render(typeGlyph) + " " +
+		lipgloss.NewStyle().Foreground(statusColor).Bold(true).Render(GetStatusIcon(status)) + " " +
 		lipgloss.NewStyle().Foreground(prioColor).Bold(true).Render(prioLabel)
 }
 
@@ -447,7 +448,7 @@ func issueTypeMark(issueType string) (string, color.Color) {
 	case "chore":
 		return activeGlyphs.TypeChore, ColorTypeChore
 	default:
-		return activeGlyphs.Bullet, ColorMuted
+		return activeGlyphs.TypeDefault, ColorMuted
 	}
 }
 
