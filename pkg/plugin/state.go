@@ -5,9 +5,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/seanmartinsmith/beadstui/pkg/debug"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
@@ -117,7 +119,7 @@ func clean(name string, m *Manifest, b BeadState) BeadState {
 		if out.Sections == nil {
 			out.Sections = map[string]string{}
 		}
-		out.Sections[id] = truncateUTF8(md, maxSection)
+		out.Sections[id] = truncateUTF8(cleanMarkdown(md), maxSection)
 	}
 	for _, id := range b.Actions {
 		if declaresAction(m, id) {
@@ -125,6 +127,18 @@ func clean(name string, m *Manifest, b BeadState) BeadState {
 		}
 	}
 	return out
+}
+
+// cleanMarkdown strips escape sequences and control characters other than
+// newline and tab from plugin markdown, so it cannot drive the terminal.
+func cleanMarkdown(s string) string {
+	s = ansi.Strip(s)
+	return strings.Map(func(r rune) rune {
+		if r != '\n' && r != '\t' && unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 func fieldValue(m *Manifest, field, value string) *FieldValue {

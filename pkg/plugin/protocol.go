@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"regexp"
 	"time"
+	"unicode"
 
 	"charm.land/lipgloss/v2"
 )
@@ -202,9 +203,18 @@ func (m Manifest) Validate(configName string) error {
 		if err := checkID("field", f.ID, seen); err != nil {
 			return err
 		}
+		if err := checkText("field "+f.ID+" label", f.Label); err != nil {
+			return err
+		}
 		values := map[string]bool{}
 		for _, v := range f.Values {
 			if err := checkID("value of field "+f.ID, v.ID, values); err != nil {
+				return err
+			}
+			if err := checkText("field "+f.ID+" value "+v.ID+" label", v.Label); err != nil {
+				return err
+			}
+			if err := checkText("field "+f.ID+" value "+v.ID+" badge", v.Badge); err != nil {
 				return err
 			}
 			if !validTones[v.Tone] {
@@ -220,14 +230,31 @@ func (m Manifest) Validate(configName string) error {
 		if err := checkID("section", s.ID, sections); err != nil {
 			return err
 		}
+		if err := checkText("section "+s.ID+" title", s.Title); err != nil {
+			return err
+		}
 	}
 	actions := map[string]bool{}
 	for _, a := range m.Actions {
 		if err := checkID("action", a.ID, actions); err != nil {
 			return err
 		}
+		if err := checkText("action "+a.ID+" label", a.Label); err != nil {
+			return err
+		}
 		if a.Key == "" {
 			return fmt.Errorf("action %s: empty key", a.ID)
+		}
+	}
+	return nil
+}
+
+// checkText rejects manifest text bt draws that carries control characters,
+// escape sequences included.
+func checkText(what, s string) error {
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return fmt.Errorf("%s %q contains control characters", what, s)
 		}
 	}
 	return nil

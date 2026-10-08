@@ -72,3 +72,15 @@ func TestStoreSetValidatesReplacesAndClears(t *testing.T) {
 		t.Errorf("fields after deactivate = %v", got)
 	}
 }
+
+func TestStoreSectionMarkdownSanitized(t *testing.T) {
+	s := newStore([]Config{{Name: "example"}}, func(*model.Issue) string { return "proj" })
+	s.activate("example", validManifest())
+	s.set("example", StateSetParams{Beads: []BeadState{{DB: "proj", ID: "example-1", Sections: map[string]string{
+		"agent": "\x1b]0;evil\a\x1b[31m**Run**\x1b[0m\r\n\tline\x00 two\x07\x1b[2J",
+	}}}})
+	secs := s.sections(&model.Issue{ID: "example-1"}, slots.Context{})
+	if want := "**Run**\n\tline two"; len(secs) != 1 || secs[0].Markdown != want {
+		t.Fatalf("sections = %q, want markdown %q", secs, want)
+	}
+}

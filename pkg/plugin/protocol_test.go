@@ -34,6 +34,12 @@ func TestManifestValidate(t *testing.T) {
 		"bad action id":    func(m *Manifest) { m.Actions[0].ID = "do-it" },
 		"dup section":      func(m *Manifest) { m.Sections = append(m.Sections, SectionDecl{ID: "agent", Title: "x"}) },
 		"empty key":        func(m *Manifest) { m.Actions[0].Key = "" },
+		"badge escape":     func(m *Manifest) { m.Fields[0].Values[0].Badge = "\x1b[5mW" },
+		"badge control":    func(m *Manifest) { m.Fields[0].Values[0].Badge = "W\aIT" },
+		"field label":      func(m *Manifest) { m.Fields[0].Label = "Agent\x1b]0;x\a" },
+		"value label":      func(m *Manifest) { m.Fields[0].Values[1].Label = "Queued\r" },
+		"section title":    func(m *Manifest) { m.Sections[0].Title = "Agent\x1b[2J" },
+		"action label":     func(m *Manifest) { m.Actions[0].Label = "Dispatch\n" },
 	}
 	for name, mutate := range cases {
 		m := validManifest()
