@@ -143,9 +143,13 @@ func (m Model) handleSnapshotReady(msg SnapshotReadyMsg) (Model, tea.Cmd) {
 		m.ac.blockerSet = msg.Snapshot.BlockerSet
 	}
 
-	// Clear caches that need recomputation
+	// Clear caches that need recomputation. Triage over the visible set is
+	// recomputed now if this snapshot already has Phase 2, else on
+	// Phase2ReadyMsg (bt-imh).
 	m.labelHealthCached = false
 	m.attentionCached = false
+	m.ac.triage = nil
+	m.ac.triageWaitPhase2 = !msg.Snapshot.Phase2Ready
 	m.ac.priorityHints = make(map[string]*analysis.PriorityRecommendation)
 	m.labelDrilldownCache = make(map[string][]model.Issue)
 
@@ -566,6 +570,8 @@ func (m Model) handleFileChanged(msg FileChangedMsg) (Model, tea.Cmd) {
 	}
 	m.labelHealthCached = false
 	m.attentionCached = false
+	m.ac.triage = nil
+	m.ac.triageWaitPhase2 = true
 
 	// Rebuild lookup map
 	var mapStart time.Time
@@ -656,14 +662,13 @@ func (m Model) handleFileChanged(msg FileChangedMsg) (Model, tea.Cmd) {
 	// Regenerate sub-views (with Phase 1 data; Phase 2 will update via Phase2ReadyMsg)
 	// Preserve triage data already computed to avoid UI flicker.
 	needsInsights := m.mode == ViewInsights
-	needsGraph := m.mode == ViewGraph
 	var ins analysis.Insights
-	if needsInsights || needsGraph {
+	if needsInsights {
 		var insightsStart time.Time
 		if profileRefresh {
 			insightsStart = time.Now()
 		}
-		ins = m.data.analysis.GenerateInsights(len(m.data.issues))
+		ins = m.data.analysis.GenerateInsights(len(m.filter.visible))
 		if profileRefresh {
 			recordTiming("insights_generate", time.Since(insightsStart))
 		}
@@ -674,7 +679,7 @@ func (m Model) handleFileChanged(msg FileChangedMsg) (Model, tea.Cmd) {
 		oldRecMap := m.insightsPanel.recommendationMap
 		oldHash := m.insightsPanel.triageDataHash
 
-		m.insightsPanel = NewInsightsModel(ins, m.data.issueMap, m.theme)
+		m.insightsPanel = NewInsightsModel(m.visibleInsights(ins), m.data.issueMap, m.theme)
 		m.insightsPanel.topPicks = oldTopPicks
 		m.insightsPanel.recommendations = oldRecs
 		m.insightsPanel.recommendationMap = oldRecMap
@@ -690,18 +695,8 @@ func (m Model) handleFileChanged(msg FileChangedMsg) (Model, tea.Cmd) {
 		if profileRefresh {
 			attentionStart = time.Now()
 		}
-		cfg := analysis.DefaultLabelHealthConfig()
-		m.attentionCache = analysis.ComputeLabelAttentionScores(m.data.issues, cfg, time.Now().UTC())
-		m.attentionCached = true
-		attText, _ := ComputeAttentionView(m.data.issues, max(40, m.width-4))
-		m.insightsPanel = NewInsightsModel(analysis.Insights{}, m.data.issueMap, m.theme)
-		m.insightsPanel.labelAttention = m.attentionCache.Labels
-		m.insightsPanel.extraText = attText
-		panelHeight := m.height - 2
-		if panelHeight < 3 {
-			panelHeight = 3
-		}
-		m.insightsPanel.SetSize(m.width, panelHeight)
+		m.attentionCached = false
+		m.refreshAttentionView()
 		if profileRefresh {
 			recordTiming("attention_view", time.Since(attentionStart))
 		}

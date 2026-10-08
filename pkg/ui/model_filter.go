@@ -161,6 +161,144 @@ func (m *Model) buildIssueItem(issue model.Issue, epics map[string]epicProgressC
 	return item
 }
 
+// ensureTriageForVisible ranks triage over the visible set: list-row badges,
+// insights top picks and recommendations. It recomputes once per filter key
+// and data load; force skips the Phase 2 wait (opening insights).
+func (m *Model) ensureTriageForVisible(force bool) {
+	if m.ac.triage != nil && m.ac.triageKey == m.filter.visibleKey {
+		return
+	}
+	if m.ac.triageWaitPhase2 && !force {
+		return
+	}
+	triage := analysis.ComputeTriageWithOptions(m.filter.visible, analysis.TriageOptions{WaitForPhase2: true})
+	m.setTriage(&triage)
+	m.ac.triageKey = m.filter.visibleKey
+}
+
+// setTriage installs a triage result as the list-row badge maps.
+func (m *Model) setTriage(t *analysis.TriageResult) {
+	scores := make(map[string]float64, len(t.Recommendations))
+	reasons := make(map[string]analysis.TriageReasons, len(t.Recommendations))
+	unblocks := make(map[string][]string, len(t.Recommendations))
+	quickWins := make(map[string]bool, len(t.QuickWins))
+	blockers := make(map[string]bool, len(t.BlockersToClear))
+	for _, rec := range t.Recommendations {
+		scores[rec.ID] = rec.Score
+		if len(rec.Reasons) > 0 {
+			reasons[rec.ID] = analysis.TriageReasons{Primary: rec.Reasons[0], All: rec.Reasons, ActionHint: rec.Action}
+		}
+		unblocks[rec.ID] = rec.UnblocksIDs
+	}
+	for _, qw := range t.QuickWins {
+		quickWins[qw.ID] = true
+	}
+	for _, bl := range t.BlockersToClear {
+		blockers[bl.ID] = true
+	}
+	m.ac.triage = t
+	m.ac.triageScores, m.ac.triageReasons, m.ac.unblocksMap = scores, reasons, unblocks
+	m.ac.quickWinSet, m.ac.blockerSet = quickWins, blockers
+}
+
+func triageDataHash(t *analysis.TriageResult) string {
+	return fmt.Sprintf("v%s@%s#%d", t.Meta.Version, t.Meta.GeneratedAt.Format("15:04:05"), t.Meta.IssueCount)
+}
+
+// visibleInsights drops hidden issues from the graph-metric rankings. The
+// metrics themselves stay computed over the full graph (spec exceptions);
+// ClusterDensity and Velocity are whole-graph values and pass through.
+func (m *Model) visibleInsights(ins analysis.Insights) analysis.Insights {
+	ids := m.filter.visibleIDs
+	if ids == nil || len(m.filter.visible) == len(m.data.issueMap) {
+		return ins
+	}
+	keepItems := func(items []analysis.InsightItem) []analysis.InsightItem {
+		out := items[:0:0]
+		for _, it := range items {
+			if _, ok := ids[it.ID]; ok {
+				out = append(out, it)
+			}
+		}
+		return out
+	}
+	keepIDs := func(in []string) []string {
+		out := in[:0:0]
+		for _, id := range in {
+			if _, ok := ids[id]; ok {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+	ins.Bottlenecks = keepItems(ins.Bottlenecks)
+	ins.Keystones = keepItems(ins.Keystones)
+	ins.Influencers = keepItems(ins.Influencers)
+	ins.Hubs = keepItems(ins.Hubs)
+	ins.Authorities = keepItems(ins.Authorities)
+	ins.Cores = keepItems(ins.Cores)
+	ins.Slack = keepItems(ins.Slack)
+	ins.Articulation = keepIDs(ins.Articulation)
+	ins.Orphans = keepIDs(ins.Orphans)
+	var cycles [][]string
+	for _, c := range ins.Cycles {
+		if len(keepIDs(c)) > 0 {
+			cycles = append(cycles, c)
+		}
+	}
+	ins.Cycles = cycles
+	return ins
+}
+
+// refreshLabelDashboard computes label health over the visible set.
+func (m *Model) refreshLabelDashboard() {
+	if !m.labelHealthCached {
+		cfg := analysis.DefaultLabelHealthConfig()
+		m.labelHealthCache = analysis.ComputeAllLabelHealth(m.filter.visible, cfg, time.Now().UTC(), m.data.analysis)
+		m.labelHealthCached = true
+	}
+	m.labelDashboard.SetData(m.labelHealthCache.Labels)
+	m.labelDashboard.SetSize(m.width, m.height-1)
+	m.setStatus(fmt.Sprintf("Labels: %d total • critical %d • warning %d", m.labelHealthCache.TotalLabels, m.labelHealthCache.CriticalCount, m.labelHealthCache.WarningCount))
+}
+
+// refreshAttentionView computes attention scores and text over the visible set.
+func (m *Model) refreshAttentionView() {
+	if !m.attentionCached {
+		cfg := analysis.DefaultLabelHealthConfig()
+		m.attentionCache = analysis.ComputeLabelAttentionScores(m.filter.visible, cfg, time.Now().UTC())
+		m.attentionCached = true
+	}
+	attText, _ := ComputeAttentionView(m.filter.visible, max(40, m.width-4))
+	m.insightsPanel = NewInsightsModel(analysis.Insights{}, m.data.issueMap, m.theme)
+	m.insightsPanel.labelAttention = m.attentionCache.Labels
+	m.insightsPanel.extraText = attText
+	m.insightsPanel.SetSize(m.width, max(3, m.height-2))
+}
+
+// refreshFlowMatrix computes cross-label flow over the visible set.
+func (m *Model) refreshFlowMatrix() {
+	cfg := analysis.DefaultLabelHealthConfig()
+	flow := analysis.ComputeCrossLabelFlow(m.filter.visible, cfg)
+	m.flowMatrix = NewFlowMatrixModel(m.theme)
+	m.flowMatrix.SetData(&flow, m.filter.visible)
+	m.flowMatrix.SetSize(m.width, max(3, m.height-2))
+}
+
+// refreshAnalysisViews recomputes the open analysis view after a filter change.
+func (m *Model) refreshAnalysisViews() {
+	switch m.mode {
+	case ViewLabelDashboard:
+		m.refreshLabelDashboard()
+	case ViewAttention:
+		m.refreshAttentionView()
+	case ViewFlowMatrix:
+		m.refreshFlowMatrix()
+	case ViewInsights:
+		m.openInsightsView()
+	}
+}
+
 // lensTriad (footer_triad.go) is the bt-p8y2f successor to the former
 // classifyItemCounts: it partitions whatever items the list currently holds
 // into the footer's ready/in-flight/blocked triad, resolved against
@@ -382,7 +520,15 @@ func (m *Model) toggleWisps() {
 // applyFilter is the single apply path (bt-imh): it refreshes the visible set
 // and feeds every surface from it. Recipes and BQL go through it too.
 func (m *Model) applyFilter() {
+	prevKey := m.filter.visibleKey
 	m.refreshVisible()
+	keyChanged := m.filter.visibleKey != prevKey
+	if keyChanged {
+		m.labelHealthCached = false
+		m.attentionCached = false
+		m.labelDrilldownCache = make(map[string][]model.Issue)
+	}
+	m.ensureTriageForVisible(false)
 
 	issues := append([]model.Issue(nil), m.filter.visible...)
 	epics := epicProgressIndex(m.data.issues) // epic progress counts all children
@@ -405,6 +551,9 @@ func (m *Model) applyFilter() {
 	// the recompute cost while the feature is visible.
 	if m.ac.showPriorityHints {
 		m.recomputePriorityHints()
+	}
+	if keyChanged {
+		m.refreshAnalysisViews()
 	}
 
 	if len(items) > 0 && m.list.Index() >= len(items) {
@@ -1248,22 +1397,6 @@ func truncateString(s string, maxLen int) string {
 		return string(runes[:maxLen])
 	}
 	return string(runes[:maxLen-1]) + "…"
-}
-
-// workspacePrefilter removes issues not in the active repo set (workspace mode).
-// Returns the input slice unchanged if not in workspace mode or all repos are active.
-func (m *Model) workspacePrefilter(issues []model.Issue) []model.Issue {
-	if !m.workspaceMode || m.activeRepos == nil {
-		return issues
-	}
-	filtered := make([]model.Issue, 0, len(issues))
-	for _, issue := range issues {
-		repoKey := IssueRepoKey(issue)
-		if repoKey == "" || m.activeRepos[repoKey] {
-			filtered = append(filtered, issue)
-		}
-	}
-	return filtered
 }
 
 // searchScoreContrib represents one component's contribution to the hybrid score,

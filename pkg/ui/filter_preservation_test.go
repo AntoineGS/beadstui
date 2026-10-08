@@ -531,9 +531,9 @@ func TestPlainFilterSurvivesDataSourceReload(t *testing.T) {
 }
 
 // TestPlainFilterSurvivesPhase2Ready covers the same bt-k9f6f defect class
-// against the handlePhase2Ready reload path (consolidated onto
-// reapplyActiveFilter alongside handleDataSourceReload / handleFileChanged /
-// rebuildListWithDiffInfo).
+// against the handlePhase2Ready reload path (consolidated onto the single
+// applyFilter path alongside handleDataSourceReload / handleFileChanged /
+// rebuildListWithDiffInfo, bt-imh).
 func TestPlainFilterSurvivesPhase2Ready(t *testing.T) {
 	issues := []model.Issue{
 		{ID: "proj-open-1", Status: model.StatusOpen, CreatedAt: time.Now()},

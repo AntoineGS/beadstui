@@ -298,7 +298,7 @@ func buildRecommendationFixture(prefix string) []model.Issue {
 // bt-gcuv: pressing 'p' in global/workspace mode with a project filter
 // active computed recommendations from all cross-project issues instead of
 // the filtered set. recomputePriorityHints must build its Analyzer from
-// filteredIssuesForActiveView(), so a projb-only recommendation can never
+// the visible set (bt-imh), so a projb-only recommendation can never
 // appear once activeRepos narrows the view to proja.
 func TestRecomputePriorityHintsRespectsActiveRepos(t *testing.T) {
 	var issues []model.Issue
@@ -644,7 +644,7 @@ func TestOpenInsightsViewRespectsActiveRepos(t *testing.T) {
 		RepoCount:    2,
 		RepoPrefixes: []string{"proja-", "projb-"},
 	})
-	m.activeRepos = map[string]bool{"proja": true}
+	m.SetActiveRepos(map[string]bool{"proja": true})
 
 	updated2, _ := m.Update(tea.KeyPressMsg{Code: 'i', Text: "i"})
 	m = updated2.(Model)
@@ -682,7 +682,7 @@ func TestPhase2ReadyTriageBadgesRespectActiveRepos(t *testing.T) {
 		RepoCount:    2,
 		RepoPrefixes: []string{"proja-", "projb-"},
 	})
-	m.activeRepos = map[string]bool{"proja": true}
+	m.SetActiveRepos(map[string]bool{"proja": true})
 
 	ins := m.data.analysis.GenerateInsights(len(issues))
 	updated2, _ := m.Update(Phase2ReadyMsg{Stats: m.data.analysis, Insights: ins})
@@ -725,7 +725,7 @@ func TestLabelDashboardRespectsActiveRepos(t *testing.T) {
 		RepoCount:    2,
 		RepoPrefixes: []string{"proja-", "projb-"},
 	})
-	m.activeRepos = map[string]bool{"proja": true}
+	m.SetActiveRepos(map[string]bool{"proja": true})
 
 	updated2, _ := m.Update(tea.KeyPressMsg{Code: '[', Text: "["})
 	m = updated2.(Model)
@@ -763,7 +763,7 @@ func TestAttentionViewRespectsActiveRepos(t *testing.T) {
 		RepoCount:    2,
 		RepoPrefixes: []string{"proja-", "projb-"},
 	})
-	m.activeRepos = map[string]bool{"proja": true}
+	m.SetActiveRepos(map[string]bool{"proja": true})
 
 	updated2, _ := m.Update(tea.KeyPressMsg{Code: ']', Text: "]"})
 	m = updated2.(Model)
@@ -796,7 +796,7 @@ func TestFlowMatrixRespectsActiveRepos(t *testing.T) {
 		RepoCount:    2,
 		RepoPrefixes: []string{"proja-", "projb-"},
 	})
-	m.activeRepos = map[string]bool{"proja": true}
+	m.SetActiveRepos(map[string]bool{"proja": true})
 
 	updated2, _ := m.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
 	m = updated2.(Model)
@@ -878,9 +878,137 @@ func TestGetCrossFlowsForLabelRespectsActiveRepos(t *testing.T) {
 
 	// bt-dcby.3: filtering to proja must scope the flow summary to proja's
 	// own contribution only, not the cross-project aggregate.
-	m.activeRepos = map[string]bool{"proja": true}
+	m.SetActiveRepos(map[string]bool{"proja": true})
 	summary = m.getCrossFlowsForLabel("feature")
 	if got := incomingCountFor(summary, "bug"); got != 1 {
 		t.Fatalf("expected incoming count scoped to 1 after proja filter, got %d (projb contribution leaked)", got)
 	}
+}
+
+// bt-imh: analysis surfaces follow the full filter, not only project scope.
+func TestTriageFollowsLabelFilter(t *testing.T) {
+	var issues []model.Issue
+	labeled := buildRecommendationFixture("proja")
+	for i := range labeled {
+		labeled[i].Labels = []string{"focus"}
+	}
+	issues = append(issues, labeled...)
+	issues = append(issues, buildRecommendationFixture("projb")...)
+	m := NewModel(issues, nil, "", nil, nil)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+	m = updated.(Model)
+	ins := m.data.analysis.GenerateInsights(len(issues))
+	updated, _ = m.Update(Phase2ReadyMsg{Stats: m.data.analysis, Insights: ins})
+	m = updated.(Model)
+	if _, ok := m.ac.triageScores["projb-blocker"]; !ok {
+		t.Fatal("precondition: projb-blocker scored with no filter")
+	}
+
+	m.filter.labelFilter = "focus"
+	m.applyFilter()
+	for id := range m.ac.triageScores {
+		if ExtractRepoPrefix(id) != "proja" {
+			t.Fatalf("issue %s outside the label filter has a triage score", id)
+		}
+	}
+	if len(m.ac.triageScores) == 0 {
+		t.Fatal("expected triage scores for the labeled issues")
+	}
+}
+
+func TestLabelDashboardFollowsLabelFilter(t *testing.T) {
+	issues := buildLabelFlowFixture("proja")
+	m := NewModel(issues, nil, "", nil, nil)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+	m = updated.(Model)
+	m.filter.labelFilter = "proja-labelA"
+	m.applyFilter()
+	updated, _ = m.Update(tea.KeyPressMsg{Code: '[', Text: "["})
+	m = updated.(Model)
+	for _, lh := range m.labelHealthCache.Labels {
+		for _, id := range lh.Issues {
+			if _, ok := m.filter.visibleIDs[id]; !ok {
+				t.Fatalf("label health includes %s, which the filter hides", id)
+			}
+		}
+	}
+}
+
+func TestInsightsListsOnlyVisibleIssues(t *testing.T) {
+	var issues []model.Issue
+	issues = append(issues, buildRecommendationFixture("proja")...)
+	issues = append(issues, buildRecommendationFixture("projb")...)
+	m := NewModel(issues, nil, "", nil, nil)
+	m.EnableWorkspaceMode(WorkspaceInfo{Enabled: true, RepoCount: 2, RepoPrefixes: []string{"proja-", "projb-"}})
+	m.SetActiveRepos(map[string]bool{"proja": true})
+	m.applyFilter()
+	ins := m.visibleInsights(m.data.analysis.GenerateInsights(len(issues)))
+	for _, list := range [][]analysis.InsightItem{ins.Bottlenecks, ins.Keystones, ins.Influencers, ins.Hubs, ins.Authorities, ins.Cores, ins.Slack} {
+		for _, it := range list {
+			if ExtractRepoPrefix(it.ID) != "proja" {
+				t.Fatalf("insights list includes hidden issue %s", it.ID)
+			}
+		}
+	}
+}
+
+func focusTriageFixture() []model.Issue {
+	labeled := buildRecommendationFixture("proja")
+	for i := range labeled {
+		labeled[i].Labels = []string{"focus"}
+	}
+	return append(labeled, buildRecommendationFixture("projb")...)
+}
+
+func assertTriageOnlyProja(t *testing.T, m Model) {
+	t.Helper()
+	if len(m.ac.triageScores) == 0 {
+		t.Fatal("expected triage scores for the visible issues")
+	}
+	for id := range m.ac.triageScores {
+		if ExtractRepoPrefix(id) != "proja" {
+			t.Fatalf("hidden issue %s has a triage score", id)
+		}
+	}
+}
+
+// A snapshot that already finished Phase 2 gets no further Phase2ReadyMsg
+// processing (bt-kfkrb), so its arrival must rank triage over the visible
+// set itself instead of keeping the snapshot's corpus-wide triage (bt-imh).
+func TestPhase2SnapshotRanksTriageOverVisibleSet(t *testing.T) {
+	issues := focusTriageFixture()
+	m := newSizedModel(t, issues, 140, 40)
+	m.filter.labelFilter = "focus"
+	m.applyFilter()
+
+	snap := NewSnapshotBuilder(focusTriageFixture()).Build()
+	snap.Analysis.WaitForPhase2()
+	snap.Phase2Ready = true
+	if _, ok := snap.TriageScores["projb-blocker"]; !ok {
+		t.Fatal("precondition: snapshot triage is corpus-wide")
+	}
+	updated, _ := m.Update(SnapshotReadyMsg{Snapshot: snap})
+	assertTriageOnlyProja(t, updated.(Model))
+}
+
+// A reload that keeps the old Phase-2-ready snapshot (replaceIssues) still
+// ranks triage over the visible set once its own Phase 2 lands (bt-imh).
+func TestPhase2AfterReloadRanksTriageOverVisibleSet(t *testing.T) {
+	issues := focusTriageFixture()
+	m := newSizedModel(t, issues, 140, 40)
+	snap := NewSnapshotBuilder(focusTriageFixture()).Build()
+	snap.Analysis.WaitForPhase2()
+	snap.Phase2Ready = true
+	updated, _ := m.Update(SnapshotReadyMsg{Snapshot: snap})
+	m = updated.(Model)
+	if _, ok := m.ac.triageScores["projb-blocker"]; !ok {
+		t.Fatal("precondition: unfiltered triage scores projb-blocker")
+	}
+
+	m.replaceIssues(focusTriageFixture())
+	m.filter.labelFilter = "focus"
+	m.applyFilter()
+	m.data.analysis.WaitForPhase2()
+	updated, _ = m.Update(Phase2ReadyMsg{Stats: m.data.analysis})
+	assertTriageOnlyProja(t, updated.(Model))
 }
