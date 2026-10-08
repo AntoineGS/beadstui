@@ -99,8 +99,9 @@ The model builds the spec from its existing UI state (`m.filter.currentFilter`,
 `m.workspaceMode`, `m.showWisps`) in one `m.filterSpec()` method. Those fields
 stay as they are; the spec is derived, not a second source of truth.
 
-The legacy `label:X` form of `currentFilter` is folded into `Labels` by
-`m.filterSpec()` and has no separate path in the engine.
+Nothing sets the legacy `label:X` form of `currentFilter` any more, so it is
+removed rather than folded (no compatibility shims); an unknown status matches
+nothing.
 
 ## The visible set on the model
 
@@ -161,24 +162,28 @@ dimension is a recipe that matches `m.data.snapshot.RecipeName`/`RecipeHash`.
 
 ### Deliberate full-data readers
 
-These read `m.data.issues` or `m.data.issueMap` on purpose. Each carries a
-one-line comment naming this section.
+These read `m.data.issues` or `m.data.issueMap` on purpose. The
+`rawCorpusReaders` allowlist in `pkg/ui/filterset_test.go` names each function
+that reads `m.data.issues` and why; the guard test points a new reader there.
 
 - Graph metrics (PageRank, critical path, blocker sets, "ready" blocker
   checks): a blocker can sit outside the filter.
 - Epic progress (`epicProgress`, epic cards): a property of the epic, not a
   count of the view.
-- Status header "corpus N issues (tier)": describes what is loaded.
+- Status header "corpus N issues (tier)" and its per-source counts: describe
+  what is loaded.
 - `computeAlerts`: compares against a whole-corpus baseline; only display is
-  filtered.
+  filtered. The notifications repo scope also reads the loaded data.
+- Data loading: snapshot, file-change and Dolt reloads, the recipe re-sort on
+  Phase 2, and the history preload in `Init`.
 - ID lookups: details pane, dependency navigation, plugin host sync, semantic
-  index build, time-travel snapshot, events diff.
+  index build, time-travel snapshot, events diff, the `Issues()` accessor.
 
 ## Tests
 
 1. **Engine unit tests** (`filterset_test.go`): each dimension alone, every
    pair, `Without` for each dimension, `IsUnfiltered`, BQL running after
-   labels/wisps, recipe order preserved, legacy `label:X` folding.
+   labels/wisps, recipe order preserved.
 2. **Static guard** modeled on `TestNoRawListSetItems`: scans non-test
    `pkg/ui/*.go` and fails on `m.data.issues` reads outside an allowlist of
    functions (data loading/assignment, `refreshVisible`, and the deliberate

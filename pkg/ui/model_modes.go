@@ -538,7 +538,7 @@ func (m Model) ShowDetails() bool {
 }
 
 // CurrentFilter returns the active filter string (e.g. "open", "closed", "ready",
-// "label:X", "bql:..."). Stable accessor for Phase 1 refactor - this field will
+// "recipe:...", "bql:..."). Stable accessor for Phase 1 refactor - this field will
 // move into FilterState.
 func (m Model) CurrentFilter() string {
 	return m.filter.currentFilter
