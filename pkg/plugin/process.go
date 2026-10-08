@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -50,9 +52,10 @@ type session struct {
 	lastStderr string
 
 	// Used only by the supervisor goroutine.
-	synced    bool
-	syncedGen uint64
-	lastHash  [sha256.Size]byte
+	synced      bool
+	syncedGen   uint64
+	lastHash    [sha256.Size]byte
+	activatedAt time.Time
 }
 
 func (p *proc) status() Status {
@@ -98,21 +101,34 @@ func (p *proc) beginAction() func() {
 	}
 }
 
+// runEnd is why one run of a plugin ended.
+type runEnd struct {
+	reason string
+	// fatal means restarting cannot help, e.g. the command does not exist.
+	fatal bool
+	// active is how long the plugin was active; zero if it never was.
+	active time.Duration
+}
+
 // supervise runs the plugin, restarting it after each backoff step, until
-// ctx is done or it fails once more than there are steps.
+// ctx is done or it fails once more than there are steps. A run that stayed
+// active for healthyReset starts the count over; a fatal one fails at once.
 func (p *proc) supervise(ctx context.Context) {
 	defer p.h.wg.Done()
 	for failures := 0; ; {
-		reason := p.run(ctx)
+		end := p.run(ctx)
 		if ctx.Err() != nil {
 			return
 		}
+		if end.active >= p.h.healthyReset {
+			failures = 0
+		}
 		failures++
-		debug.Log("plugin %s: %s", p.cfg.Name, reason)
+		debug.Log("plugin %s: %s", p.cfg.Name, end.reason)
 		p.mu.Lock()
-		p.failure = reason
+		p.failure = end.reason
 		p.mu.Unlock()
-		if failures > len(p.h.restartBackoff) {
+		if end.fatal || failures > len(p.h.restartBackoff) {
 			p.setState(stateFailed)
 			return
 		}
@@ -128,9 +144,9 @@ func (p *proc) supervise(ctx context.Context) {
 	}
 }
 
-// run starts the process once and returns why it stopped, or "" when ctx
-// ended it.
-func (p *proc) run(ctx context.Context) string {
+// run starts the process once and returns why it stopped; the reason is ""
+// when ctx ended it.
+func (p *proc) run(ctx context.Context) runEnd {
 	procCtx, kill := context.WithCancel(context.Background())
 	defer kill()
 	cmd := newCommand(procCtx, p.cfg.Command[0], p.cfg.Command[1:]...)
@@ -141,18 +157,18 @@ func (p *proc) run(ctx context.Context) string {
 	// cmd.Dir stays empty: the plugin runs in bt's working directory.
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return fmt.Sprintf("start: %v", err)
+		return runEnd{reason: fmt.Sprintf("start: %v", err)}
 	}
 	// Plain pipes, so Wait never waits on a grandchild holding them open.
 	outR, outW, err := os.Pipe()
 	if err != nil {
-		return fmt.Sprintf("start: %v", err)
+		return runEnd{reason: fmt.Sprintf("start: %v", err)}
 	}
 	errR, errW, err := os.Pipe()
 	if err != nil {
 		_ = outR.Close()
 		_ = outW.Close()
-		return fmt.Sprintf("start: %v", err)
+		return runEnd{reason: fmt.Sprintf("start: %v", err)}
 	}
 	cmd.Stdout, cmd.Stderr = outW, errW
 	err = cmd.Start()
@@ -161,7 +177,10 @@ func (p *proc) run(ctx context.Context) string {
 	if err != nil {
 		_ = outR.Close()
 		_ = errR.Close()
-		return fmt.Sprintf("start: %v", err)
+		if errors.Is(err, exec.ErrNotFound) || errors.Is(err, fs.ErrNotExist) {
+			return runEnd{reason: "command not found: " + p.cfg.Command[0], fatal: true}
+		}
+		return runEnd{reason: fmt.Sprintf("start: %v", err)}
 	}
 
 	s := &session{p: p, kill: kill}
@@ -185,6 +204,10 @@ func (p *proc) run(ctx context.Context) string {
 	}()
 
 	reason, stopping := s.serve(ctx, exited, connDone)
+	var active time.Duration
+	if !s.activatedAt.IsZero() {
+		active = time.Since(s.activatedAt)
+	}
 
 	s.active.Store(false)
 	p.mu.Lock()
@@ -207,20 +230,19 @@ func (p *proc) run(ctx context.Context) string {
 
 	switch {
 	case stopping:
-		return ""
+		reason = ""
 	case s.killedFor() != "":
-		return s.killedFor()
-	case reason != "":
-		return reason
+		reason = s.killedFor()
+	case reason == "":
+		reason = "exited"
+		if waitErr != nil {
+			reason += ": " + waitErr.Error()
+		}
+		if line := s.stderrLine(); line != "" {
+			reason += ": " + line
+		}
 	}
-	reason = "exited"
-	if waitErr != nil {
-		reason += ": " + waitErr.Error()
-	}
-	if line := s.stderrLine(); line != "" {
-		reason += ": " + line
-	}
-	return reason
+	return runEnd{reason: reason, active: active}
 }
 
 // serve does the handshake, then syncs until the process ends or ctx is
@@ -246,6 +268,7 @@ func (s *session) serve(ctx context.Context, exited, connDone <-chan struct{}) (
 
 	p.h.store.activate(p.cfg.Name, s.manifest)
 	s.active.Store(true)
+	s.activatedAt = time.Now()
 	p.mu.Lock()
 	p.session = s
 	p.version = s.manifest.Version

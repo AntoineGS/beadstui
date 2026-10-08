@@ -23,6 +23,9 @@ var (
 	shutdownGrace  = 2 * time.Second
 	flushInterval  = 100 * time.Millisecond
 	toastInterval  = time.Second
+	// healthyReset is how long a plugin must stay active for its failure
+	// count to start over.
+	healthyReset = 60 * time.Second
 )
 
 const (
@@ -123,8 +126,8 @@ type Host struct {
 	store   *store
 	plugins []*proc
 
-	initTimeout, invokeTimeout, shutdownGrace, flushInterval, toastInterval time.Duration
-	restartBackoff                                                          []time.Duration
+	initTimeout, invokeTimeout, shutdownGrace, flushInterval, toastInterval, healthyReset time.Duration
+	restartBackoff                                                                        []time.Duration
 
 	sendMu sync.Mutex
 	send   func(tea.Msg)
@@ -159,6 +162,7 @@ func NewHost(opts Options) *Host {
 		shutdownGrace:  shutdownGrace,
 		flushInterval:  flushInterval,
 		toastInterval:  toastInterval,
+		healthyReset:   healthyReset,
 		restartBackoff: append([]time.Duration(nil), restartBackoff...),
 	}
 	h.ctx, h.cancel = context.WithCancel(context.Background())

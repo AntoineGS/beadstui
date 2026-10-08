@@ -63,7 +63,7 @@ func waitFor(t *testing.T, d time.Duration, what string, cond func() bool) {
 // shortTimers shortens the package timers for one test.
 func shortTimers(t *testing.T) {
 	t.Helper()
-	saved := []any{initTimeout, invokeTimeout, restartBackoff, shutdownGrace, flushInterval}
+	saved := []any{initTimeout, invokeTimeout, restartBackoff, shutdownGrace, flushInterval, healthyReset}
 	initTimeout = 500 * time.Millisecond
 	invokeTimeout = time.Second
 	restartBackoff = []time.Duration{50 * time.Millisecond, 50 * time.Millisecond, 50 * time.Millisecond}
@@ -74,6 +74,7 @@ func shortTimers(t *testing.T) {
 		restartBackoff = saved[2].([]time.Duration)
 		shutdownGrace = saved[3].(time.Duration)
 		flushInterval = saved[4].(time.Duration)
+		healthyReset = saved[5].(time.Duration)
 	})
 }
 
@@ -248,6 +249,35 @@ func TestHostHangingInitFails(t *testing.T) {
 	issue := openIssue("example-1")
 	if res := th.Invoke(context.Background(), Action{Plugin: "example", ID: "dispatch"}, &issue, "list"); !res.Unknown {
 		t.Errorf("Invoke on failed plugin = %+v, want Unknown", res)
+	}
+}
+
+func TestHostFailureCountResetsAfterHealthyRun(t *testing.T) {
+	shortTimers(t)
+	healthyReset = 150 * time.Millisecond
+	th := startHost(t, exampleConfig("exit-after-init"))
+	// Every run stays active ~300ms, past the reset, so no crash counts
+	// towards the 3 backoff steps.
+	waitFor(t, 10*time.Second, "5 restarts", func() bool {
+		st := th.status()
+		if st.State == "failed" {
+			t.Fatalf("plugin failed after %d restarts: %+v", st.Restarts, st)
+		}
+		return st.Restarts >= 5
+	})
+}
+
+func TestHostMissingCommandFailsImmediately(t *testing.T) {
+	shortTimers(t)
+	restartBackoff = []time.Duration{time.Second, time.Second, time.Second}
+	for _, cmd := range []string{"bt-example-plugin-does-not-exist", filepath.Join(t.TempDir(), "missing")} {
+		t.Run(filepath.Base(cmd), func(t *testing.T) {
+			th := startHost(t, Config{Name: "example", Command: []string{cmd, "--flag"}})
+			waitFor(t, 500*time.Millisecond, "plugin failed", func() bool { return th.status().State == "failed" })
+			if st := th.status(); st.LastError != "command not found: "+cmd || st.Restarts != 0 {
+				t.Errorf("status = %+v, want LastError %q and no restarts", st, "command not found: "+cmd)
+			}
+		})
 	}
 }
 

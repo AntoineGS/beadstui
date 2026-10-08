@@ -31,6 +31,7 @@ func TestMain(m *testing.M) {
 // first beads.sync, which bt only sends once the manifest is accepted.
 // ignore-eof-until-shutdown keeps running after stdin closes and writes
 // $BT_TEST_PLUGIN_MARKER on shutdown; ignore-shutdown ignores both.
+// exit-after-init exits 300ms after the handshake.
 func runTestPlugin(spec string) {
 	has := map[string]bool{}
 	for _, b := range strings.Split(spec, ",") {
@@ -47,6 +48,12 @@ func runTestPlugin(spec string) {
 		case "initialize":
 			if has["hang-init"] {
 				select {}
+			}
+			if has["exit-after-init"] {
+				go func() {
+					time.Sleep(300 * time.Millisecond)
+					os.Exit(3)
+				}()
 			}
 			m := validManifest()
 			m.Name = name
