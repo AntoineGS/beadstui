@@ -10,11 +10,11 @@ import (
 
 // buildEpicProgressANSI renders an epic's progress summary line plus one
 // status-pill row per child, in natural-numeric order (epicChildrenSorted). It
-// is the single source of truth shared by the detail-pane Epic Progress block
-// and the tier-2 epic focus card (bt-gfxhz.3): build once, render both.
+// supplies the detail-pane Epic Progress block. The epic focus card builds
+// its own role-styled rows, sharing epicChildrenSorted and the pill helpers.
 //
-// selectedIdx highlights one child row with a ▸ cursor (the focus card's
-// selection); pass -1 for the static detail-pane embed. width is the available
+// selectedIdx highlights one child row with a ▸ cursor; pass -1 for the static
+// detail-pane embed. width is the available
 // content width — child titles truncate to whatever remains after the fixed
 // cursor/pill/id segments (0 disables truncation). Returns "" when the epic has
 // no children so callers can skip the section (and its heading) entirely.

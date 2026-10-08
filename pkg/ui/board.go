@@ -1616,6 +1616,10 @@ func (b BoardModel) renderExpandedCard(issue model.Issue, width int, _, _ int) s
 	// DEPENDENCIES: Show blocking deps with titles
 	// ══════════════════════════════════════════════════════════════════════════
 	var depLines []string
+	// Expanded cards are selected: only the dependency foreground is semantic.
+	// Keep the Selected background and attributes on headings and values alike.
+	blockedStyle := t.Text.Selected.Foreground(t.Blocked)
+	blocksStyle := t.Text.Selected.Foreground(t.Feature)
 	var blockingDeps []*model.Dependency
 	for _, dep := range issue.Dependencies {
 		if dep != nil && dep.Type.IsBlocking() {
@@ -1623,25 +1627,25 @@ func (b BoardModel) renderExpandedCard(issue model.Issue, width int, _, _ int) s
 		}
 	}
 	if len(blockingDeps) > 0 {
-		depLines = append(depLines, t.Text.Heading.Foreground(t.Blocked).Render("Blocked by:"))
+		depLines = append(depLines, blockedStyle.Render("Blocked by:"))
 		for _, dep := range blockingDeps {
 			blockerText := fmt.Sprintf("  • %s", dep.DependsOnID)
 			if blocker, ok := b.issueMap[dep.DependsOnID]; ok && blocker != nil {
 				blockerText = fmt.Sprintf("  • %s: %s (%s)", dep.DependsOnID, blocker.Title, blocker.Status)
 			}
-			depLines = append(depLines, t.Text.Metadata.Foreground(t.Blocked).Render(blockerText))
+			depLines = append(depLines, blockedStyle.Render(blockerText))
 		}
 	}
 
 	// Show what this blocks
 	if blockedIDs, ok := b.blocksIndex[issue.ID]; ok && len(blockedIDs) > 0 {
-		depLines = append(depLines, t.Text.Heading.Foreground(t.Feature).Render("Blocks:"))
+		depLines = append(depLines, blocksStyle.Render("Blocks:"))
 		for _, blockedID := range blockedIDs {
 			blockedText := fmt.Sprintf("  • %s", blockedID)
 			if blocked, ok := b.issueMap[blockedID]; ok && blocked != nil {
 				blockedText = fmt.Sprintf("  • %s: %s", blockedID, blocked.Title)
 			}
-			depLines = append(depLines, t.Text.Metadata.Foreground(t.Feature).Render(blockedText))
+			depLines = append(depLines, blocksStyle.Render(blockedText))
 		}
 	}
 

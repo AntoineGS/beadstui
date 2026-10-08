@@ -814,27 +814,18 @@ func (e *EpicsTreeModel) renderChildRow(r epicTreeRow, selected bool) string {
 		sb.WriteString(gapStyle.Render(" "))
 	}
 
+	idStyle, titleStyle := t.Text.Metadata, t.Text.Body
 	if isClosedLikeStatus(r.issue.Status) {
-		body := id
-		if title != "" {
-			body += " — " + title
-		}
-		style := t.Text.Body.Faint(true) // Completed-state dimming is semantic.
-		if selected {
-			style = t.Text.Selected
-		}
-		sb.WriteString(style.Render(body))
-	} else {
-		idStyle := t.Text.Metadata
-		titleStyle := t.Text.Body
-		if selected {
-			idStyle, titleStyle = t.Text.Selected, t.Text.Selected
-		}
-		sb.WriteString(idStyle.Render(id))
-		if title != "" {
-			sb.WriteString(gapStyle.Render(" — "))
-			sb.WriteString(titleStyle.Render(title))
-		}
+		// Completed-state dimming preserves each ordinary span's text role.
+		idStyle, titleStyle = idStyle.Faint(true), titleStyle.Faint(true)
+	}
+	if selected {
+		idStyle, titleStyle = t.Text.Selected, t.Text.Selected
+	}
+	sb.WriteString(idStyle.Render(id))
+	if title != "" {
+		sb.WriteString(titleStyle.Render(" — "))
+		sb.WriteString(titleStyle.Render(title))
 	}
 	return sb.String()
 }

@@ -32,6 +32,31 @@ func TestEpicsTextRole(t *testing.T) {
 	}
 }
 
+func TestEpicsClosedChildTextRoles(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Body = lipgloss.NewStyle().Foreground(lipgloss.Color("#123456")).Underline(true)
+	theme.Text.Metadata = lipgloss.NewStyle().Foreground(lipgloss.Color("#654321")).Italic(true)
+	theme.Text.Selected = lipgloss.NewStyle().Foreground(lipgloss.Color("#abcdef")).Background(lipgloss.Color("#234567")).Bold(false).Underline(true)
+	issues := epicsTreeFixture()
+	issues[1].Title = "Completed child"
+	e := EpicsTreeModel{theme: theme}
+	e.Build(issues, EpicsAll, time.Now())
+	e.SetSize(140, 30)
+	e.expand("bt-A")
+	e.cursor, _ = rowByIssue(e.rows(), "bt-A")
+	for _, want := range []string{theme.Text.Metadata.Faint(true).Render("bt-A.1"), theme.Text.Body.Faint(true).Render(" — "), theme.Text.Body.Faint(true).Render("Completed child")} {
+		if out := e.View(); !strings.Contains(out, want) {
+			t.Fatalf("closed unselected child missing role span %q", want)
+		}
+	}
+	e.cursor, _ = rowByIssue(e.rows(), "bt-A.1")
+	for _, want := range []string{theme.Text.Selected.Render("bt-A.1"), theme.Text.Selected.Render("Completed child")} {
+		if out := e.View(); !strings.Contains(out, want) {
+			t.Fatalf("closed selected child missing role span %q", want)
+		}
+	}
+}
+
 // epicsTreeFixture builds a 2-project corpus exercising every Build concern:
 //   - project "bt": epic bt-A (mixed children) containing a NESTED child-epic
 //     bt-B (parent-child child of bt-A), plus a more-complete epic bt-C.
