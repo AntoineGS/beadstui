@@ -9,10 +9,17 @@ import (
 	"io"
 	"strconv"
 	"sync"
+	"time"
 )
 
 // maxLine is the longest JSON-RPC message accepted, in bytes.
 const maxLine = 4 << 20
+
+// writeQueue is how many outgoing messages may wait for the writer goroutine.
+const writeQueue = 256
+
+// notifyTimeout bounds how long Notify and replies wait for queue space.
+const notifyTimeout = 2 * time.Second
 
 // CodePluginError is the JSON-RPC error code for plugin-defined failures.
 const CodePluginError = -32000
@@ -67,8 +74,10 @@ type Conn struct {
 	h         Handler
 	onBadLine func(error)
 
-	wmu sync.Mutex
-	w   io.Writer
+	w         io.Writer
+	out       chan []byte
+	done      chan struct{}
+	startOnce sync.Once
 
 	mu      sync.Mutex
 	nextID  int64
@@ -78,15 +87,38 @@ type Conn struct {
 
 // NewConn returns a connection reading r and writing w. h handles the peer's
 // requests and notifications and may be nil. onBadLine, when set, is called
-// for every line that is not a valid message.
+// for every line that is not a valid message. Writes go through a queue
+// drained by a single goroutine, so a peer that stops reading never blocks
+// callers beyond their own context or timeout.
 func NewConn(r io.Reader, w io.Writer, h Handler, onBadLine func(error)) *Conn {
-	return &Conn{r: r, w: w, h: h, onBadLine: onBadLine, pending: map[string]chan reply{}}
+	return &Conn{
+		r: r, w: w, h: h, onBadLine: onBadLine,
+		out:     make(chan []byte, writeQueue),
+		done:    make(chan struct{}),
+		pending: map[string]chan reply{},
+	}
 }
 
-// Run reads messages until r ends or ctx is done. Afterwards every pending
-// and future call fails with ErrClosed.
+// Run reads messages until r ends or ctx is done. When ctx is done, Run
+// closes r if it implements io.Closer, fails every pending call with
+// ErrClosed and returns ctx.Err() without waiting for a blocked read.
+// However Run ends, every pending and future call fails with ErrClosed.
 func (c *Conn) Run(ctx context.Context) error {
 	defer c.close()
+	res := make(chan error, 1)
+	go func() { res <- c.readLoop(ctx) }()
+	select {
+	case err := <-res:
+		return err
+	case <-ctx.Done():
+		if cl, ok := c.r.(io.Closer); ok {
+			_ = cl.Close()
+		}
+		return ctx.Err()
+	}
+}
+
+func (c *Conn) readLoop(ctx context.Context) error {
 	sc := bufio.NewScanner(c.r)
 	sc.Buffer(make([]byte, 64<<10), maxLine)
 	for sc.Scan() {
@@ -126,9 +158,13 @@ func (c *Conn) dispatch(ctx context.Context, m message) {
 		c.mu.Lock()
 		ch, ok := c.pending[string(m.ID)]
 		delete(c.pending, string(m.ID))
+		issued := c.nextID
 		c.mu.Unlock()
 		if !ok {
-			c.bad(fmt.Errorf("response to unknown id %s", m.ID))
+			// A late answer to a call that already timed out is not a bad line.
+			if n, err := strconv.ParseInt(string(m.ID), 10, 64); err != nil || n < 1 || n > issued {
+				c.bad(fmt.Errorf("response to unknown id %s", m.ID))
+			}
 			return
 		}
 		if m.Error != nil {
@@ -154,7 +190,9 @@ func (c *Conn) dispatch(ctx context.Context, m message) {
 					resp.Result = b
 				}
 			}
-			_ = c.write(resp)
+			rctx, cancel := context.WithTimeout(ctx, notifyTimeout)
+			defer cancel()
+			_ = c.send(rctx, resp)
 		}()
 	case m.Method != "": // notification
 		_, _ = c.handle(ctx, m.Method, m.Params)
@@ -163,32 +201,71 @@ func (c *Conn) dispatch(ctx context.Context, m message) {
 	}
 }
 
-func (c *Conn) handle(ctx context.Context, method string, params json.RawMessage) (any, error) {
+func (c *Conn) handle(ctx context.Context, method string, params json.RawMessage) (result any, err error) {
 	if c.h == nil {
 		return nil, &RPCError{Code: -32601, Message: "method not found: " + method}
 	}
+	defer func() {
+		if r := recover(); r != nil {
+			result, err = nil, &RPCError{Code: -32603, Message: "internal error"}
+		}
+	}()
 	return c.h(ctx, method, params)
 }
 
-func (c *Conn) write(m message) error {
+// send queues m for the writer goroutine, waiting for space until ctx is
+// done or the connection closes.
+func (c *Conn) send(ctx context.Context, m message) error {
 	b, err := json.Marshal(m)
 	if err != nil {
 		return err
 	}
 	b = append(b, '\n')
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	_, err = c.w.Write(b)
-	return err
+	c.startOnce.Do(func() { go c.writeLoop() })
+	select {
+	case <-c.done:
+		return ErrClosed
+	default:
+	}
+	select {
+	case c.out <- b:
+		return nil
+	case <-c.done:
+		return ErrClosed
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
-// Notify sends a notification.
+// writeLoop is the only goroutine that writes to w. A write error closes the
+// connection.
+func (c *Conn) writeLoop() {
+	for {
+		select {
+		case b := <-c.out:
+			if _, err := c.w.Write(b); err != nil {
+				c.close()
+				return
+			}
+		case <-c.done:
+			return
+		}
+	}
+}
+
+// Notify sends a notification. It fails if the outgoing queue stays full for
+// two seconds or the connection is closed.
 func (c *Conn) Notify(method string, params any) error {
 	p, err := json.Marshal(params)
 	if err != nil {
 		return err
 	}
-	return c.write(message{JSONRPC: "2.0", Method: method, Params: p})
+	ctx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
+	defer cancel()
+	if err := c.send(ctx, message{JSONRPC: "2.0", Method: method, Params: p}); err != nil {
+		return fmt.Errorf("%s: %w", method, err)
+	}
+	return nil
 }
 
 // Call sends a request and waits for its response, ctx, or the connection
@@ -209,7 +286,7 @@ func (c *Conn) Call(ctx context.Context, method string, params, result any) erro
 	c.pending[string(id)] = ch
 	c.mu.Unlock()
 
-	if err := c.write(message{JSONRPC: "2.0", ID: id, Method: method, Params: p}); err != nil {
+	if err := c.send(ctx, message{JSONRPC: "2.0", ID: id, Method: method, Params: p}); err != nil {
 		c.forget(id)
 		return fmt.Errorf("%s: %w", method, err)
 	}
@@ -237,7 +314,11 @@ func (c *Conn) forget(id json.RawMessage) {
 func (c *Conn) close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.closed {
+		return
+	}
 	c.closed = true
+	close(c.done)
 	for id, ch := range c.pending {
 		ch <- reply{err: ErrClosed}
 		delete(c.pending, id)

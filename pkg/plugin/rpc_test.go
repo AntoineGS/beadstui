@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -97,7 +98,8 @@ func TestRequestHandlerDoesNotBlockReader(t *testing.T) {
 		return "ok", nil
 	}
 	a, _ := pipePair(t, nil, h)
-	go a.Call(context.Background(), "slow", nil, nil)
+	slowErr := make(chan error, 1)
+	go func() { slowErr <- a.Call(context.Background(), "slow", nil, nil) }()
 	var out string
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -105,6 +107,149 @@ func TestRequestHandlerDoesNotBlockReader(t *testing.T) {
 		t.Fatalf("fast call blocked behind slow one: %v", err)
 	}
 	close(release)
+	select {
+	case err := <-slowErr:
+		if err != nil {
+			t.Fatalf("slow call = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("slow call did not finish after release")
+	}
+}
+
+func TestCallFailsWhenPeerCloses(t *testing.T) {
+	r, w := io.Pipe()
+	c := NewConn(r, io.Discard, nil, nil)
+	go c.Run(context.Background())
+	errCh := make(chan error, 1)
+	go func() { errCh <- c.Call(context.Background(), "x", nil, nil) }()
+	time.Sleep(50 * time.Millisecond)
+	w.Close()
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, ErrClosed) {
+			t.Fatalf("err = %v, want ErrClosed", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("in-flight Call did not return after peer closed")
+	}
+}
+
+func TestLateResponseIsNotBadLine(t *testing.T) {
+	r, w := io.Pipe()
+	bad := make(chan error, 8)
+	c := NewConn(r, io.Discard, nil, func(err error) { bad <- err })
+	go c.Run(context.Background())
+	t.Cleanup(func() { w.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := c.Call(ctx, "x", nil, nil); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("want deadline, got %v", err)
+	}
+	// Late answer to id 1, then ids never issued; lines are handled in order,
+	// so the first bad line reported must come from id 999.
+	_, _ = w.Write([]byte("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":1}\n{\"jsonrpc\":\"2.0\",\"id\":999,\"result\":1}\n{\"jsonrpc\":\"2.0\",\"id\":null,\"result\":1}\n"))
+	for i, want := range []string{"id 999", "id null"} {
+		select {
+		case err := <-bad:
+			if !strings.Contains(err.Error(), want[3:]) {
+				t.Fatalf("bad line %d = %v, want it to mention %q", i, err, want[3:])
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("bad line %d (%s) not reported", i, want)
+		}
+	}
+	select {
+	case err := <-bad:
+		t.Fatalf("unexpected extra bad line: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// blockingReader blocks in Read until released and is not an io.Closer.
+type blockingReader struct{ release chan struct{} }
+
+func (b blockingReader) Read([]byte) (int, error) {
+	<-b.release
+	return 0, io.EOF
+}
+
+func TestRunCancelFailsPendingCall(t *testing.T) {
+	br := blockingReader{release: make(chan struct{})}
+	t.Cleanup(func() { close(br.release) })
+	c := NewConn(br, io.Discard, nil, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	runErr := make(chan error, 1)
+	go func() { runErr <- c.Run(ctx) }()
+	callErr := make(chan error, 1)
+	go func() { callErr <- c.Call(context.Background(), "x", nil, nil) }()
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-callErr:
+		if !errors.Is(err, ErrClosed) {
+			t.Fatalf("Call = %v, want ErrClosed", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("pending Call not failed after Run ctx cancelled")
+	}
+	select {
+	case err := <-runErr:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run did not return after ctx cancelled")
+	}
+}
+
+func TestStuckPeerDoesNotHangCallers(t *testing.T) {
+	r, _ := io.Pipe()
+	pr, pw := io.Pipe() // nobody reads pr: every write blocks
+	t.Cleanup(func() { pr.Close() })
+	c := NewConn(r, pw, nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if err := c.Call(ctx, "x", nil, nil); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Call = %v, want deadline", err)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("Call took %v", d)
+	}
+
+	start = time.Now()
+	var err error
+	for i := 0; i < writeQueue+10 && err == nil; i++ {
+		err = c.Notify("n", i)
+	}
+	if err == nil {
+		t.Fatal("Notify never failed against a stuck peer")
+	}
+	if d := time.Since(start); d > 2500*time.Millisecond {
+		t.Fatalf("Notify took %v", d)
+	}
+}
+
+func TestUnknownMethodRequestGetsMethodNotFound(t *testing.T) {
+	a, _ := pipePair(t, nil, nil)
+	err := a.Call(context.Background(), "nope", nil, nil)
+	var rpcErr *RPCError
+	if !errors.As(err, &rpcErr) || rpcErr.Code != -32601 {
+		t.Fatalf("err = %v, want code -32601", err)
+	}
+}
+
+func TestHandlerPanicIsRecovered(t *testing.T) {
+	h := func(context.Context, string, json.RawMessage) (any, error) { panic("boom") }
+	a, _ := pipePair(t, nil, h)
+	err := a.Call(context.Background(), "x", nil, nil)
+	var rpcErr *RPCError
+	if !errors.As(err, &rpcErr) || rpcErr.Code != -32603 || rpcErr.Message != "internal error" {
+		t.Fatalf("err = %v, want -32603 internal error", err)
+	}
 }
 
 func TestCallTimeoutAndClose(t *testing.T) {
