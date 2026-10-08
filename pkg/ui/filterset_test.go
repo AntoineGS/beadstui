@@ -1,6 +1,12 @@
 package ui
 
 import (
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -408,5 +414,136 @@ func TestAlertsBeforeFirstApplyAreNotHidden(t *testing.T) {
 	a := drift.Alert{Type: drift.AlertStale, Severity: drift.SeverityWarning, IssueID: "proja-2"}
 	if !m.passesAlertBaseScope(a) {
 		t.Fatal("alert hidden before the visible set exists")
+	}
+}
+
+// rawCorpusReaders are the functions allowed to read m.data.issues directly.
+// Everything else must read the visible set (bt-imh). Each entry is a
+// deliberate full-data reader from the design's exception list.
+var rawCorpusReaders = map[string]string{
+	"epic_card.go:handleEpicCardKeys":            "epic progress",
+	"epic_card.go:renderEpicCard":                "epic progress",
+	"model_alerts.go:notificationRepoScope":      "repo scope of loaded data",
+	"model_alerts_header.go:alertsHeaderLines":   "corpus size line",
+	"model_alerts_header.go:sourceIssueCounts":   "per-source corpus counts",
+	"model_filter.go:applyFilter":                "epic progress index",
+	"model_filter.go:applySpec":                  "the engine's input",
+	"model_filter.go:updateViewportContent":      "epic progress in details",
+	"model.go:Init":                              "history preload needs any data",
+	"model.go:replaceIssues":                     "data load",
+	"model_modes.go:enterTimeTravelMode":         "time travel",
+	"model_modes.go:Issues":                      "full-corpus accessor",
+	"model_update_analysis.go:handlePhase2Ready": "computeAlerts and recipe re-sort",
+	"model_update_data.go:handleFileChanged":     "data load",
+	"model_update_data.go:handleSnapshotReady":   "data load",
+	"plugin_host.go:syncPluginsWithHash":         "plugin sync",
+	"semantic_search.go:issuesForAsync":          "semantic index",
+}
+
+func TestNoRawCorpusReads(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f, err := parser.ParseFile(fset, name, src, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		for _, decl := range f.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			key := name + ":" + fn.Name.Name
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				sel, ok := n.(*ast.SelectorExpr)
+				if !ok || sel.Sel.Name != "issues" {
+					return true
+				}
+				inner, ok := sel.X.(*ast.SelectorExpr)
+				if !ok || inner.Sel.Name != "data" {
+					return true
+				}
+				if _, allowed := rawCorpusReaders[key]; !allowed {
+					t.Errorf("%s reads m.data.issues at %s; read m.filter.visible / m.visibleIssues() or m.applySpec(...) instead (bt-imh)",
+						key, fset.Position(sel.Pos()))
+				}
+				return true
+			})
+		}
+	}
+}
+
+func TestFilterConsistencyMatrix(t *testing.T) {
+	p01 := &recipe.Recipe{Name: "p01", Filters: recipe.FilterConfig{Priority: []int{0, 1}}}
+	openQ := mustBQL(t, "status = open")
+	for _, scope := range []map[string]bool{nil, {"proja": true}} {
+		for _, primary := range []string{"all", "open", "closed", "ready", "recipe", "bql"} {
+			for _, labels := range []string{"", "tests", "docs,ops"} {
+				for _, wisps := range []bool{false, true} {
+					name := fmt.Sprintf("scope=%v/%s/labels=%q/wisps=%t", scope, primary, labels, wisps)
+					t.Run(name, func(t *testing.T) {
+						m := newSizedModel(t, filterMatrixFixture(), 140, 40)
+						m.EnableWorkspaceMode(WorkspaceInfo{Enabled: true, RepoCount: 2, RepoPrefixes: []string{"proja", "projb"}})
+						m.SetActiveRepos(scope)
+						m.filter.labelFilter = labels
+						m.showWisps = wisps
+						switch primary {
+						case "recipe":
+							m.applyRecipe(p01)
+						case "bql":
+							m.setActiveRecipe(nil)
+							m.applyBQL(openQ, "status = open")
+						default:
+							m.setActiveRecipe(nil)
+							m.filter.activeBQLExpr = nil
+							m.SetFilter(primary)
+						}
+						vis := idsOf(m.filter.visible)
+						if got := idsOf(m.FilteredIssues()); fmt.Sprint(got) != fmt.Sprint(vis) {
+							t.Fatalf("list %v != visible %v", got, vis)
+						}
+						if got := m.board.TotalCount(); got != len(vis) {
+							t.Fatalf("board total %d != visible %d", got, len(vis))
+						}
+						m.mode = ViewTree
+						m.rebuildTreeForCurrentFilter()
+						if got := m.tree.NodeCount(); got != len(vis) {
+							t.Fatalf("tree nodes %d != visible %d", got, len(vis))
+						}
+						m.mode = ViewList
+						// Facet: picker counts = labels over Without(DimLabels).
+						facet := m.applySpec(m.filterSpec().Without(DimLabels))
+						want := map[string]int{}
+						for _, iss := range facet {
+							for _, l := range iss.Labels {
+								want[l]++
+							}
+						}
+						updated, _ := m.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})
+						m = updated.(Model)
+						for l, n := range want {
+							if got := m.labelPicker.labelCounts[l]; got != n {
+								t.Fatalf("picker %s = %d, want %d", l, got, n)
+							}
+						}
+						for _, id := range idsOf(m.filterIssuesByLabel("tests")) {
+							if _, ok := m.filter.visibleIDs[id]; !ok {
+								t.Fatalf("label drilldown includes hidden %s", id)
+							}
+						}
+					})
+				}
+			}
+		}
 	}
 }
