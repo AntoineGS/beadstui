@@ -711,6 +711,7 @@ type FilterState struct {
 	recipeLoader  *recipe.Loader
 	bqlEngine     *bql.MemoryExecutor
 	activeBQLExpr *bql.Query // Parsed BQL expression (nil = no BQL filter active)
+	appliedKey    string     // filterKey of the list's current contents (bt-qc3)
 }
 
 // AnalysisCache holds derived data computed from graph analysis. Not filter state -
@@ -1633,6 +1634,7 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 	if startFilter != "all" {
 		m.applyFilter()
 	}
+	m.filter.appliedKey = m.filterKey()
 	return m
 }
 
@@ -1989,8 +1991,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.list.FilterState() != list.Filtering {
 					m.filterEntryCursor = m.list.Index()
 				}
+				prevSearch := m.list.FilterValue()
 				m.list, cmd = m.list.Update(msg)
 				cmds = append(cmds, cmd)
+				// A changed search starts at the first match (bt-qc3).
+				if m.list.FilterValue() != prevSearch {
+					m.list.Select(0)
+				}
 			}
 			// Restore cursor if filter-begin just ran. After filter-begin with
 			// an empty buffer, VisibleItems contains all items, so any valid

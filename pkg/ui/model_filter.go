@@ -75,6 +75,38 @@ func (m *Model) setListItems(items []list.Item) {
 		m.list.SetFilterText(prevValue)
 		m.list.SetFilterState(prevState)
 	}
+
+	// A new filter starts at the first row; a refresh under the same filter
+	// keeps the selection (bt-qc3).
+	if key := m.filterKey(); key != m.filter.appliedKey {
+		m.filter.appliedKey = key
+		m.list.Select(0)
+	}
+}
+
+// filterKey identifies what the list is filtered by: status/BQL/recipe,
+// label and project scope. The / search is tracked separately.
+func (m *Model) filterKey() string {
+	status, recipeName := m.filter.currentFilter, ""
+	if m.filter.activeRecipe != nil {
+		recipeName = m.filter.activeRecipe.Name
+		// cmd/bt starts a recipe as "all" and the first snapshot renames it.
+		if status == "recipe:"+recipeName {
+			status = "all"
+		}
+	}
+	scope := "*" // all projects
+	if m.workspaceMode && m.activeRepos != nil {
+		var repos []string
+		for repo, on := range m.activeRepos {
+			if on {
+				repos = append(repos, repo)
+			}
+		}
+		sort.Strings(repos)
+		scope = strings.Join(repos, ",")
+	}
+	return strings.Join([]string{status, m.filter.labelFilter, recipeName, scope}, "\x00")
 }
 
 // lensTriad (footer_triad.go) is the bt-p8y2f successor to the former
