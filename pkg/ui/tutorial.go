@@ -478,12 +478,6 @@ func (m TutorialModel) renderTOC(pages []TutorialPage) string {
 	itemStyle := m.theme.Text.Body
 	selectedStyle := m.theme.Text.Selected
 
-	// TOC cursor style (when TOC has focus and cursor is on this item)
-	cursorStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.InProgress).
-		Background(m.theme.Highlight)
-
 	viewedStyle := lipgloss.NewStyle().
 		Foreground(m.theme.Open)
 
@@ -511,7 +505,7 @@ func (m TutorialModel) renderTOC(pages []TutorialPage) string {
 		// TOC has focus and cursor is on this item
 		if m.focus == focusTutorialTOC && i == m.tocCursor {
 			prefix = " → "
-			style = cursorStyle
+			style = selectedStyle
 		} else if i == m.currentPage {
 			// Current page indicator (but not cursor)
 			prefix = " ▶ "
@@ -579,7 +573,7 @@ func (m TutorialModel) renderEmptyState() string {
 		Padding(2, 4).
 		Width(m.width)
 
-	return style.Render("No tutorial pages available for this context.")
+	return style.Render(m.theme.Text.Body.Render("No tutorial pages available for this context."))
 }
 
 // NextPage advances to the next page.

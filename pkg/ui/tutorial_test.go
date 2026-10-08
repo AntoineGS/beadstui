@@ -7,7 +7,64 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 )
+
+func TestTutorialFocusedTOCAndEmptyTextRoleCells(t *testing.T) {
+	assertSpan := func(t *testing.T, out, text string, style lipgloss.Style) {
+		t.Helper()
+		for _, row := range strings.Split(out, "\n") {
+			plain := ansi.Strip(row)
+			idx := strings.Index(plain, text)
+			if idx < 0 {
+				continue
+			}
+			start := ansi.StringWidth(plain[:idx])
+			cells := uv.NewStyledString(row).Lines(ansi.GraphemeWidth)[0]
+			want := uv.NewStyledString(style.Render(text)).Lines(ansi.GraphemeWidth)[0]
+			for i, expected := range want {
+				if !cells[start+i].Style.Equal(&expected.Style) {
+					t.Errorf("span %q cell %d: style=%+v want=%+v", text, i, cells[start+i].Style, expected.Style)
+				}
+			}
+			return
+		}
+		t.Fatalf("missing span %q in %q", text, ansi.Strip(out))
+	}
+	for _, underline := range []bool{true, false} {
+		t.Run(fmt.Sprintf("underline=%t", underline), func(t *testing.T) {
+			theme := DefaultTheme()
+			theme.Text.Selected = lipgloss.NewStyle().Foreground(theme.TextColor).Background(theme.Secondary).Bold(false).Italic(false).Underline(underline)
+			theme.Text.Body = lipgloss.NewStyle().Foreground(theme.TextColor).Background(theme.Primary).Bold(false).Italic(underline).Underline(underline)
+			m := NewTutorialModel(theme)
+			m.width, m.height = 80, 30
+			m.focus, m.tocCursor, m.currentPage = focusTutorialTOC, 1, 0
+			pages := []TutorialPage{{ID: "first", Title: "First page", Section: "Section"}, {ID: "focused", Title: "Focused page", Section: "Section"}}
+			m.progress["focused"] = true
+			baseline := m
+			baseline.theme = DefaultTheme()
+			t.Run("focused", func(t *testing.T) {
+				out := m.renderTOC(pages)
+				assertSpan(t, out, " → Focused page", theme.Text.Selected)
+				assertSpan(t, out, activeGlyphs.Success, lipgloss.NewStyle().Foreground(theme.Open))
+				if lipgloss.Width(out) != lipgloss.Width(baseline.renderTOC(pages)) || lipgloss.Height(out) != lipgloss.Height(baseline.renderTOC(pages)) {
+					t.Fatal("TOC role styling changed geometry")
+				}
+				if m.focus != focusTutorialTOC || m.tocCursor != 1 || m.currentPage != 0 {
+					t.Fatal("TOC rendering changed navigation state")
+				}
+			})
+			t.Run("empty", func(t *testing.T) {
+				out := m.renderEmptyState()
+				assertSpan(t, out, "No tutorial pages available for this context.", theme.Text.Body)
+				if lipgloss.Width(out) != lipgloss.Width(baseline.renderEmptyState()) || lipgloss.Height(out) != lipgloss.Height(baseline.renderEmptyState()) {
+					t.Fatal("empty-state role styling changed geometry")
+				}
+			})
+		})
+	}
+}
 
 func TestTutorialElementsRespectTextRoles(t *testing.T) {
 	theme := DefaultTheme()
