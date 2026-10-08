@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"image/color"
 	"strings"
 
@@ -120,10 +121,11 @@ func MeasurePopup(body []string, opts PopupOpts) PopupLayout {
 		l.Height = naturalHeight
 	}
 	l.Height = min(l.Height, available.Height)
-	if l.Height < naturalHeight {
+	minimumBody := max(1, opts.MinBodyRows)
+	if l.Height < minimumBody+2+2*l.PadY+separator+len(l.Footer) {
 		l.PadY = 0
 	}
-	if l.Height < bodyRows+2+separator+len(l.Footer) {
+	if l.Height < minimumBody+2+separator+len(l.Footer) {
 		separator = 0
 	}
 	l.BodyHeight = l.Height - 2 - 2*l.PadY - separator - len(l.Footer)
@@ -325,6 +327,60 @@ func popupMenuWindowRange(entries []PopupMenuEntry, cursor, rows int) (start, en
 		end++
 	}
 	return start, end
+}
+
+// measureSearchPopup shares geometry for searchable multi-select pickers.
+// slots is a caller policy: fixed for labels, content-sized for projects.
+func measureSearchPopup(entries []PopupMenuEntry, slots int, opts PopupOpts) PopupLayout {
+	menu := MeasurePopupMenu(entries, PopupMenuOpts{Markers: true})
+	available := popupAvailableSize(opts.Available)
+	opts.Width = min(max(36, menu.Width+6), available.Width*8/10)
+	if available.Width > 0 {
+		opts.Width = max(1, opts.Width)
+	}
+	opts.MinBodyRows = 5
+	shape := make([]string, max(1, slots)+4)
+	shape[0] = strings.Repeat(" ", max(30, menu.Width))
+	natural := MeasurePopup(shape, opts)
+	opts.Height = min(natural.Height, max(1, available.Height*3/4))
+	l := MeasurePopup(shape, opts)
+	if l.Compact && !natural.Compact {
+		return natural
+	}
+	return l
+}
+
+func renderSearchPopup(entries []PopupMenuEntry, cursor, slots, selected int, input, empty, noun string, opts PopupOpts, l PopupLayout) string {
+	if l.Compact || l.Height == 0 {
+		opts.Width, opts.Height, opts.MinBodyRows = l.Width, l.Height, 5
+		return RenderPopup(nil, opts)
+	}
+	visible := min(slots, max(1, l.BodyHeight-4))
+	start := (cursor / visible) * visible
+	start = min(start, len(entries))
+	end := min(start+visible, len(entries))
+	menu := MeasurePopupMenu(entries, PopupMenuOpts{Markers: true})
+	lines := []string{input, ""}
+	if len(entries) == 0 {
+		lines = append(lines, lipgloss.NewStyle().Foreground(opts.Theme.Secondary).Italic(true).Render(empty))
+	} else {
+		lines = append(lines, RenderPopupMenu(entries[start:end], menu, opts.Theme, l.BodyWidth)...)
+	}
+	for len(lines) < visible+2 {
+		lines = append(lines, "")
+	}
+	count := ""
+	if len(entries) > visible {
+		count = fmt.Sprintf("%d/%d (%d %s)", cursor/visible+1, (len(entries)+visible-1)/visible, len(entries), noun)
+	} else if len(entries) > 0 {
+		count = fmt.Sprintf("%d %s", len(entries), noun)
+	}
+	if selected > 0 {
+		count += fmt.Sprintf(" • %d selected", selected)
+	}
+	lines = append(lines, "", lipgloss.NewStyle().Foreground(opts.Theme.Secondary).Italic(true).Render(count))
+	opts.Width, opts.Height, opts.MinBodyRows = l.Width, l.Height, l.BodyHeight
+	return RenderPopup(lines, opts)
 }
 
 // BorderVariant controls the weight of box-drawing characters.

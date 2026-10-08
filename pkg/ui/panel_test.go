@@ -117,6 +117,14 @@ func TestPopupFrame_MinimumUsefulBody(t *testing.T) {
 	assertPopupBounds(t, RenderPopup([]string{"search", "", "item", "", "page"}, opts), 40, 7)
 }
 
+func TestPopupFrame_WindowKeepsBreathingRoomWhenUsefulBodyFits(t *testing.T) {
+	opts := PopupOpts{Theme: DefaultTheme(), Available: &PopupSize{40, 20}, Height: 15, MinBodyRows: 5, Footer: []string{"enter esc"}}
+	l := MeasurePopup(make([]string, 30), opts)
+	if l.PadY != 1 || l.BodyY != 2 || l.BodyHeight != 9 {
+		t.Fatalf("window lost breathing room despite useful body fitting: %+v", l)
+	}
+}
+
 func TestPopupFrame_AccentOverride(t *testing.T) {
 	theme := DefaultTheme()
 	opts := PopupOpts{Theme: theme, Title: "Accent", Width: 30}

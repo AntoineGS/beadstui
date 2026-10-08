@@ -1,6 +1,47 @@
 package ui
 
-import "testing"
+import (
+	"github.com/charmbracelet/x/ansi"
+	"strings"
+	"testing"
+)
+
+func TestLabelPopup_RenderedRowMatchesHitTest(t *testing.T) {
+	m := NewLabelPickerModel([]string{"alpha", "界面", "last"}, map[string]int{"alpha": 12, "界面": 4, "last": 1}, DefaultTheme())
+	m.SetSize(48, 16)
+	m.SetCursor(2)
+	out := m.View()
+	assertPopupBounds(t, out, 48, 16)
+	w, h := m.Dimensions()
+	if w != ansi.StringWidth(strings.Split(out, "\n")[0]) || h != len(strings.Split(out, "\n")) {
+		t.Fatal("dimensions disagree with render")
+	}
+	y, row := popupFindRow(t, out, "last")
+	if i, ok := m.ItemAtPanelY(y); !ok || i != 2 {
+		t.Fatalf("rendered y=%d maps to %d,%v", y, i, ok)
+	}
+	if !strings.Contains(row, ">") || !strings.Contains(row, "(1)") {
+		t.Fatal("shared selection/count cue missing")
+	}
+	y, _ = popupFindRow(t, out, "enter")
+	if _, ok := m.ItemAtPanelY(y); ok {
+		t.Fatal("footer is clickable")
+	}
+	m.input.SetValue("not-found")
+	m.filterLabels()
+	if _, newH := m.Dimensions(); newH != h {
+		t.Fatal("search changed fixed label window height")
+	}
+	m.SetSize(6, 3)
+	assertPopupBounds(t, m.View(), 6, 3)
+	if _, ok := m.ItemAtPanelY(1); ok || m.IsSearchRow(1) {
+		t.Fatal("compact popup has clickable rows")
+	}
+	m.SetSize(0, 0)
+	if m.View() != "" {
+		t.Fatal("zero budget rendered picker")
+	}
+}
 
 func TestFuzzyScoreExactMatch(t *testing.T) {
 	score := fuzzyScore("api", "api")
@@ -248,10 +289,10 @@ func TestLabelPickerVisibleCountScalesWithHeight(t *testing.T) {
 	}{
 		{8, 1, "extremely tiny: 75% can't fit any rows, fallback to bg-chrome"},
 		{12, 1, "tiny: 75%*12=9, minus 8 chrome = 1"},
-		{20, 7, "small: 75%*20=15, minus 8 chrome = 7"},
-		{30, 14, "medium: 75%*30=22 total, 14 visible (breathing room above and below)"},
-		{40, 22, "tall: 75%*40=30 total, 22 visible"},
-		{51, 30, "very tall: 75% allows 30+, clamp at labelPickerMaxVisible"},
+		{20, 5, "small: 15 total minus 10 shared chrome"},
+		{30, 12, "medium: 22 total minus 10 shared chrome"},
+		{40, 20, "tall: 30 total minus 10 shared chrome"},
+		{51, 28, "very tall: 38 total minus 10 shared chrome"},
 		{60, 30, "huge: still clamped to 30"},
 		{120, 30, "enormous: still clamped to 30"},
 	}
@@ -297,7 +338,7 @@ func TestLabelPickerBoxWidthCappedAtTerminalPercentage(t *testing.T) {
 	}
 	for _, tc := range cases {
 		p.SetSize(tc.w, 40)
-		got := p.computeBoxWidth()
+		got, _ := p.Dimensions()
 		max := int(float64(tc.w) * 0.80)
 		if got > max {
 			t.Errorf("width=%d: box=%d exceeds 80%% cap (%d)", tc.w, got, max)
@@ -318,14 +359,14 @@ func TestLabelPickerItemAtPanelY(t *testing.T) {
 	p := NewLabelPickerModel(labels, counts, Theme{})
 	p.SetSize(60, 30) // visibleCount = 14 with the bt-vr2h cap, room for all 5 labels
 
-	// First label appears at row 3 (top border, input, blank, then labels).
-	idx, ok := p.ItemAtPanelY(3)
+	// First label appears at row 4 after shared breathing, input and blank.
+	idx, ok := p.ItemAtPanelY(4)
 	if !ok || idx != 0 {
-		t.Errorf("row 3: got (%d, %v), want (0, true)", idx, ok)
+		t.Errorf("row 4: got (%d, %v), want (0, true)", idx, ok)
 	}
-	idx, ok = p.ItemAtPanelY(4)
+	idx, ok = p.ItemAtPanelY(5)
 	if !ok || idx != 1 {
-		t.Errorf("row 4: got (%d, %v), want (1, true)", idx, ok)
+		t.Errorf("row 5: got (%d, %v), want (1, true)", idx, ok)
 	}
 
 	// Top border is chrome.
@@ -348,7 +389,7 @@ func TestLabelPickerItemAtPanelY(t *testing.T) {
 	// Past the end of the filtered list: not ok.
 	p2 := NewLabelPickerModel([]string{"only"}, map[string]int{"only": 1}, Theme{})
 	p2.SetSize(60, 30)
-	if _, ok := p2.ItemAtPanelY(4); ok {
+	if _, ok := p2.ItemAtPanelY(5); ok {
 		t.Error("row past last filtered item should not map")
 	}
 }
@@ -356,8 +397,8 @@ func TestLabelPickerItemAtPanelY(t *testing.T) {
 // TestLabelPickerIsSearchRow guards the click-to-focus-search routing.
 func TestLabelPickerIsSearchRow(t *testing.T) {
 	p := NewLabelPickerModel([]string{"api"}, map[string]int{"api": 1}, Theme{})
-	if !p.IsSearchRow(1) {
-		t.Error("row 1 should be the search input row")
+	if !p.IsSearchRow(2) {
+		t.Error("row 2 should be the search input row")
 	}
 	if p.IsSearchRow(0) {
 		t.Error("row 0 (top border) should not be the search row")

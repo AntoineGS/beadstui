@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
@@ -25,6 +24,7 @@ type RepoPickerModel struct {
 	width         int
 	height        int
 	theme         Theme
+	popupSize     *PopupSize
 }
 
 // NewRepoPickerModel creates a new repo picker. By default, all repos are selected.
@@ -55,6 +55,7 @@ func NewRepoPickerModel(repos []string, theme Theme) RepoPickerModel {
 
 // SetSize updates the picker dimensions.
 func (m *RepoPickerModel) SetSize(width, height int) {
+	m.popupSize = &PopupSize{width, height}
 	m.width = width
 	m.height = height
 }
@@ -330,25 +331,10 @@ func (m *RepoPickerModel) SetCursor(idx int) {
 	m.selectedIndex = idx
 }
 
-// repoPickerVerticalChrome is the row count outside the repo list itself:
-// 1 (top border) + 1 (search input) + 1 (blank) + 1 (blank) + 1 (page
-// indicator) + 1 (blank) + 1 (footer) + 1 (bottom border) = 8. Must stay
-// aligned with View(). Mirrors labelPickerVerticalChrome.
-const repoPickerVerticalChrome = 8
-
 // repoPickerMaxVisible caps the number of repo rows shown at once. With many
 // projects in workspace mode the modal would otherwise grow without bound and
 // overflow the terminal on smaller windows.
 const repoPickerMaxVisible = 30
-
-// repoRowOffsetInBox is the row offset (relative to the panel top border) at
-// which the first repo row appears. Layout: row 0 top border, row 1 search
-// input, row 2 blank, row 3+ repos.
-const repoRowOffsetInBox = 3
-
-// repoSearchRowOffsetInBox is the row offset (relative to panel top border) of the
-// search input row. A click here focuses the search input.
-const repoSearchRowOffsetInBox = 1
 
 // visibleCount returns how many repo rows fit in the modal at the current
 // terminal size. Mirrors the label picker pattern (bt-vr2h): aim for ~75%
@@ -357,84 +343,35 @@ const repoSearchRowOffsetInBox = 1
 // compact for a short project list (paging engages only on genuine overflow,
 // which is precisely the bt-6ltx9 scenario).
 func (m *RepoPickerModel) visibleCount() int {
-	bg := m.height
-	if bg < 1 {
-		bg = 20 // fallback before SetSize is called
-	}
-
-	softTotal := int(float64(bg) * 0.75)
-	if softTotal > bg {
-		softTotal = bg
-	}
-	visible := softTotal - repoPickerVerticalChrome
-	if visible < 1 {
-		visible = bg - repoPickerVerticalChrome
-	}
-
-	if visible > repoPickerMaxVisible {
-		visible = repoPickerMaxVisible
-	}
-	// Never taller than the list itself (min 1) so the modal stays compact for
-	// a short project list; paging engages only on genuine overflow.
-	n := len(m.filtered)
-	if n < 1 {
-		n = 1
-	}
-	if visible > n {
-		visible = n
-	}
-	if visible < 1 {
-		visible = 1
-	}
-	return visible
+	return min(repoPickerMaxVisible, min(max(1, len(m.filtered)), max(1, m.popupLayout().BodyHeight-4)))
 }
 
-// computeBoxWidth derives the modal's outer box width (including borders).
-// Pure layout math so Dimensions() and View() share the same width budget.
-func (m *RepoPickerModel) computeBoxWidth() int {
-	maxNameLen := 0
-	for _, repo := range m.repos {
-		if l := len(model.DisplayRepoName(repo)); l > maxNameLen {
-			maxNameLen = l
+// popupEntries uses display aliases without changing raw selection keys.
+func (m *RepoPickerModel) popupEntries() []PopupMenuEntry {
+	entries := make([]PopupMenuEntry, len(m.filtered))
+	for i, repo := range m.filtered {
+		marker := "•"
+		if m.selected[repo] {
+			marker = activeGlyphs.Success
 		}
+		entries[i] = PopupMenuEntry{Label: model.DisplayRepoName(repo), Marker: marker, Selected: i == m.selectedIndex}
 	}
+	return entries
+}
 
-	// Repo line: hpad + cursor(2) + indicator(2) + space(1) + name + hpad
-	repoLineWidth := pickerHPad + 2 + 2 + 1 + maxNameLen + pickerHPad
-	footerLineWidth := pickerHPad + len(pickerFooter) + pickerHPad
-	// Input line: hpad + "> "(2) + input width(30) + hpad
-	inputLineWidth := pickerHPad + 2 + 30 + pickerHPad
+func (m *RepoPickerModel) popupOpts() PopupOpts {
+	return PopupOpts{Title: "Project Filter", Theme: m.theme, Available: m.popupSize, Footer: []string{pickerFooter, "space toggle / search ←/→ page enter apply esc back", "space / ←/→ enter esc"}}
+}
 
-	innerWidth := repoLineWidth
-	if footerLineWidth > innerWidth {
-		innerWidth = footerLineWidth
-	}
-	if inputLineWidth > innerWidth {
-		innerWidth = inputLineWidth
-	}
-
-	boxWidth := innerWidth + 2 // border chars
-
-	// Cap at 80% of terminal width so wide repo names don't stretch the
-	// modal across the whole row on narrow terminals (bt-vr2h).
-	if widthCap := int(float64(m.width) * 0.80); boxWidth > widthCap {
-		boxWidth = widthCap
-	}
-	if boxWidth > m.width-4 {
-		boxWidth = m.width - 4
-	}
-	if boxWidth < 30 {
-		boxWidth = 30
-	}
-	return boxWidth
+func (m *RepoPickerModel) popupLayout() PopupLayout {
+	return measureSearchPopup(m.popupEntries(), min(repoPickerMaxVisible, max(1, len(m.filtered))), m.popupOpts())
 }
 
 // Dimensions returns the modal's outer box (width, height) in cells, used by
 // the mouse click handler to compute the centered panel start row/col.
 func (m *RepoPickerModel) Dimensions() (int, int) {
-	w := m.computeBoxWidth()
-	h := m.visibleCount() + repoPickerVerticalChrome
-	return w, h
+	l := m.popupLayout()
+	return l.Width, l.Height
 }
 
 // ItemAtPanelY maps a Y coordinate relative to the picker's top border to
@@ -442,11 +379,12 @@ func (m *RepoPickerModel) Dimensions() (int, int) {
 // input, blanks, page indicator, footer). Accounts for page-aligned
 // scrolling when len(m.filtered) exceeds visibleCount() (bt-vr2h).
 func (m *RepoPickerModel) ItemAtPanelY(my int) (int, bool) {
-	if len(m.filtered) == 0 {
+	l := m.popupLayout()
+	if len(m.filtered) == 0 || l.Compact || l.Height == 0 {
 		return -1, false
 	}
 	maxVisible := m.visibleCount()
-	relRow := my - repoRowOffsetInBox
+	relRow := my - l.BodyY - 2
 	if relRow < 0 || relRow >= maxVisible {
 		return -1, false
 	}
@@ -461,140 +399,23 @@ func (m *RepoPickerModel) ItemAtPanelY(my int) (int, bool) {
 // IsSearchRow reports whether the given panel-relative Y is the search input
 // row. Used by mouse routing to focus the search input on click.
 func (m *RepoPickerModel) IsSearchRow(my int) bool {
-	return my == repoSearchRowOffsetInBox
+	l := m.popupLayout()
+	return !l.Compact && l.Height > 0 && my == l.BodyY
 }
-
-const pickerHPad = 3 // horizontal padding inside box
 
 // footer hint text (no padding - added during render). Mirrors the label
 // picker footer convention: select-all ("a") lives in the ; sidebar / ?
 // overlay rather than the footer, keeping the line short enough to render
 // without truncation on typical terminals.
-const pickerFooter = "toggle: space search: / page: ←/→ • apply: enter"
+const pickerFooter = "toggle: space search: / page: ←/→ • apply: enter esc: back"
 
 // View renders the repo picker overlay.
 func (m *RepoPickerModel) View() string {
-	if m.width == 0 {
-		m.width = 60
+	l := m.popupLayout()
+	m.input.SetWidth(max(1, l.BodyWidth-lipgloss.Width(m.input.Prompt)))
+	empty := "No projects available."
+	if strings.TrimSpace(m.input.Value()) != "" {
+		empty = "No matching projects"
 	}
-	if m.height == 0 {
-		m.height = 20
-	}
-
-	t := m.theme
-
-	// Find the longest displayed repo name (still needed locally for centering).
-	maxNameLen := 0
-	for _, repo := range m.repos {
-		if l := len(model.DisplayRepoName(repo)); l > maxNameLen {
-			maxNameLen = l
-		}
-	}
-
-	boxWidth := m.computeBoxWidth()
-	innerWidth := boxWidth - 2
-
-	pad := strings.Repeat(" ", pickerHPad)
-	maxVisible := m.visibleCount()
-
-	var lines []string
-
-	// Search input row.
-	inputStyle := lipgloss.NewStyle().Foreground(t.Primary)
-	lines = append(lines, pad+inputStyle.Render("> ")+m.input.View())
-	lines = append(lines, "")
-
-	if len(m.filtered) == 0 {
-		emptyStyle := lipgloss.NewStyle().Foreground(t.Secondary).Italic(true)
-		msg := "No projects available."
-		if strings.TrimSpace(m.input.Value()) != "" {
-			msg = "No matching projects"
-		}
-		lines = append(lines, emptyStyle.Render(pad+msg))
-		for i := 1; i < maxVisible; i++ {
-			lines = append(lines, "")
-		}
-	} else {
-		// Each line: cursor(2) + indicator(2) + space(1) + name
-		lineContentWidth := 2 + 2 + 1 + maxNameLen
-		// Center the block within the inner area (minus horizontal padding)
-		availableWidth := innerWidth - pickerHPad*2
-		leftExtra := (availableWidth - lineContentWidth) / 2
-		if leftExtra < 0 {
-			leftExtra = 0
-		}
-		centering := pad + strings.Repeat(" ", leftExtra)
-
-		checkStyle := lipgloss.NewStyle().Foreground(t.Primary)
-		uncheckStyle := lipgloss.NewStyle().Foreground(t.Secondary)
-
-		// Page-aligned visible window so paging feels natural and the modal
-		// has a fixed total height regardless of len(m.filtered) (bt-vr2h).
-		start := (m.selectedIndex / maxVisible) * maxVisible
-		end := start + maxVisible
-		if end > len(m.filtered) {
-			end = len(m.filtered)
-		}
-
-		for i := start; i < end; i++ {
-			repo := m.filtered[i]
-			isCursor := i == m.selectedIndex
-			isSelected := m.selected[repo]
-
-			nameStyle := lipgloss.NewStyle().Foreground(t.Base.GetForeground())
-			if isCursor {
-				nameStyle = nameStyle.Foreground(t.Primary).Bold(true)
-			}
-
-			cursor := "  "
-			if isCursor {
-				cursor = nameStyle.Render("▸ ")
-			}
-
-			indicator := uncheckStyle.Render("• ")
-			if isSelected {
-				indicator = checkStyle.Render(activeGlyphs.Success + " ")
-			}
-
-			// DisplayRepoName aliases beads_global to "atlas" for display
-			// (bt-z1pzj); m.repos/m.selected keep the raw key so selection
-			// and filtering are untouched. atlasFirst() pins it to the top.
-			line := centering + cursor + indicator + nameStyle.Render(model.DisplayRepoName(repo))
-			lines = append(lines, line)
-		}
-
-		// Pad to fixed visibleCount so modal height stays constant across pages.
-		for i := end - start; i < maxVisible; i++ {
-			lines = append(lines, "")
-		}
-	}
-
-	// Page indicator / count row (always present for vertical stability).
-	pageStyle := lipgloss.NewStyle().Foreground(t.Secondary).Italic(true)
-	lines = append(lines, "")
-	if len(m.filtered) > maxVisible {
-		page := m.selectedIndex/maxVisible + 1
-		totalPages := (len(m.filtered) + maxVisible - 1) / maxVisible
-		lines = append(lines, pageStyle.Render(
-			pad+fmt.Sprintf("%d/%d (%d projects)", page, totalPages, len(m.filtered))))
-	} else if len(m.filtered) > 0 {
-		lines = append(lines, pageStyle.Render(
-			pad+fmt.Sprintf("%d projects", len(m.filtered))))
-	} else {
-		lines = append(lines, "")
-	}
-
-	lines = append(lines, "")
-	footerStyle := lipgloss.NewStyle().
-		Foreground(t.Secondary).
-		Italic(true)
-	lines = append(lines, footerStyle.Render(pad+pickerFooter))
-
-	content := strings.Join(lines, "\n")
-
-	return RenderTitledPanel(content, PanelOpts{
-		Title:   "Project Filter",
-		Width:   boxWidth,
-		Focused: true,
-	})
+	return renderSearchPopup(m.popupEntries(), m.selectedIndex, min(repoPickerMaxVisible, max(1, len(m.filtered))), 0, m.input.View(), empty, "projects", m.popupOpts(), l)
 }
