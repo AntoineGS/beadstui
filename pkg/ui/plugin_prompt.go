@@ -2,10 +2,12 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/plugin"
@@ -71,7 +73,7 @@ func (m Model) openPluginMenu() (Model, tea.Cmd) {
 		m.setNotice("No bead selected")
 		return m, nil
 	}
-	actions := m.pluginActions.Actions(issue)
+	actions := m.pluginActionsFor(issue)
 	if len(actions) == 0 {
 		m.setNotice("No plugin actions for " + issue.ID)
 		return m, nil
@@ -90,6 +92,7 @@ func (m Model) openPluginMenu() (Model, tea.Cmd) {
 
 // handlePluginPromptMsg shows a confirm or select prompt from a plugin. It
 // answers nil at once when another modal is open or the prompt is empty.
+// Plugin text is sanitized here; option values go back to the plugin as is.
 func (m Model) handlePluginPromptMsg(msg plugin.PromptMsg) (Model, tea.Cmd) {
 	reply := msg.Reply
 	if reply == nil {
@@ -99,15 +102,19 @@ func (m Model) handlePluginPromptMsg(msg plugin.PromptMsg) (Model, tea.Cmd) {
 	switch {
 	case msg.Confirm != nil:
 		p.kind = pluginPromptConfirm
-		p.title = msg.Confirm.Title
-		p.message = msg.Confirm.Message
-		p.confirmLabel = msg.Confirm.Confirm
-		p.cancelLabel = msg.Confirm.Cancel
+		p.title = pluginText(msg.Confirm.Title, false)
+		p.message = pluginText(msg.Confirm.Message, true)
+		p.confirmLabel = pluginText(msg.Confirm.Confirm, false)
+		p.cancelLabel = pluginText(msg.Confirm.Cancel, false)
 	case msg.Select != nil && len(msg.Select.Options) > 0:
 		p.kind = pluginPromptSelect
-		p.title = msg.Select.Title
+		p.title = pluginText(msg.Select.Title, false)
 		for _, o := range msg.Select.Options {
-			p.options = append(p.options, pluginPromptOption{label: o.Label, description: o.Description, value: o.Value})
+			p.options = append(p.options, pluginPromptOption{
+				label:       pluginText(o.Label, false),
+				description: pluginText(o.Description, false),
+				value:       o.Value,
+			})
 		}
 	default:
 		reply(nil)
@@ -144,13 +151,17 @@ func (m *Model) showPluginPrompt(p *pluginPrompt) {
 	m.focused = focusPluginPrompt
 }
 
-// closePluginPrompt closes the prompt and restores the focus it took.
+// closePluginPrompt closes the prompt and restores the focus it took. When
+// another modal has since replaced it, that modal and its focus are left
+// alone.
 func (m *Model) closePluginPrompt() {
-	if m.pluginPrompt != nil {
-		m.focused = m.pluginPrompt.prev
+	if m.activeModal == ModalPluginPrompt {
+		if m.pluginPrompt != nil {
+			m.focused = m.pluginPrompt.prev
+		}
+		m.closeModal()
 	}
 	m.pluginPrompt = nil
-	m.closeModal()
 }
 
 // answerPluginPrompt closes the prompt and sends answer to the plugin.
@@ -236,8 +247,10 @@ func (m Model) renderPluginPrompt() string {
 
 	var lines []string
 	if p.kind == pluginPromptConfirm {
-		for _, l := range wrapPlain(p.message, maxInner) {
-			lines = append(lines, textStyle.Render(truncateRunesHelper(l, maxInner, "...")))
+		for _, para := range strings.Split(p.message, "\n") {
+			for _, l := range wrapPlain(para, maxInner) {
+				lines = append(lines, textStyle.Render(truncateRunesHelper(l, maxInner, "...")))
+			}
 		}
 		confirm, cancel := p.confirmLabel, p.cancelLabel
 		if confirm == "" {
@@ -258,9 +271,20 @@ func (m Model) renderPluginPrompt() string {
 			cursor = cursorStyle.Render("> ")
 			labelStyle = cursorStyle
 		}
-		line := cursor + labelStyle.Render(o.label)
-		if o.description != "" {
-			line += "  " + descStyle.Render(o.description)
+		// Fit the row to the panel: the description keeps up to a third of
+		// the width, the label takes the rest.
+		avail := maxInner - 2
+		label, desc := o.label, o.description
+		if desc == "" {
+			label = truncateRunesHelper(label, avail, "...")
+		} else {
+			descMin := min(ansi.StringWidth(desc), avail/3)
+			label = truncateRunesHelper(label, avail-2-descMin, "...")
+			desc = truncateRunesHelper(desc, avail-2-ansi.StringWidth(label), "...")
+		}
+		line := cursor + labelStyle.Render(label)
+		if desc != "" {
+			line += "  " + descStyle.Render(desc)
 		}
 		lines = append(lines, line)
 	}

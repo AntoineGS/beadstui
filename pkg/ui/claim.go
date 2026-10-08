@@ -407,6 +407,10 @@ func (m *Model) settlePendingWrites() {
 	changed := false
 	now := time.Now()
 	for id, pw := range m.pendingWrites {
+		if pw.Kind == writePluginAction {
+			// Ended by the action's result; expirePluginActions is the net.
+			continue
+		}
 		if iss, ok := m.data.issueMap[id]; ok && writeSettled(pw, iss) {
 			delete(m.pendingWrites, id)
 			changed = true

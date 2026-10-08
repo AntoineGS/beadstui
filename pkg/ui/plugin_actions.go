@@ -3,12 +3,15 @@ package ui
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
+	"unicode"
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/plugin"
@@ -23,6 +26,11 @@ type pluginActionSource interface {
 
 // pluginMenuKey opens the plugin action menu.
 const pluginMenuKey = "P"
+
+// pluginActionExpiry is the safety net for a pending plugin action. The
+// host's result is authoritative and arrives within its 60s invoke timeout,
+// so this only fires if a result is lost.
+const pluginActionExpiry = 65 * time.Second
 
 // listPagingKeys are the bubbles list's own paging and jump keys, which the
 // list consumes even though no bt map binds them.
@@ -125,7 +133,7 @@ func (m Model) tryPluginActionKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if issue == nil {
 		return m, nil, false
 	}
-	for _, a := range m.pluginActions.Actions(issue) {
+	for _, a := range m.pluginActionsFor(issue) {
 		if a.Key != "" && a.Key == k {
 			m2, cmd := m.invokePluginAction(a, issue)
 			return m2, cmd, true
@@ -192,16 +200,48 @@ func (m Model) handlePluginActionResult(msg pluginActionResultMsg) (Model, tea.C
 	return m, nil
 }
 
+// pluginActionsFor lists the plugin actions on issue with labels safe to
+// draw.
+func (m Model) pluginActionsFor(issue *model.Issue) []plugin.Action {
+	var out []plugin.Action
+	for _, a := range m.pluginActions.Actions(issue) {
+		a.Label = pluginText(a.Label, false)
+		out = append(out, a)
+	}
+	return out
+}
+
 // showPluginToast shows a plugin toast with the severity of its tone.
 func (m *Model) showPluginToast(t plugin.Toast) {
+	msg := pluginText(t.Message, false)
 	switch t.Tone {
 	case "warn":
-		m.setNotice(t.Message)
+		m.setNotice(msg)
 	case "error":
-		m.setFailure(t.Message)
+		m.setFailure(msg)
 	default:
-		m.setStatus(t.Message)
+		m.setStatus(msg)
 	}
+}
+
+// pluginText makes plugin-supplied text safe to draw: escape sequences are
+// stripped and other control characters dropped. Newlines are kept when
+// multiline; otherwise they and tabs become spaces.
+func pluginText(s string, multiline bool) string {
+	s = ansi.Strip(s)
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r == '\n' && multiline:
+			b.WriteRune(r)
+		case r == '\n' || r == '\t':
+			b.WriteRune(' ')
+		case unicode.IsControl(r):
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // clearPluginPending ends the pending state of plugin actions on beads whose
@@ -220,17 +260,17 @@ func (m *Model) clearPluginPending(keys []plugin.BeadKey) {
 }
 
 // expirePluginActions drops plugin actions pending longer than
-// writeSettleTimeout. Unlike bd writes they never settle on a reload, so the
+// pluginActionExpiry. Unlike bd writes they never settle on a reload, so the
 // spinner tick checks them.
 func (m *Model) expirePluginActions(now time.Time) {
 	changed := false
 	for id, pw := range m.pendingWrites {
-		if pw.Kind != writePluginAction || now.Sub(pw.StartedAt) < writeSettleTimeout {
+		if pw.Kind != writePluginAction || now.Sub(pw.StartedAt) < pluginActionExpiry {
 			continue
 		}
 		delete(m.pendingWrites, id)
 		changed = true
-		m.setFailure(fmt.Sprintf("%s on %s: no confirmation after %s", pw.label(), id, writeSettleTimeout))
+		m.setFailure(fmt.Sprintf("%s on %s: no result after %ds", pw.label(), id, int(pluginActionExpiry.Seconds())))
 	}
 	if changed {
 		m.updateListDelegate()

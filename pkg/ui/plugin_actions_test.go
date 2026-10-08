@@ -453,9 +453,34 @@ func TestPluginResultClosesEndedPrompt(t *testing.T) {
 	}
 }
 
+func TestPluginActionNotExpiredWhileInvokeMayRun(t *testing.T) {
+	fake := &fakePluginActions{actions: []plugin.Action{dispatchAction}}
+	m := newPluginActionModel(t, fake)
+	id := selectedID(m)
+	m.pendingWrites[id] = pendingWrite{Kind: writePluginAction, Field: "Dispatch", StartedAt: time.Now().Add(-50 * time.Second)}
+	m.writeSpinnerActive = true
+
+	m, _ = sendMsg(m, writeSpinnerTickMsg{})
+	if _, ok := m.pendingWrites[id]; !ok {
+		t.Fatal("spinner tick expired a 50s-old plugin action")
+	}
+	m.settlePendingWrites()
+	if _, ok := m.pendingWrites[id]; !ok {
+		t.Fatal("data reload expired a 50s-old plugin action")
+	}
+
+	m, cmd := sendMsg(m, keyRune('D'))
+	if len(actionResults(cmd)) != 0 || len(fake.calls) != 0 {
+		t.Fatal("second D at 50s dispatched again")
+	}
+	if want := "Dispatch already running on " + id; m.statusMsg != want {
+		t.Fatalf("status = %q, want %q", m.statusMsg, want)
+	}
+}
+
 func TestPluginActionSpinnerExpiry(t *testing.T) {
 	m := newPluginActionModel(t, &fakePluginActions{})
-	old := time.Now().Add(-writeSettleTimeout - time.Second)
+	old := time.Now().Add(-66 * time.Second)
 	m.pendingWrites["proj-1"] = pendingWrite{Kind: writePluginAction, Field: "Dispatch", StartedAt: old}
 	m.pendingWrites["proj-2"] = pendingWrite{Kind: writeClaim, StartedAt: old}
 	m.writeSpinnerActive = true
@@ -467,8 +492,92 @@ func TestPluginActionSpinnerExpiry(t *testing.T) {
 	if _, ok := m.pendingWrites["proj-2"]; !ok {
 		t.Fatal("spinner tick expired a claim (claims settle on reload)")
 	}
-	if want := "Dispatch on proj-1: no confirmation after 45s"; m.statusMsg != want || m.statusSeverity != SeverityFailure {
+	if want := "Dispatch on proj-1: no result after 65s"; m.statusMsg != want || m.statusSeverity != SeverityFailure {
 		t.Fatalf("status = %q (%v), want %q", m.statusMsg, m.statusSeverity, want)
+	}
+}
+
+func TestPluginPromptEndLeavesOtherModal(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		end  func(stale tea.Msg) tea.Msg
+	}{
+		{"stale", func(stale tea.Msg) tea.Msg { return stale }},
+		{"result", func(tea.Msg) tea.Msg { return pluginActionResultMsg{ID: "proj-1", Action: dispatchAction} }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newPluginActionModel(t, &fakePluginActions{})
+			done := make(chan struct{})
+			msg := confirmPrompt(func(any) {})
+			msg.Done = done
+			m, cmd := sendMsg(m, msg)
+			// An asynchronous handler (e.g. the AGENTS.md check) opens its
+			// modal over the prompt.
+			m.openModal(ModalAgentPrompt)
+			m.focused = focusAgentPrompt
+			close(done)
+			m, _ = sendMsg(m, tc.end(cmd()))
+			if m.activeModal != ModalAgentPrompt || m.focused != focusAgentPrompt {
+				t.Fatalf("ended prompt closed another modal: modal %v focus %v", m.activeModal, m.focused)
+			}
+		})
+	}
+}
+
+func TestPluginTextSanitized(t *testing.T) {
+	const dirty = "\x1b]0;evil\x07\x1b[31mDis\x07patch\x1b[0m"
+
+	fake := &fakePluginActions{actions: []plugin.Action{{Plugin: "example", ID: "dispatch", Label: dirty, Key: "D"}}}
+	m := newPluginActionModel(t, fake)
+	m, _ = sendMsg(m, keyRune('P'))
+	if m.pluginPrompt == nil || m.pluginPrompt.options[0].label != "Dispatch" {
+		t.Fatalf("menu label not sanitized: %+v", m.pluginPrompt)
+	}
+
+	m = newPluginActionModel(t, fake)
+	m, _ = sendMsg(m, plugin.ToastMsg{Plugin: "example", Toast: plugin.Toast{Message: dirty + " done"}})
+	if m.statusMsg != "Dispatch done" {
+		t.Fatalf("toast = %q, want %q", m.statusMsg, "Dispatch done")
+	}
+
+	m, _ = sendMsg(m, plugin.PromptMsg{Plugin: "example", Confirm: &plugin.ConfirmParams{
+		Title: dirty, Message: "line one\n" + dirty, Confirm: dirty, Cancel: dirty,
+	}, Reply: func(any) {}})
+	p := m.pluginPrompt
+	if p.title != "Dispatch" || p.message != "line one\nDispatch" || p.confirmLabel != "Dispatch" || p.cancelLabel != "Dispatch" {
+		t.Fatalf("confirm prompt not sanitized: %+v", p)
+	}
+	if out := m.renderPluginPrompt(); strings.Contains(out, "\x07") || strings.Contains(out, "evil") {
+		t.Fatalf("confirm render carries plugin control text: %q", out)
+	}
+
+	m = newPluginActionModel(t, fake)
+	m, _ = sendMsg(m, plugin.PromptMsg{Plugin: "example", Select: &plugin.SelectParams{
+		Title: dirty, Options: []plugin.SelectOption{{Value: "a", Label: dirty, Description: dirty}},
+	}, Reply: func(any) {}})
+	if o := m.pluginPrompt.options[0]; o.label != "Dispatch" || o.description != "Dispatch" || o.value != "a" {
+		t.Fatalf("select option not sanitized: %+v", o)
+	}
+}
+
+func TestPluginSelectLongOptionFitsWidth(t *testing.T) {
+	m := newPluginActionModel(t, &fakePluginActions{})
+	m, _ = sendMsg(m, plugin.PromptMsg{Plugin: "example", Select: &plugin.SelectParams{
+		Title: "Agent", Options: []plugin.SelectOption{{Value: "a", Label: strings.Repeat("x", 300), Description: strings.Repeat("y", 300)}},
+	}, Reply: func(any) {}})
+	var row string
+	for _, line := range strings.Split(ansi.Strip(m.renderPluginPrompt()), "\n") {
+		if w := ansi.StringWidth(line); w > m.width {
+			t.Fatalf("line width %d exceeds terminal width %d: %q", w, m.width, line)
+		}
+		if strings.Contains(line, "xxx") {
+			row = line
+		}
+	}
+	// The panel clips an over-wide row at its border, hiding the description
+	// and the side padding; a truncated option keeps both.
+	if !strings.Contains(row, "...") || !strings.Contains(row, "yyy") || !strings.HasSuffix(row, "  │") {
+		t.Fatalf("option row not truncated to the panel: %q", row)
 	}
 }
 
