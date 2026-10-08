@@ -215,7 +215,7 @@ func (m Model) alertsHeaderRows() int {
 	if m.activeTab != TabAlerts {
 		return 0
 	}
-	n := len(m.alertsHeaderLines(m.alertsPanelWidth() - 4))
+	n := len(m.alertsHeaderLines(m.alertsPopupLayout().BodyWidth))
 	if n == 0 {
 		return 0
 	}
@@ -228,7 +228,7 @@ func (m Model) alertsHeaderRows() int {
 // (alertsHeaderRows, which is 0 on the Notifications tab). Shared by the mouse
 // hit-test and its tests so the geometry has a single source of truth (bt-2nepr).
 func (m Model) alertsItemsChromeRows() int {
-	return modalChromeAboveItems + m.alertsHeaderRows()
+	return m.alertsPopupLayout().BodyY + 3 + m.alertsHeaderRows()
 }
 
 // alertsHeaderLines builds the "bt status report" content lines (no trailing

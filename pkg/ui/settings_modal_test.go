@@ -46,6 +46,21 @@ func settingsTestModel(t *testing.T) Model {
 	return updated.(Model)
 }
 
+func TestOptionsPopup_ColumnsAndFooterFit(t *testing.T) {
+	m := settingsTestModel(t)
+	m.settingsModal.SetSize(48, 16)
+	out := m.settingsModal.View()
+	assertPopupBounds(t, out, 48, 16)
+	popupFindRow(t, out, "esc")
+	popupFindRow(t, out, "enter")
+	_, row := popupFindRow(t, out, "Color")
+	if !strings.Contains(row, "│") || !strings.Contains(out, "Set the color") {
+		t.Fatal("two-column setting/help body missing")
+	}
+	m.settingsModal.SetSize(8, 3)
+	assertPopupBounds(t, m.settingsModal.View(), 8, 3)
+}
+
 // TestSettingsCyclesThemeLive is the contract the whole screen exists for: a
 // palette must apply as the user moves through the list, not on a commit step.
 // Without it the picker is a menu of names, which is the state bt was already

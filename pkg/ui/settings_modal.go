@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // settingItem is one row of the settings screen.
@@ -156,6 +157,7 @@ type SettingsModalModel struct {
 	width     int
 	height    int
 	theme     Theme
+	popupSize *PopupSize
 
 	// originalTheme is what was rendering when the screen opened, so esc can
 	// put it back. btop commits on exit; reverting on cancel is the safer
@@ -177,6 +179,7 @@ func NewSettingsModalModel(theme Theme) SettingsModalModel {
 
 // SetSize updates the screen dimensions.
 func (s *SettingsModalModel) SetSize(width, height int) {
+	s.popupSize = &PopupSize{width, height}
 	s.width = width
 	s.height = height
 }
@@ -234,62 +237,27 @@ func (s *SettingsModalModel) Selected() settingItem {
 // View renders the settings screen. Composited by OverlayCenterDimBackdrop in
 // model_view.go, so it does not centre itself.
 func (s *SettingsModalModel) View() string {
-	if s.width == 0 {
-		s.width = 80
-	}
-	if s.height == 0 {
-		s.height = 24
-	}
 	t := s.theme
-
-	// Two columns like btop: settings left, description right. The split is
-	// proportional rather than fixed so the description still gets usable room
-	// on a narrow terminal instead of wrapping every line.
-	boxWidth := s.width * 3 / 4
-	if boxWidth > 96 {
-		boxWidth = 96
+	size := popupAvailableSize(s.popupSize)
+	opts := PopupOpts{Title: "Options", Theme: t, Available: s.popupSize, Width: min(96, max(46, size.Width*3/4)), Height: max(12, size.Height*7/10), MinBodyRows: 4, Footer: []string{"j/k: select • ←/→: change • enter: keep • esc: cancel", "j/k select ←/→ change enter keep esc cancel", "j/k ←/→ enter esc"}}
+	layout := MeasurePopup(nil, opts)
+	if layout.Compact || layout.Height == 0 {
+		return RenderPopup(nil, opts)
 	}
-	if boxWidth < 46 {
-		boxWidth = 46
-	}
-	if boxWidth > s.width-4 {
-		boxWidth = s.width - 4
-	}
-
-	boxHeight := s.height * 7 / 10
-	if boxHeight < 12 {
-		boxHeight = 12
-	}
-	if boxHeight > s.height-2 {
-		boxHeight = s.height - 2
-	}
-
-	innerRows := boxHeight - 4
-	if innerRows < 6 {
-		innerRows = 6
-	}
-
-	leftWidth := boxWidth * 2 / 5
-	if leftWidth < 22 {
-		leftWidth = 22
-	}
-	rightWidth := boxWidth - leftWidth - 5
-	if rightWidth < 16 {
-		rightWidth = 16
-	}
-
-	var lines []string
-	lines = append(lines, "  "+s.renderTabs())
-	lines = append(lines, "")
+	leftWidth := max(1, (layout.BodyWidth-3)*2/5)
+	rightWidth := max(1, layout.BodyWidth-leftWidth-3)
+	lines := []string{s.renderTabs(), ""}
 
 	left := s.renderSettings(leftWidth)
 	right := s.renderHelp(rightWidth)
 
 	// Pad the shorter column so the two stay top-aligned and the panel does not
 	// change height as the description length varies between settings.
-	bodyRows := innerRows - 4
-	if bodyRows < 4 {
-		bodyRows = 4
+	bodyRows := layout.BodyHeight - 2
+	// Window around the selected setting's label/value rather than clipping it.
+	start := max(0, s.selected*3-bodyRows+2)
+	if start < len(left) {
+		left = left[start:]
 	}
 	for len(left) < bodyRows {
 		left = append(left, "")
@@ -306,25 +274,10 @@ func (s *SettingsModalModel) View() string {
 
 	divider := lipgloss.NewStyle().Foreground(t.Border).Render("│")
 	for i := 0; i < bodyRows; i++ {
-		l := left[i]
-		pad := leftWidth - lipgloss.Width(l)
-		if pad < 0 {
-			pad = 0
-		}
-		lines = append(lines, "  "+l+strings.Repeat(" ", pad)+" "+divider+" "+right[i])
+		lines = append(lines, popupPadCell(left[i], leftWidth)+" "+divider+" "+ansi.Truncate(right[i], rightWidth, ""))
 	}
 
-	footer := lipgloss.NewStyle().Foreground(t.Secondary).Italic(true).
-		Render("j/k: select • ←/→: change • enter: keep • esc: cancel")
-	lines = append(lines, "")
-	lines = append(lines, "  "+footer)
-
-	return RenderTitledPanel(strings.Join(lines, "\n"), PanelOpts{
-		Title:   "Options",
-		Width:   boxWidth,
-		Height:  boxHeight,
-		Focused: true,
-	})
+	return RenderPopup(lines, opts)
 }
 
 func (s *SettingsModalModel) renderTabs() string {

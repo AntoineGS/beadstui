@@ -17,6 +17,64 @@ import (
 // presence of this sequence in modal-adjacent rows.
 const faintSGR = "\x1b[2"
 
+func TestConfirmationPopups_ShareBoundsAndKeepHints(t *testing.T) {
+	m := newSizedModel(t, fieldEditTestIssues(), 40, 12)
+	m.claimTargetID = "zz-target"
+	m.claimTargetTitle = strings.Repeat("long title ", 8)
+	for _, out := range []string{m.renderQuitConfirm(), m.renderClaimConfirm(), m.renderTimeTravelPrompt()} {
+		assertPopupBounds(t, out, 40, 11)
+		if !strings.Contains(strings.ToLower(ansi.Strip(out)), "esc") {
+			t.Fatalf("cancel hint missing:\n%s", ansi.Strip(out))
+		}
+	}
+	m.width = 8
+	m.height = 3
+	for _, out := range []string{m.renderQuitConfirm(), m.renderClaimConfirm(), m.renderTimeTravelPrompt()} {
+		assertPopupBounds(t, out, 8, 2)
+	}
+}
+
+func TestHelpPopup_BoundsAndFooter(t *testing.T) {
+	for _, size := range []PopupSize{{40, 12}, {120, 80}} {
+		m := newSizedModel(t, fieldEditTestIssues(), size.Width, size.Height)
+		out := m.renderHelpOverlay()
+		assertPopupBounds(t, out, size.Width, size.Height-1)
+		popupFindRow(t, out, "Esc")
+		popupFindRow(t, out, ";")
+		rows := strings.Split(ansi.Strip(out), "\n")
+		if !strings.Contains(rows[len(rows)-3], "Esc") {
+			t.Fatal("help footer not in reserved footer row")
+		}
+	}
+}
+
+func TestAlertsPopup_BoundsAndFooter(t *testing.T) {
+	m := modalMouseModel(t)
+	m.width = 40
+	m.height = 12
+	out := m.renderAlertsPanel()
+	assertPopupBounds(t, out, 40, 11)
+	popupFindRow(t, out, "(4)")
+	popupFindRow(t, out, "esc")
+	m.activeTab = TabNotifications
+	out = m.renderAlertsPanel()
+	assertPopupBounds(t, out, 40, 11)
+	popupFindRow(t, out, "(0)")
+	popupFindRow(t, out, "esc")
+}
+
+func TestAlertsPopup_RenderedRowRoutesClick(t *testing.T) {
+	m := modalMouseModel(t)
+	out := m.renderAlertsPanel()
+	y, _ := popupFindRow(t, out, "stale b")
+	startRow := (m.height - 1 - len(strings.Split(out, "\n"))) / 2
+	updated, _ := m.Update(tea.MouseClickMsg{X: 20, Y: startRow + y, Button: tea.MouseLeft})
+	got := updated.(Model)
+	if got.alertsCursor != 1 {
+		t.Fatalf("clicked rendered stale b, cursor=%d", got.alertsCursor)
+	}
+}
+
 // TestAlertsModalOccludesDetailPane is a regression guard for bt-l5xu and
 // bt-v8he: the shared alerts/notifications modal must occlude the underlying
 // detail pane (bt-l5xu, no bleed-through of body text) AND render at a
@@ -27,6 +85,7 @@ const faintSGR = "\x1b[2"
 // Pre-bt-l5xu: panel capped at 80, bg leaked along the modal's flanks.
 // bt-l5xu fix: panel sized to m.width-4 — solved leak, lost pop-up shape.
 // bt-v8he fix: panel re-capped at 100, OverlayCenterDimBackdrop applies
+//
 //	Faint to all bg cells so they recede visually instead of being absent.
 //
 // Verifications:
@@ -549,11 +608,11 @@ func TestOverlay_MidGlyphCutDoesNotShortenRow(t *testing.T) {
 	// Modal occupies rows 1..3 (startRow = (5-3)/2 = 1). Place the emoji-cut
 	// rows where the modal will actually slice them so the bug surfaces.
 	bgLines := []string{
-		"xxxxxxxxxxxxxxxxxxxx",     // row 0: control (not sliced)
-		"xxxx🌟xxxxxxxxxxxxxx",     // row 1: emoji at cells 4-5 (left cut col 5)
-		"xxxxxxxxxxxxxx🌟xxxx",     // row 2: emoji at cells 14-15 (right cut col 15)
+		"xxxxxxxxxxxxxxxxxxxx", // row 0: control (not sliced)
+		"xxxx🌟xxxxxxxxxxxxxx",  // row 1: emoji at cells 4-5 (left cut col 5)
+		"xxxxxxxxxxxxxx🌟xxxx",  // row 2: emoji at cells 14-15 (right cut col 15)
 		"xxxx🌟xxxxxxxx🌟xxxx",   // row 3: emojis at BOTH cut columns
-		"xxxxxxxxxxxxxxxxxxxx",     // row 4: control (not sliced)
+		"xxxxxxxxxxxxxxxxxxxx", // row 4: control (not sliced)
 	}
 	bg := strings.Join(bgLines, "\n")
 
