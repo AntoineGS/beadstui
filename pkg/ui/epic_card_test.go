@@ -32,6 +32,21 @@ func epicCardModel(issues []model.Issue) Model {
 	return m
 }
 
+func TestEpicPopup_SelectedChildAndPillsFit(t *testing.T) {
+	m := epicCardModel(epicProgressFixture())
+	m.openEpicCard("ep")
+	m.width = 36
+	m.height = 14
+	m.epicCardCursor = 2
+	out := m.renderEpicCard()
+	assertPopupBounds(t, out, 36, 13)
+	_, row := popupFindRow(t, out, "ep.10")
+	if !strings.Contains(row, ">") || !strings.Contains(row, "OPEN") || !strings.Contains(row, "P2") {
+		t.Fatalf("selected child/status/priority cue missing: %q", row)
+	}
+	popupFindRow(t, out, "esc")
+}
+
 func TestOpenEpicCard(t *testing.T) {
 	m := epicCardModel(epicCardFixture())
 	m.epicCardCursor = 5 // dirty state from a prior open

@@ -1,11 +1,20 @@
 package ui
 
 import (
+	"github.com/charmbracelet/x/ansi"
 	"strings"
 	"testing"
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
+
+func TestEpicProgress_OrdinaryViewBaseline(t *testing.T) {
+	all := epicProgressFixture()
+	want := "1 / 3 children complete (33%)\n                             \n  DONE P1 ep.1 — first child \n  PROG P0 ep.2 — second child\n  OPEN P2 ep.10 — tenth child"
+	if got := ansi.Strip(buildEpicProgressANSI(all[0], all, -1, 80)); got != want {
+		t.Fatalf("ordinary epic renderer changed:\ngot %q\nwant %q", got, want)
+	}
+}
 
 // pcDep builds a parent_child dependency edge (child depends-on parent).
 func pcDep(child, parent string) []*model.Dependency {

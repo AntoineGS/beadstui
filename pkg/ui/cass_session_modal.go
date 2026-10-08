@@ -11,6 +11,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // CassSessionModal displays correlated cass sessions for a bead.
@@ -28,6 +29,7 @@ type CassSessionModal struct {
 	copied     bool      // Flash feedback for clipboard copy
 	copiedAt   time.Time // When copy happened
 	maxDisplay int       // Max sessions to show (rest are summarized)
+	popupSize  *PopupSize
 }
 
 // NewCassSessionModal creates a modal from correlation results.
@@ -83,126 +85,57 @@ func (m CassSessionModal) Update(msg tea.Msg) (CassSessionModal, tea.Cmd) {
 
 // View renders the modal.
 func (m CassSessionModal) View() string {
-
-	// Check if copy flash should be shown (within 2 seconds of copy)
 	showCopied := m.copied && time.Since(m.copiedAt) <= 2*time.Second
-
-	// Modal container style
-	modalStyle := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(m.theme.Primary).
-		Padding(1, 2).
-		Width(m.width)
-
-	// Header style
-	headerStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.Primary)
-
-	beadIDStyle := lipgloss.NewStyle().
-		Foreground(m.theme.Subtext)
-
-	// Session card styles
-	sessionHeaderStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(ColorText)
-
-	selectedSessionStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.Primary)
-
-	matchReasonStyle := lipgloss.NewStyle().
-		Foreground(m.theme.Subtext).
-		Italic(true)
-
-	snippetBoxStyle := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(m.theme.Border).
-		Padding(0, 1).
-		Width(m.width - 10)
-
-	footerStyle := lipgloss.NewStyle().
-		Foreground(m.theme.Subtext).
-		Italic(true)
-
-	// Build content
-	var b strings.Builder
-
-	// Header
-	b.WriteString(headerStyle.Render(activeGlyphs.Paperclip + " Related Coding Sessions"))
-	b.WriteString("  ")
-	b.WriteString(beadIDStyle.Render(m.beadID))
-	b.WriteString("\n\n")
-
-	// Sessions
-	if len(m.sessions) == 0 {
-		b.WriteString(matchReasonStyle.Render("No correlated sessions found."))
-		b.WriteString("\n\n")
-	} else {
-		displayCount := len(m.sessions)
-		if displayCount > m.maxDisplay {
-			displayCount = m.maxDisplay
-		}
-
-		for i := 0; i < displayCount; i++ {
-			session := m.sessions[i]
-
-			// Session number with selection indicator
-			numPrefix := fmt.Sprintf("[%d] ", i+1)
-			if i == m.selected {
-				b.WriteString(selectedSessionStyle.Render(numPrefix))
-			} else {
-				b.WriteString(sessionHeaderStyle.Render(numPrefix))
-			}
-
-			// Agent and timestamp
-			agentStr := session.Agent
-			if agentStr == "" {
-				agentStr = "Unknown"
-			}
-			timeStr := formatRelativeTime(session.Timestamp)
-
-			sessionInfo := fmt.Sprintf("%s • %s", agentStr, timeStr)
-			if i == m.selected {
-				b.WriteString(selectedSessionStyle.Render(sessionInfo))
-			} else {
-				b.WriteString(sessionHeaderStyle.Render(sessionInfo))
-			}
-			b.WriteString("\n")
-
-			// Match reason
-			matchReason := m.formatMatchReason(session)
-			b.WriteString("    ")
-			b.WriteString(matchReasonStyle.Render(matchReason))
-			b.WriteString("\n")
-
-			// Snippet box
-			snippet := m.formatSnippet(session.Snippet)
-			b.WriteString(snippetBoxStyle.Render(snippet))
-			b.WriteString("\n\n")
-		}
-
-		// Show count of additional sessions
-		if len(m.sessions) > m.maxDisplay {
-			extra := len(m.sessions) - m.maxDisplay
-			moreText := fmt.Sprintf("(%d more session", extra)
-			if extra > 1 {
-				moreText += "s"
-			}
-			moreText += fmt.Sprintf(" - run: %s)", m.searchCmd)
-			b.WriteString(matchReasonStyle.Render(moreText))
-			b.WriteString("\n\n")
-		}
-	}
-
-	// Footer with keybindings
-	footerText := "[j/k] Navigate    [y] Copy search cmd    [V/Esc] Close"
+	footer := []string{"[j/k] Navigate    [y] Copy search cmd    [V/Esc] Close", "[j/k] [y] copy [V/Esc] close"}
 	if showCopied {
-		footerText = "[j/k] Navigate    " + activeGlyphs.Success + " Copied!              [V/Esc] Close"
+		footer = []string{"[j/k] Navigate    " + activeGlyphs.Success + " Copied!    [V/Esc] Close", "[j/k] Copied! [V/Esc] close"}
 	}
-	b.WriteString(footerStyle.Render(footerText))
-
-	return modalStyle.Render(b.String())
+	opts := PopupOpts{Title: "Related Coding Sessions", Theme: m.theme, Available: m.popupSize, Width: 80, Height: min(28, popupAvailableSize(m.popupSize).Height), MinBodyRows: 7, Footer: footer}
+	l := MeasurePopup(nil, opts)
+	if l.Compact || l.Height == 0 {
+		return RenderPopup(nil, opts)
+	}
+	dim := lipgloss.NewStyle().Foreground(m.theme.Subtext).Italic(true)
+	lines := []string{dim.Render(m.beadID), ""}
+	count := min(len(m.sessions), m.maxDisplay)
+	if count == 0 {
+		lines = append(lines, dim.Render("No correlated sessions found."))
+	} else {
+		extraRow := 0
+		if len(m.sessions) > m.maxDisplay {
+			extraRow = 1
+		}
+		budget := l.BodyHeight - 2 - extraRow
+		visible := min(count, max(1, budget/5))
+		start := min(max(0, m.selected-visible+1), count-visible)
+		end := start + visible
+		entries := make([]PopupMenuEntry, count)
+		for i, session := range m.sessions[:count] {
+			agent := session.Agent
+			if agent == "" {
+				agent = "Unknown"
+			}
+			entries[i] = PopupMenuEntry{Label: fmt.Sprintf("%s • %s", agent, formatRelativeTime(session.Timestamp)), Shortcut: fmt.Sprintf("[%d]", i+1), Selected: i == m.selected}
+		}
+		menu := MeasurePopupMenu(entries, PopupMenuOpts{Shortcuts: true})
+		snippetRows := max(1, min(3, budget/visible-4))
+		box := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(m.theme.Border).Padding(0, 1).Width(max(1, l.BodyWidth-2))
+		for i := start; i < end; i++ {
+			lines = append(lines, RenderPopupMenu(entries[i:i+1], menu, m.theme, l.BodyWidth)...)
+			lines = append(lines, dim.Render(m.formatMatchReason(m.sessions[i])))
+			snippet := strings.Split(m.formatSnippet(m.sessions[i].Snippet), "\n")
+			snippet = snippet[:min(len(snippet), snippetRows)]
+			for j, row := range snippet {
+				snippet[j] = ansi.Truncate(row, max(1, l.BodyWidth-4), "")
+			}
+			lines = append(lines, box.Render(strings.Join(snippet, "\n")))
+		}
+		if extraRow > 0 {
+			lines = append(lines, dim.Render(fmt.Sprintf("(%d more sessions - run: %s)", len(m.sessions)-m.maxDisplay, m.searchCmd)))
+		}
+	}
+	opts.MinBodyRows = l.BodyHeight
+	return RenderPopup(lines, opts)
 }
 
 // formatMatchReason creates a human-readable match reason string.
@@ -239,10 +172,8 @@ func (m CassSessionModal) formatSnippet(snippet string) string {
 			continue
 		}
 		// Truncate long lines
-		maxLineLen := m.width - 14 // Account for box padding
-		if len(line) > maxLineLen {
-			line = line[:maxLineLen-3] + "..."
-		}
+		maxLineLen := max(1, m.width-14)
+		line = truncateRunesHelper(line, maxLineLen, "...")
 		cleaned = append(cleaned, line)
 		if len(cleaned) >= 3 {
 			break
@@ -297,15 +228,8 @@ func formatRelativeTime(t time.Time) string {
 
 // SetSize sets the modal dimensions based on terminal size.
 func (m *CassSessionModal) SetSize(width, height int) {
-	// Constrain width
-	maxWidth := width - 10
-	if maxWidth < 50 {
-		maxWidth = 50
-	}
-	if maxWidth > 80 {
-		maxWidth = 80
-	}
-	m.width = maxWidth
+	m.popupSize = &PopupSize{width, height}
+	m.width = min(80, max(0, width))
 	m.height = height
 }
 

@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/seanmartinsmith/beadstui/pkg/agents"
 )
 
@@ -27,6 +28,7 @@ type AgentPromptModal struct {
 	theme     Theme
 	width     int
 	height    int
+	popupSize *PopupSize
 }
 
 // NewAgentPromptModal creates a new AGENTS.md prompt modal.
@@ -81,116 +83,26 @@ func (m AgentPromptModal) Update(msg tea.Msg) (AgentPromptModal, tea.Cmd) {
 
 // View renders the modal.
 func (m AgentPromptModal) View() string {
-
-	// Modal container style
-	modalStyle := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(m.theme.Primary).
-		Padding(1, 2).
-		Width(m.width)
-
-	// Title
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.Primary).
-		MarginBottom(1)
-
-	// Body text
-	bodyStyle := lipgloss.NewStyle().
-		Foreground(ColorText)
-
-	// Preview box
-	previewBoxStyle := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(m.theme.Border).
-		Padding(0, 1).
-		Width(m.width - 8).
-		MaxHeight(8)
-
-	previewHeaderStyle := lipgloss.NewStyle().
-		Foreground(m.theme.Subtext).
-		Italic(true)
-
-	// Buttons
-	buttonBase := lipgloss.NewStyle().
-		Padding(0, 2).
-		MarginRight(1)
-
-	selectedButton := buttonBase.
-		Background(m.theme.Primary).
-		Foreground(ColorBgContrast).
-		Bold(true)
-
-	unselectedButton := buttonBase.
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(m.theme.Border)
-
-	muteButton := buttonBase.
-		Foreground(m.theme.Subtext)
-
-	// Build content
-	var b strings.Builder
-
-	// Title
-	b.WriteString(titleStyle.Render(activeGlyphs.Memo + " Enhance AI Agent Integration?"))
-	b.WriteString("\n\n")
-
-	// Body
-	b.WriteString(bodyStyle.Render("We found " + m.fileType + " in this project but it"))
-	b.WriteString("\n")
-	b.WriteString(bodyStyle.Render("doesn't include beadstui instructions."))
-	b.WriteString("\n\n")
-	b.WriteString(bodyStyle.Render("Adding these helps AI coding agents understand"))
-	b.WriteString("\n")
-	b.WriteString(bodyStyle.Render("how to use your issue tracking workflow."))
-	b.WriteString("\n\n")
-
-	// Preview
-	b.WriteString(previewHeaderStyle.Render("Preview of content to add:"))
-	b.WriteString("\n")
-
-	preview := getBlurbPreview()
-	b.WriteString(previewBoxStyle.Render(preview))
-	b.WriteString("\n\n")
-
-	// Buttons
-	var buttons []string
-
-	// Yes button
-	yesLabel := "Yes, add it"
-	if m.selection == 0 {
-		buttons = append(buttons, selectedButton.Render(yesLabel))
-	} else {
-		buttons = append(buttons, unselectedButton.Render(yesLabel))
+	opts := PopupOpts{Title: "Enhance AI Agent Integration?", Theme: m.theme, Available: m.popupSize, Width: 70, Height: min(26, popupAvailableSize(m.popupSize).Height), Footer: []string{"← → to select • Enter to confirm • Esc to cancel", "←/→ select Enter confirm Esc cancel", "←/→ Enter Esc"}}
+	l := MeasurePopup(nil, opts)
+	if l.Compact || l.Height == 0 {
+		return RenderPopup(nil, opts)
 	}
-
-	// No button
-	noLabel := "No thanks"
-	if m.selection == 1 {
-		buttons = append(buttons, selectedButton.Render(noLabel))
-	} else {
-		buttons = append(buttons, unselectedButton.Render(noLabel))
+	intro := strings.Split(ansi.Wrap("We found "+m.fileType+" in this project but it doesn't include beadstui instructions.\nAdding these helps AI coding agents understand how to use your issue tracking workflow.", l.BodyWidth, ""), "\n")
+	opts.MinBodyRows = len(intro) + 7 // all actions plus preview heading and a three-row preview
+	l = MeasurePopup(nil, opts)
+	if l.Compact {
+		return RenderPopup(nil, opts)
 	}
-
-	// Never button
-	neverLabel := "Don't ask again"
-	if m.selection == 2 {
-		buttons = append(buttons, selectedButton.Render(neverLabel))
-	} else {
-		buttons = append(buttons, muteButton.Render(neverLabel))
-	}
-
-	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Center, buttons...))
-
-	// Footer hint
-	hintStyle := lipgloss.NewStyle().
-		Foreground(m.theme.Subtext).
-		Italic(true).
-		MarginTop(1)
-	b.WriteString("\n")
-	b.WriteString(hintStyle.Render("← → to select • Enter to confirm • Esc to cancel"))
-
-	return modalStyle.Render(b.String())
+	previewRows := min(8, l.BodyHeight-len(intro)-4)
+	preview := strings.Split(ansi.Wrap(getBlurbPreview(), max(1, l.BodyWidth-4), ""), "\n")
+	preview = preview[:min(len(preview), max(1, previewRows-2))]
+	box := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(m.theme.Border).Padding(0, 1).Width(max(1, l.BodyWidth-2))
+	lines := append(intro, lipgloss.NewStyle().Foreground(m.theme.Subtext).Italic(true).Render("Preview of content to add:"), box.Render(strings.Join(preview, "\n")))
+	entries := []PopupMenuEntry{{Label: "Yes, add it", Selected: m.selection == 0}, {Label: "No thanks", Selected: m.selection == 1}, {Label: "Don't ask again", Selected: m.selection == 2}}
+	lines = append(lines, RenderPopupMenu(entries, MeasurePopupMenu(entries, PopupMenuOpts{}), m.theme, l.BodyWidth)...)
+	opts.MinBodyRows = l.BodyHeight
+	return RenderPopup(lines, opts)
 }
 
 // Result returns the user's choice, or AgentPromptPending if still deciding.
@@ -205,6 +117,7 @@ func (m AgentPromptModal) FilePath() string {
 
 // SetSize sets the modal dimensions.
 func (m *AgentPromptModal) SetSize(width, height int) {
+	m.popupSize = &PopupSize{width, height}
 	m.width = width
 	m.height = height
 }

@@ -75,6 +75,54 @@ func TestAlertsPopup_RenderedRowRoutesClick(t *testing.T) {
 	}
 }
 
+func TestLegacyDialogPopups_FitNarrowTerminal(t *testing.T) {
+	agent := NewAgentPromptModal("/test/AGENTS.md", "AGENTS.md", DefaultTheme())
+	agent.SetSize(42, 18)
+	out := agent.View()
+	assertPopupBounds(t, out, 42, 18)
+	for _, label := range []string{"Yes, add it", "No thanks", "Don't ask again"} {
+		popupFindRow(t, out, label)
+	}
+	update := NewUpdateModal("v1.0.0", "", DefaultTheme())
+	update.SetSize(42, 18)
+	for _, state := range []UpdateState{UpdateStateConfirm, UpdateStateDownloading, UpdateStateVerifying, UpdateStateInstalling, UpdateStateSuccess, UpdateStateError} {
+		update.state = state
+		update.errorMessage = "failed"
+		update.successMessage = "updated"
+		out = update.View()
+		assertPopupBounds(t, out, 42, 18)
+	}
+	agent.SetSize(0, 0)
+	update.SetSize(0, 0)
+	if agent.View() != "" || update.View() != "" {
+		t.Fatal("zero budget rendered legacy popup")
+	}
+}
+
+func TestBQLPopup_BoundedQueryErrorAndHistory(t *testing.T) {
+	m := NewBQLQueryModal(DefaultTheme())
+	m.SetSize(32, 12)
+	m.input.SetValue("status:open")
+	m.SetError("bad query")
+	m.AddToHistory("priority:P2")
+	out := m.View()
+	assertPopupBounds(t, strings.TrimLeft(out, "\n"), 32, 12)
+	if len(strings.Split(out, "\n")) > 12 {
+		t.Fatal("BQL host placement overflowed height")
+	}
+	popupFindRow(t, out, "status:open")
+	popupFindRow(t, out, "bad query")
+	popupFindRow(t, out, "history")
+	popupFindRow(t, out, "esc")
+	if m.Value() != "status:open" || m.histIdx != -1 {
+		t.Fatal("rendering changed query or history")
+	}
+	m.SetSize(0, 0)
+	if m.View() != "" {
+		t.Fatal("zero budget rendered BQL")
+	}
+}
+
 // TestAlertsModalOccludesDetailPane is a regression guard for bt-l5xu and
 // bt-v8he: the shared alerts/notifications modal must occlude the underlying
 // detail pane (bt-l5xu, no bleed-through of body text) AND render at a
