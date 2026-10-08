@@ -46,13 +46,13 @@ func TestFieldPickerView_AlignedCurrentAndCursor(t *testing.T) {
 }
 
 func TestFieldSelectView_ShortTerminalKeepsSelected(t *testing.T) {
-	m := NewFieldSelectModal(DefaultTheme())
+	m := NewFieldSelectModal(model.StatusOpen, DefaultTheme())
 	m.SetSize(36, 10)
 	m.MoveUp()
 	out := m.View()
 	assertPopupBounds(t, out, 36, 10)
-	_, row := popupFindRow(t, out, "Acceptance Criteria")
-	if !strings.Contains(row, ">") || !strings.Contains(row, "A") {
+	_, row := popupFindRow(t, out, "Close")
+	if !strings.Contains(row, ">") || !strings.Contains(row, "x") {
 		t.Fatal("selected accelerator hidden")
 	}
 	popupFindRow(t, out, "esc")
@@ -243,15 +243,16 @@ func TestFieldSelectView_AlignedColumns(t *testing.T) {
 		{"medium", 80},
 		{"wide", 120},
 	} {
-		for selected := range fieldEditEntries {
-			t.Run(size.name+"/"+fieldEditEntries[selected].Field, func(t *testing.T) {
-				modal := NewFieldSelectModal(DefaultTheme())
+		entries := fieldEditEntriesFor(model.StatusOpen)
+		for selected := range entries {
+			t.Run(size.name+"/"+entries[selected].Field, func(t *testing.T) {
+				modal := NewFieldSelectModal(model.StatusOpen, DefaultTheme())
 				modal.SetSize(size.width, 32)
 				modal.cursor = selected
 				out := ansi.Strip(modal.View())
 				rows := strings.Split(out, "\n")
 				labelColumn := -1
-				for i, entry := range fieldEditEntries {
+				for i, entry := range entries {
 					var row string
 					labelIndex := -1
 					for _, line := range rows {
@@ -407,7 +408,8 @@ func TestStatusPickerOptions_ExcludesDestructiveStates(t *testing.T) {
 // Without the guard, newFieldPickerModal's cursor falls back to "open"
 // (index 0) and a stray Enter would commit a reopen with no confirm.
 // The field-select hub stays open (other fields remain editable), a notice
-// names bt-oiaj.2, the executor is never invoked, nothing goes pending.
+// points closed beads to the hub's Reopen entry (bt-5wq), the executor is
+// never invoked, nothing goes pending.
 func TestFieldSelectKeys_StatusFencedOnTerminalStatus(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -437,8 +439,11 @@ func TestFieldSelectKeys_StatusFencedOnTerminalStatus(t *testing.T) {
 			if m.activeModal != ModalFieldSelect {
 				t.Errorf("activeModal = %v, want ModalFieldSelect (picker must not open, hub stays)", m.activeModal)
 			}
-			if !strings.Contains(m.statusMsg, "bt-oiaj.2") || !strings.Contains(m.statusMsg, string(tc.status)) {
-				t.Errorf("notice = %q, want it to name the terminal status and bt-oiaj.2", m.statusMsg)
+			if !strings.Contains(m.statusMsg, string(tc.status)) || strings.Contains(m.statusMsg, "bt-oiaj.2") {
+				t.Errorf("notice = %q, want it to name the terminal status", m.statusMsg)
+			}
+			if wantReopen := tc.status == model.StatusClosed; strings.Contains(m.statusMsg, "o Reopen") != wantReopen {
+				t.Errorf("notice = %q, want the o Reopen hint only on closed beads", m.statusMsg)
 			}
 
 			// Enter path: cursor starts on the Status row (index 0).

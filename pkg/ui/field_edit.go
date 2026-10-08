@@ -15,6 +15,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -55,6 +56,41 @@ var fieldEditEntries = []fieldEditEntry{
 	{Field: "acceptance", Label: "Acceptance Criteria", Key: "A"},
 }
 
+// Lifecycle entries (bt-5wq): close or reopen through bd with an optional
+// reason. fieldEditEntriesFor lists the one that applies last, so the field
+// rows keep their positions.
+var (
+	closeEntry  = fieldEditEntry{Field: "close", Label: "Close", Key: "x"}
+	reopenEntry = fieldEditEntry{Field: "reopen", Label: "Reopen", Key: "o"}
+)
+
+// fieldEditEntriesFor returns the hub entries for a bead with status:
+// fieldEditEntries plus Close (not closed) or Reopen (closed). Tombstoned
+// beads get neither.
+func fieldEditEntriesFor(status model.Status) []fieldEditEntry {
+	var lifecycle []fieldEditEntry
+	switch status {
+	case model.StatusClosed:
+		lifecycle = []fieldEditEntry{reopenEntry}
+	case model.StatusTombstone:
+	default:
+		lifecycle = []fieldEditEntry{closeEntry}
+	}
+	return append(slices.Clone(fieldEditEntries), lifecycle...)
+}
+
+// lifecycleApplies reports whether the close/reopen field can act on a bead
+// with status, matching fieldEditEntriesFor.
+func lifecycleApplies(field string, status model.Status) bool {
+	switch field {
+	case "close":
+		return status != model.StatusClosed && status != model.StatusTombstone
+	case "reopen":
+		return status == model.StatusClosed
+	}
+	return false
+}
+
 // ---------------------------------------------------------------------------
 // Field-select modal (Pattern C hub — bt-88qn).
 // ---------------------------------------------------------------------------
@@ -62,15 +98,17 @@ var fieldEditEntries = []fieldEditEntry{
 // FieldSelectModal is the small picker listing the editable fields. Enter (or
 // an accelerator key) opens the matching enum picker or textinput modal.
 type FieldSelectModal struct {
+	entries       []fieldEditEntry
 	cursor        int
 	theme         Theme
 	width, height int
 	popupSize     *PopupSize
 }
 
-// NewFieldSelectModal creates a fresh field-select modal, cursor at the top.
-func NewFieldSelectModal(theme Theme) FieldSelectModal {
-	return FieldSelectModal{theme: theme}
+// NewFieldSelectModal creates a fresh field-select modal for a bead with
+// status, cursor at the top.
+func NewFieldSelectModal(status model.Status, theme Theme) FieldSelectModal {
+	return FieldSelectModal{entries: fieldEditEntriesFor(status), theme: theme}
 }
 
 // SetSize updates the modal's layout budget.
@@ -84,13 +122,13 @@ func (m *FieldSelectModal) MoveUp() {
 	if m.cursor > 0 {
 		m.cursor--
 	} else {
-		m.cursor = len(fieldEditEntries) - 1
+		m.cursor = len(m.entries) - 1
 	}
 }
 
 // MoveDown moves the cursor down, wrapping to the top.
 func (m *FieldSelectModal) MoveDown() {
-	if m.cursor < len(fieldEditEntries)-1 {
+	if m.cursor < len(m.entries)-1 {
 		m.cursor++
 	} else {
 		m.cursor = 0
@@ -99,15 +137,15 @@ func (m *FieldSelectModal) MoveDown() {
 
 // SelectedField returns the field name under the cursor.
 func (m *FieldSelectModal) SelectedField() string {
-	return fieldEditEntries[m.cursor].Field
+	return m.entries[m.cursor].Field
 }
 
 // View renders the field-select modal. Bare content only — no centering, no
 // overlay (tui-modal-compositing.md step 1); Model.View() composites it via
 // OverlayCenterDimBackdrop at the bottom of its switch.
 func (m FieldSelectModal) View() string {
-	entries := make([]PopupMenuEntry, len(fieldEditEntries))
-	for i, e := range fieldEditEntries {
+	entries := make([]PopupMenuEntry, len(m.entries))
+	for i, e := range m.entries {
 		entries[i] = PopupMenuEntry{Label: e.Label, Shortcut: e.Key, Selected: i == m.cursor}
 	}
 	return renderPopupMenuWindow(entries, PopupMenuOpts{Shortcuts: true}, m.cursor, PopupOpts{Title: "Edit field", Theme: m.theme, Available: m.popupSize, Footer: []string{"j/k move  enter select  esc cancel", "j/k enter esc"}})
@@ -267,8 +305,9 @@ func (m FieldPickerModal) View() string {
 // assignee). Modeled on bql_modal.go, simplified — a single-shot edit has no
 // query history to navigate.
 type FieldInputModal struct {
-	field         string // "title" or "assignee" — matches fieldValue()'s switch
-	label         string // "Title" or "Assignee" — display
+	field         string // "title", "assignee", "close" or "reopen"
+	title         string // popup title
+	label         string // "Title", "Assignee" or "Reason (optional)" — display
 	input         textinput.Model
 	theme         Theme
 	width, height int
@@ -286,7 +325,19 @@ func NewFieldInputModal(field, label, current string, theme Theme) FieldInputMod
 	ti.SetWidth(40)
 	ti.SetValue(current)
 	ti.CursorEnd()
-	return FieldInputModal{field: field, label: label, input: ti, theme: theme}
+	return FieldInputModal{field: field, title: "Edit " + label, label: label, input: ti, theme: theme}
+}
+
+// newReasonInputModal is the optional-reason input for closing or reopening
+// bead id (bt-5wq); field is "close" or "reopen".
+func newReasonInputModal(field, id string, theme Theme) FieldInputModal {
+	m := NewFieldInputModal(field, "Reason (optional)", "", theme)
+	m.input.CharLimit = 1024
+	m.title = "Close " + id
+	if field == "reopen" {
+		m.title = "Reopen " + id
+	}
+	return m
 }
 
 // SetSize updates the modal's layout budget.
@@ -302,7 +353,7 @@ func (m FieldInputModal) popupOpts() PopupOpts {
 	if m.err != "" {
 		minimum += len(popupBodyLines([]string{m.err}))
 	}
-	return PopupOpts{Title: "Edit " + m.label, Theme: m.theme, Available: m.popupSize, Width: 50, MinBodyRows: minimum, Footer: []string{"enter apply  esc back", "enter esc"}}
+	return PopupOpts{Title: m.title, Theme: m.theme, Available: m.popupSize, Width: 50, MinBodyRows: minimum, Footer: []string{"enter apply  esc back", "enter esc"}}
 }
 
 // Focus activates the textinput's cursor/blink.
@@ -360,7 +411,7 @@ func (m *Model) requestFieldEdit() {
 		return
 	}
 	m.fieldEditTargetID = sel.Issue.ID
-	m.fieldSelect = NewFieldSelectModal(m.theme)
+	m.fieldSelect = NewFieldSelectModal(sel.Issue.Status, m.theme)
 	m.fieldSelect.SetSize(m.width, m.height-1)
 	m.openModal(ModalFieldSelect)
 	m.focused = focusFieldSelect
@@ -406,14 +457,17 @@ func (m Model) openFieldPickerOrInput(field string) (Model, tea.Cmd) {
 		// picker must not open at all — newFieldPickerModal's cursor falls
 		// back to index 0 ("open") when the current status isn't among the
 		// options, so with no second confirm on picker Enter (fork #5) a
-		// stray e→s→Enter would silently commit a reopen. Destructive-state
-		// transitions in EITHER direction need bt-oiaj.2's reason-bearing
-		// form. The field-select hub stays open (mirrors the empty-title
+		// stray e→s→Enter would silently commit a reopen. Closing and
+		// reopening go through the hub's Close/Reopen entries and their
+		// reason input instead (bt-5wq). The field-select hub stays open (mirrors the empty-title
 		// refusal: the flow isn't broken, only this entry is fenced —
 		// title/priority/assignee stay editable on closed beads).
-		if iss.Status == model.StatusClosed || iss.Status == model.StatusTombstone {
-			m.setNotice(fmt.Sprintf(
-				"status of a %s bead needs a reason form - not yet available (bt-oiaj.2)", iss.Status))
+		if iss.Status == model.StatusClosed {
+			m.setNotice("status of a closed bead: use o Reopen")
+			return m, nil
+		}
+		if iss.Status == model.StatusTombstone {
+			m.setNotice("status of a tombstone bead can't be edited")
 			return m, nil
 		}
 		m.fieldPicker = NewStatusPickerModal(iss.Status, m.theme)
@@ -456,6 +510,15 @@ func (m Model) openFieldPickerOrInput(field string) (Model, tea.Cmd) {
 		return m.openLongformEditModal("notes", "Append Notes", "")
 	case "acceptance":
 		return m.openLongformEditModal("acceptance", "Acceptance Criteria", iss.AcceptanceCriteria)
+	case "close", "reopen":
+		if !lifecycleApplies(field, iss.Status) {
+			return m, nil
+		}
+		m.fieldInput = newReasonInputModal(field, iss.ID, m.theme)
+		m.fieldInput.SetSize(m.width, m.height-1)
+		m.openModal(ModalFieldInput)
+		m.focused = focusFieldInput
+		return m, m.fieldInput.Focus()
 	}
 	return m, nil
 }
@@ -542,6 +605,10 @@ func (m Model) handleFieldSelectKeys(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m.openFieldPickerOrInput("notes")
 	case key.Matches(msg, kk.Acceptance):
 		return m.openFieldPickerOrInput("acceptance")
+	case key.Matches(msg, kk.Close):
+		return m.openFieldPickerOrInput("close")
+	case key.Matches(msg, kk.Reopen):
+		return m.openFieldPickerOrInput("reopen")
 	case key.Matches(msg, kk.Open):
 		return m.openFieldPickerOrInput(m.fieldSelect.SelectedField())
 	}
@@ -595,6 +662,17 @@ func (m Model) handleFieldInputKeys(msg tea.KeyMsg) (Model, tea.Cmd) {
 			args = []string{"update", id, "--title", value}
 		case "assignee":
 			args = []string{"update", id, "-a", value}
+		case "close", "reopen":
+			// Settles as a status edit: bd close/reopen set closed/open.
+			args = []string{field, id}
+			if value != "" {
+				args = append(args, "--reason", value)
+			}
+			target := string(model.StatusClosed)
+			if field == "reopen" {
+				target = string(model.StatusOpen)
+			}
+			return m.commitFieldEdit("status", target, args)
 		}
 		return m.commitFieldEdit(field, value, args)
 	default:

@@ -38,6 +38,11 @@ type FieldSelectKeys struct {
 	Notes       key.Binding
 	Acceptance  key.Binding // uppercase A - lowercase a is Assignee
 
+	// Lifecycle (bt-5wq): the hub lists only the one that applies - Close on
+	// a bead that isn't closed, Reopen on a closed one.
+	Close  key.Binding
+	Reopen key.Binding
+
 	// Exit
 	Cancel key.Binding
 }
@@ -93,6 +98,14 @@ func NewFieldSelectKeys() FieldSelectKeys {
 			key.WithKeys("A"),
 			key.WithHelp("A", "edit acceptance criteria"),
 		),
+		Close: key.NewBinding(
+			key.WithKeys("x"),
+			key.WithHelp("x", "close bead"),
+		),
+		Reopen: key.NewBinding(
+			key.WithKeys("o"),
+			key.WithHelp("o", "reopen bead"),
+		),
 		Cancel: key.NewBinding(
 			key.WithKeys("esc"),
 			key.WithHelp("esc", "cancel edit"),
@@ -106,12 +119,13 @@ func (k FieldSelectKeys) ShortHelp() []key.Binding {
 }
 
 // FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
-// Columns: Navigate / Accelerators / Long-form / Exit.
+// Columns: Navigate / Accelerators / Long-form / Lifecycle / Exit.
 func (k FieldSelectKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Open},
 		{k.Status, k.Priority, k.Title, k.Assignee},
 		{k.Description, k.Design, k.Comment, k.Notes, k.Acceptance},
+		{k.Close, k.Reopen},
 		{k.Cancel},
 	}
 }
