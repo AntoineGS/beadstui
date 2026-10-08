@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"image/color"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +13,8 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/exp/teatest/v2"
+	"github.com/seanmartinsmith/beadstui/pkg/analysis"
+	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
 
 func TestDefaultTheme(t *testing.T) {
@@ -22,6 +26,162 @@ func TestDefaultTheme(t *testing.T) {
 	}
 	if theme.Open == nil {
 		t.Error("DefaultTheme Open color is nil")
+	}
+}
+
+func TestThemeRefreshRetainsActionableState(t *testing.T) {
+	restoreThemeGlobals(t)
+	withThemeConfigHome(t)
+	t.Setenv("BT_THEME", "")
+	m := settingsTestModel(t)
+	plan := analysis.ExecutionPlan{Tracks: []analysis.ExecutionTrack{
+		{TrackID: "track-A", Items: []analysis.PlanItem{{ID: "first"}, {ID: "second"}}},
+	}}
+	m.actionableView = NewActionableModel(plan, m.theme)
+	m.actionableView.SetSize(80, 12)
+	m.actionableView.MoveDown()
+	// The current split-pane renderer is not necessarily 80 columns wide.
+	m.renderer.SetWidth(47)
+	m.applyThemeLive("dracula")
+	if m.actionableView.SelectedIssueID() != "second" {
+		t.Fatal("selection reset")
+	}
+	if m.actionableView.theme.Text.Body.GetForeground() != m.theme.Text.Body.GetForeground() {
+		t.Fatal("retained Actionable theme is stale")
+	}
+	if m.renderer.width != 47 {
+		t.Fatalf("theme refresh changed markdown wrap width: %d", m.renderer.width)
+	}
+}
+
+func assertRetainedThemes(t *testing.T, m *Model) {
+	t.Helper()
+	consumers := map[string]*Theme{
+		"board": &m.board.theme, "labels": &m.labelDashboard.theme,
+		"velocity": &m.velocityComparison.theme, "sidebar": &m.shortcutsSidebar.theme,
+		"graph": &m.graphView.theme, "tree": &m.tree.theme,
+		"insights": &m.insightsPanel.theme, "flow": &m.flowMatrix.theme,
+		"actionable": &m.actionableView.theme, "history": &m.historyView.theme,
+		"memories": &m.memories.theme, "recipe": &m.recipePicker.theme,
+		"bql": &m.bqlQuery.theme, "labels picker": &m.labelPicker.theme,
+		"repo": &m.repoPicker.theme, "agent": &m.agentPromptModal.theme,
+		"tutorial": &m.tutorialModel.theme, "cass": &m.cassModal.theme,
+		"update": &m.updateModal.theme, "field select": &m.fieldSelect.theme,
+		"field picker": &m.fieldPicker.theme, "field input": &m.fieldInput.theme,
+		"longform": &m.longformEdit.theme, "settings": &m.settingsModal.theme,
+		"settings menu": &m.settingsMenu.theme, "epics": &m.epicsTree.theme,
+	}
+	for name, theme := range consumers {
+		if !reflect.DeepEqual(theme.Text, m.theme.Text) || theme.Primary != m.theme.Primary || theme.Bg != m.theme.Bg {
+			t.Errorf("%s retained stale styles/palette", name)
+		}
+	}
+}
+
+func TestThemeRefreshAllRetainedConsumers(t *testing.T) {
+	restoreThemeGlobals(t)
+	withThemeConfigHome(t)
+	t.Setenv("BT_THEME", "")
+	m := epicsTestModel(epicsFixture())
+	assertRetainedThemes(t, &m) // Startup must initialize even unopened models.
+	m.list.Select(1)
+	m.list.SetFilterText("ep")
+	index, filterState := m.list.Index(), m.list.FilterState()
+	m.fieldInput = NewFieldInputModal("title", "Title", "typed text", m.theme)
+	m.fieldInput.input.SetCursor(3)
+	m.longformEdit = NewLongformEditModal("description", "Description", "draft\nsecond line", m.theme)
+	m.longformEdit.SetSize(80, 20)
+	m.longformEdit.textarea.SetCursorColumn(3)
+	row, col := m.longformEdit.textarea.Line(), m.longformEdit.textarea.Column()
+	m.openModal(ModalLongformEdit)
+	m.shortcutsSidebar.scrollOffset = 4
+	m.actionableView = NewActionableModel(analysis.ExecutionPlan{Tracks: []analysis.ExecutionTrack{
+		{TrackID: "track-A", Items: []analysis.PlanItem{{ID: "first"}, {ID: "second"}}},
+	}}, m.theme)
+	m.actionableView.MoveDown()
+	m.actionableView.scrollOffset = 2
+	m.epicsTree.moveCursor(1)
+	m.epicsViewText = m.epicsTree.View()
+	epicsCursor := m.epicsTree.cursor
+	m.viewport.SetHeight(3)
+	m.updateViewportContent()
+	m.viewport.SetYOffset(2)
+	offset := m.viewport.YOffset()
+	for _, tf := range []*ThemeFile{
+		{Text: TextRoleConfigs{Body: TextRoleConfig{Foreground: "danger", Underline: hptr(true)}, Metadata: TextRoleConfig{Italic: hptr(true)}}},
+		{Text: TextRoleConfigs{Body: TextRoleConfig{Foreground: "success", Underline: hptr(false)}}},
+	} {
+		m.applyThemeConfig(tf)
+		assertRetainedThemes(t, &m)
+		if m.list.Index() != index || m.list.FilterState() != filterState || m.list.FilterInput.Value() != "ep" {
+			t.Fatal("list selection/filter reset")
+		}
+		if m.actionableView.SelectedIssueID() != "second" || m.actionableView.scrollOffset != 2 || m.shortcutsSidebar.scrollOffset != 4 {
+			t.Fatal("retained navigation reset")
+		}
+		if m.fieldInput.input.Value() != "typed text" || m.fieldInput.input.Position() != 3 || m.longformEdit.textarea.Value() != "draft\nsecond line" || m.longformEdit.textarea.Line() != row || m.longformEdit.textarea.Column() != col {
+			t.Fatal("edit draft/cursor reset")
+		}
+		if m.activeModal != ModalLongformEdit || m.viewport.YOffset() != offset || m.epicsTree.cursor != epicsCursor {
+			t.Fatal("modal/viewport/epics selection reset")
+		}
+		if m.epicsViewText != m.epicsTree.View() || !strings.Contains(m.epicsViewText, "ep1") {
+			t.Fatal("epics presentation cache not repainted")
+		}
+		if !reflect.DeepEqual(m.fieldInput.input.Styles().Focused.Text, m.theme.Text.Body) || !reflect.DeepEqual(m.longformEdit.textarea.Styles().Focused.Text, m.theme.Text.Body) || !reflect.DeepEqual(m.list.Styles.Filter.Focused.Text, m.theme.Text.Body) {
+			t.Fatal("widget styles stale")
+		}
+	}
+}
+
+func TestThemeRefreshBackgroundMode(t *testing.T) {
+	restoreThemeGlobals(t)
+	withThemeConfigHome(t)
+	t.Setenv("BT_THEME", "dracula")
+	m := settingsTestModel(t)
+	m.renderer.SetWidth(43)
+	for _, dark := range []bool{false, true} {
+		background := lipgloss.Color("#ffffff")
+		if dark {
+			background = lipgloss.Color("#000000")
+		}
+		updated, _ := m.Update(tea.BackgroundColorMsg{Color: background})
+		m = updated.(Model)
+		assertRetainedThemes(t, &m)
+		for _, r := range []*MarkdownRenderer{m.renderer, m.insightsPanel.mdRenderer, m.tutorialModel.markdownRenderer} {
+			if r == nil || r.IsDarkMode() != dark || !reflect.DeepEqual(r.theme.Text, m.theme.Text) {
+				t.Fatal("markdown renderer stale after background change")
+			}
+		}
+		if m.renderer.width != 43 {
+			t.Fatal("background update changed wrap width")
+		}
+	}
+}
+
+func TestThemeRefreshPresentationCachesPreservesPendingNavigation(t *testing.T) {
+	restoreThemeGlobals(t)
+	withThemeConfigHome(t)
+	m := NewModel([]model.Issue{{ID: "cache", Title: "Cached issue", Status: model.StatusOpen, Description: strings.Repeat("paragraph\n\n", 40)}}, nil, "", nil, nil)
+	m.viewport.SetHeight(3)
+	m.updateViewportContent()
+	m.viewport.SetYOffset(3)
+	m.board.renderDetailPanel(50, 12)
+	m.board.detailVP.SetYOffset(2)
+	m.viewport.SetContent(strings.Repeat("stale\n", 100))
+	m.board.detailVP.SetContent(strings.Repeat("stale\n", 100))
+	m.insightsPanel.detailContent = "stale"
+	m.pendingCommentScroll = time.Unix(100, 0)
+	pending := m.pendingCommentScroll
+	m.applyThemeLive("dracula")
+	if m.pendingCommentScroll != pending {
+		t.Fatal("cosmetic refresh consumed pending comment navigation")
+	}
+	if m.viewport.YOffset() != 3 || m.board.detailVP.YOffset() != 2 {
+		t.Fatal("cached detail repaint reset scroll")
+	}
+	if strings.Contains(m.viewport.View(), "stale") || strings.Contains(m.board.detailVP.View(), "stale") || m.insightsPanel.detailContent == "stale" {
+		t.Fatal("detail presentation cache not repainted")
 	}
 }
 
@@ -407,10 +567,13 @@ func TestThemeSwapMidSession_NoRace(t *testing.T) {
 			name = themeB
 		}
 		t.Setenv("BT_THEME", name)
+		// Exercise a retained view between repaints, not just the main list.
+		tm.Send(tea.KeyPressMsg{Code: 'a', Text: "a"})
 		tm.Send(tea.BackgroundColorMsg{Color: lipgloss.Color("#1d1f21")})
 		tm.Send(tea.KeyPressMsg{Code: tea.KeyDown})
 		tm.Send(tea.BackgroundColorMsg{Color: lipgloss.Color("#ffffff")})
 		tm.Send(tea.KeyPressMsg{Code: tea.KeyUp})
+		tm.Send(tea.KeyPressMsg{Code: tea.KeyEsc})
 	}
 
 	tm.Quit()

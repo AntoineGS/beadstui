@@ -34,6 +34,7 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/watcher"
 
 	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -1232,10 +1233,7 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 	initialTriad := computeFooterTriad(issues, analyzer)
 
 	// Theme: load YAML overrides, apply to globals and theme struct
-	themeConfig := LoadTheme()
-	ApplyThemeToGlobals(themeConfig)
-	theme := DefaultTheme()
-	ApplyThemeToThemeStruct(&theme, themeConfig)
+	theme := themeFromConfig(LoadTheme())
 
 	// Default dimensions for immediate ready state (updated when WindowSizeMsg arrives)
 	// This eliminates the "Initializing..." phase entirely, fixing slow startup issues
@@ -1277,8 +1275,6 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 	// Clear all default styles that might add extra lines
 	l.Styles.Title = lipgloss.NewStyle()
 	l.Styles.TitleBar = lipgloss.NewStyle()
-	l.Styles.Filter.Focused.Prompt = lipgloss.NewStyle().Foreground(theme.Primary)
-	l.Styles.Filter.Focused.Text = lipgloss.NewStyle().Foreground(theme.Primary)
 	l.Styles.StatusBar = lipgloss.NewStyle()
 	l.Styles.StatusEmpty = lipgloss.NewStyle()
 	l.Styles.StatusBarActiveFilter = lipgloss.NewStyle()
@@ -1373,10 +1369,6 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 	// undercount the prompt width vs. terminal rendering, knocking the modal's
 	// right border one cell out of alignment on the input row (bt-rhfo).
 	ti.Prompt = "Revision: "
-	tiStyles := ti.Styles()
-	tiStyles.Focused.Prompt = lipgloss.NewStyle().Foreground(theme.Primary).Bold(true)
-	tiStyles.Focused.Text = lipgloss.NewStyle().Foreground(theme.Base.GetForeground())
-	ti.SetStyles(tiStyles)
 
 	// Initialize file watcher for live reload
 	var fileWatcher *watcher.Watcher
@@ -1519,7 +1511,7 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 		}
 	}
 
-	return Model{
+	m := Model{
 		data: &DataState{
 			issues:              issues,
 			issueMap:            issueMap,
@@ -1613,6 +1605,117 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 		longformDrafts: make(map[longformDraftKey]string),
 		// Write-routing table (bt-scc35)
 		routeTable: routeTable,
+	}
+	m.refreshThemeConsumers()
+	return m
+}
+
+// themeFromConfig is shared by startup and event-loop theme changes. Resetting
+// defaults first prevents absent palette fields and text attributes leaking.
+func themeFromConfig(tf *ThemeFile) Theme {
+	resolveColors()
+	ApplyThemeToGlobals(tf)
+	theme := DefaultTheme()
+	ApplyThemeToThemeStruct(&theme, tf)
+	return theme
+}
+
+func (m *Model) applyThemeConfig(tf *ThemeFile) {
+	m.theme = themeFromConfig(tf)
+	m.refreshThemeConsumers()
+}
+
+// refreshThemeConsumers changes presentation only. Retained data, selections,
+// filters, modal state and edit buffers are deliberately not reconstructed.
+func (m *Model) refreshThemeConsumers() {
+	t := m.theme
+	m.board.theme = t
+	m.labelDashboard.theme = t
+	m.velocityComparison.theme = t
+	m.shortcutsSidebar.theme = t
+	m.graphView.theme = t
+	m.tree.theme = t
+	m.insightsPanel.theme = t
+	m.flowMatrix.theme = t
+	m.actionableView.theme = t
+	m.historyView.theme = t
+	m.memories.theme = t
+	m.recipePicker.theme = t
+	m.bqlQuery.theme = t
+	m.labelPicker.theme = t
+	m.repoPicker.theme = t
+	m.agentPromptModal.theme = t
+	m.tutorialModel.theme = t
+	m.cassModal.theme = t
+	m.updateModal.theme = t
+	m.fieldSelect.theme = t
+	m.fieldPicker.theme = t
+	m.fieldInput.theme = t
+	m.longformEdit.theme = t
+	m.settingsModal.SetTheme(t)
+	m.settingsMenu.SetTheme(t)
+	m.epicsTree.SetTheme(t)
+	// Keep the state-aware delegate helper, including dynamic issue columns.
+	m.updateListDelegate()
+	for _, state := range []*textinput.StyleState{&m.list.Styles.Filter.Focused, &m.list.Styles.Filter.Blurred} {
+		state.Prompt = t.Text.Heading
+		state.Text = t.Text.Body
+		state.Placeholder = t.Text.Metadata
+		state.Suggestion = t.Text.Metadata
+	}
+	for _, input := range []*textinput.Model{&m.list.FilterInput, &m.fieldInput.input, &m.bqlQuery.input, &m.memories.searchInput, &m.historyView.searchInput, &m.timeTravelInput} {
+		styles := input.Styles()
+		for _, state := range []*textinput.StyleState{&styles.Focused, &styles.Blurred} {
+			state.Prompt = t.Text.Heading
+			state.Text = t.Text.Body
+			state.Placeholder = t.Text.Metadata
+			state.Suggestion = t.Text.Metadata
+		}
+		styles.Cursor.Color = t.TextColor
+		input.SetStyles(styles)
+	}
+	styles := m.longformEdit.textarea.Styles()
+	for _, state := range []*textarea.StyleState{&styles.Focused, &styles.Blurred} {
+		state.Base = t.Text.Body
+		state.Text = t.Text.Body
+		state.CursorLine = t.Text.Body
+		state.LineNumber = t.Text.Metadata
+		state.CursorLineNumber = t.Text.Heading
+		state.EndOfBuffer = t.Text.Metadata
+		state.Placeholder = t.Text.Metadata
+		state.Prompt = t.Text.Heading
+	}
+	styles.Cursor.Color = t.TextColor
+	m.longformEdit.textarea.SetStyles(styles)
+	// Recreate rather than SetWidth: the terminal's dark/light mode may change.
+	for _, renderer := range []**MarkdownRenderer{&m.renderer, &m.insightsPanel.mdRenderer, &m.tutorialModel.markdownRenderer} {
+		if *renderer != nil {
+			*renderer = NewMarkdownRendererWithTheme(max(1, (*renderer).width), t)
+		}
+	}
+	if m.board.mdRenderer != nil {
+		m.board.mdRenderer = NewMarkdownRendererWithTheme(60, t).renderer
+		offset := m.board.detailVP.YOffset()
+		m.board.lastDetailID = ""
+		m.board.renderDetailPanel(m.board.detailVP.Width()+4, m.board.detailVP.Height()+2)
+		m.board.detailVP.SetYOffset(offset)
+	}
+	if m.insightsPanel.mdRenderer != nil {
+		offset := m.insightsPanel.detailVP.YOffset()
+		m.insightsPanel.updateDetailContent()
+		m.insightsPanel.detailVP.SetYOffset(offset)
+	}
+	if m.epicsViewText != "" {
+		m.epicsViewText = m.epicsTree.View()
+	}
+	if m.renderer != nil {
+		offset := m.viewport.YOffset()
+		// Repainting must not consume a queued deep-link navigation request.
+		pendingScroll := m.pendingCommentScroll
+		m.pendingCommentScroll = time.Time{}
+		m.updateViewportContent()
+		m.pendingCommentScroll = pendingScroll
+		m.viewport.SetYOffset(offset)
 	}
 }
 
@@ -1919,13 +2022,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.handleResizeSettled(msg)
 
 	case tea.BackgroundColorMsg:
-		isDark := msg.IsDark()
-		isDarkBackground = isDark
-		resolveColors()
-		m.theme = DefaultTheme()
-		tf := LoadTheme()
-		ApplyThemeToGlobals(tf)
-		ApplyThemeToThemeStruct(&m.theme, tf)
+		isDarkBackground = msg.IsDark()
+		m.applyThemeConfig(LoadTheme())
 	}
 
 	// Update list for navigation, but NOT for WindowSizeMsg

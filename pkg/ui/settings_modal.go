@@ -122,30 +122,8 @@ func (s *themeSetting) Next(m *Model) {
 // Safe to call from Update without synchronisation: bt-1n0b1 established that
 // the bubbletea event loop is the only reader of the Color* tokens and the
 // styles built from them, and Update and View run consecutively on it.
-//
-// The real hazard is staleness, not races. Most sub-models are rebuilt on entry
-// and pick up the new palette for free; the three below hold a Theme value copy
-// or a style built from one and outlive the swap, so they need an explicit
-// re-push or the list keeps rendering in the previous palette while everything
-// around it changes.
 func (m *Model) applyThemeLive(name string) {
-	tf := LoadThemeNamed(name)
-	ApplyThemeToGlobals(tf)
-	ApplyThemeToThemeStruct(&m.theme, tf)
-
-	// updateListDelegate rebuilds from current model state, so the delegate
-	// picks up the new Theme along with the hint/claim state it already
-	// carries. Reconstructing it here by hand would silently drop whichever
-	// field gets added to IssueDelegate next.
-	m.updateListDelegate()
-
-	m.list.Styles.Filter.Focused.Prompt = lipgloss.NewStyle().Foreground(m.theme.Primary)
-	m.list.Styles.Filter.Focused.Text = lipgloss.NewStyle().Foreground(m.theme.Primary)
-	m.renderer = NewMarkdownRendererWithTheme(80, m.theme)
-
-	// And the settings screen itself, so it repaints along with everything
-	// underneath it rather than staying in the palette it opened in.
-	m.settingsModal.SetTheme(m.theme)
+	m.applyThemeConfig(LoadThemeNamed(name))
 }
 
 // SettingsModalModel is the options screen.
