@@ -282,6 +282,7 @@ type FieldInputModal struct {
 // only).
 func NewFieldInputModal(field, label, current string, theme Theme) FieldInputModal {
 	ti := textinput.New()
+	styleTextInput(&ti, theme)
 	ti.CharLimit = 256
 	ti.SetWidth(40)
 	ti.SetValue(current)
@@ -331,7 +332,7 @@ func (m FieldInputModal) Update(msg tea.Msg) (FieldInputModal, tea.Cmd) {
 func (m FieldInputModal) View() string {
 	t := m.theme
 
-	labelStyle := lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
+	labelStyle := t.Text.Heading
 	errStyle := lipgloss.NewStyle().Foreground(t.Warning)
 
 	lines := []string{labelStyle.Render(m.label + ":"), m.input.View()}
@@ -339,6 +340,19 @@ func (m FieldInputModal) View() string {
 		lines = append(lines, errStyle.Render(m.err))
 	}
 	return RenderPopup(lines, m.popupOpts())
+}
+
+// styleTextInput updates presentation without disturbing drafts, focus or cursor.
+func styleTextInput(input *textinput.Model, t Theme) {
+	styles := input.Styles()
+	for _, state := range []*textinput.StyleState{&styles.Focused, &styles.Blurred} {
+		state.Prompt = t.Text.Heading
+		state.Text = t.Text.Body
+		state.Placeholder = t.Text.Metadata
+		state.Suggestion = t.Text.Metadata
+	}
+	styles.Cursor.Color = t.TextColor
+	input.SetStyles(styles)
 }
 
 // ---------------------------------------------------------------------------

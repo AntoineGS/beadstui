@@ -260,8 +260,8 @@ func (s *SettingsModalModel) View() string {
 
 func (s *SettingsModalModel) renderTabs() string {
 	t := s.theme
-	active := lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
-	idle := lipgloss.NewStyle().Foreground(t.Subtext)
+	active := t.Text.Selected
+	idle := t.Text.Metadata
 
 	out := make([]string, 0, len(s.tabs))
 	for i, name := range s.tabs {
@@ -278,14 +278,10 @@ func (s *SettingsModalModel) renderTabs() string {
 // value beneath, the selected one highlighted.
 func (s *SettingsModalModel) renderSettings(width int) []string {
 	t := s.theme
-	// Filled bar for the selected setting, matching btop. Foreground comes from
-	// the theme background so the label stays legible whatever Primary is --
-	// several palettes in the corpus have a near-white Primary, where white-on-
-	// Primary would vanish.
-	nameSel := lipgloss.NewStyle().Foreground(ColorBg).Background(t.Primary).Bold(true)
-	nameIdle := lipgloss.NewStyle().Foreground(t.Base.GetForeground()).Bold(true)
-	valSel := lipgloss.NewStyle().Foreground(t.Primary)
-	valIdle := lipgloss.NewStyle().Foreground(t.Subtext)
+	nameSel := t.Text.Selected
+	nameIdle := t.Text.Heading
+	valSel := t.Text.Selected
+	valIdle := t.Text.Body
 
 	var out []string
 	for i, it := range s.items {
@@ -322,7 +318,7 @@ func (s *SettingsModalModel) renderHelp(width int) []string {
 	if it == nil {
 		return nil
 	}
-	style := lipgloss.NewStyle().Foreground(s.theme.Subtext)
+	style := s.theme.Text.Body
 
 	var out []string
 	for _, raw := range strings.Split(it.Help(), "\n") {

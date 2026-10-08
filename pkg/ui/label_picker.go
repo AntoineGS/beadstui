@@ -44,6 +44,7 @@ func NewLabelPickerModel(labels []string, counts map[string]int, theme Theme) La
 	sorted := sortLabelsByCountDesc(labels, counts)
 
 	ti := textinput.New()
+	styleTextInput(&ti, theme)
 	ti.Placeholder = "type to filter..."
 	ti.CharLimit = 50
 	ti.SetWidth(30)

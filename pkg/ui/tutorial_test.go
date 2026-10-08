@@ -6,7 +6,37 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
+
+func TestTutorialElementsRespectTextRoles(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Body = lipgloss.NewStyle().Background(theme.Primary).Underline(true).Bold(false).Italic(false)
+	theme.Text.Heading = lipgloss.NewStyle().Background(theme.Secondary).Underline(true).Bold(false).Italic(false)
+	out := (Paragraph{Text: "Body text"}).Render(theme, 40)
+	if out != theme.Text.Body.Width(40).Render("Body text") {
+		t.Fatal("paragraph ignored body attributes/background")
+	}
+	heading := (Section{Title: "Section text"}).Render(theme, 40)
+	if !strings.Contains(heading, theme.Text.Heading.Render("Section text")) {
+		t.Fatal("section ignored heading attributes/background or forced bold")
+	}
+}
+
+func TestSupportingPlainTextRoles(t *testing.T) {
+	theme := DefaultTheme()
+	plain := lipgloss.NewStyle().Background(theme.Primary).Bold(false).Italic(false).Underline(false)
+	theme.Text.Body, theme.Text.Heading, theme.Text.Metadata = plain, plain, plain
+	if got := (Paragraph{Text: "Plain prose"}).Render(theme, 40); got != plain.Width(40).Render("Plain prose") {
+		t.Fatal("plain paragraph acquired local attributes")
+	}
+	if got := (Section{Title: "Plain heading"}).Render(theme, 40); !strings.Contains(got, plain.Render("Plain heading")) {
+		t.Fatal("plain heading acquired local attributes")
+	}
+	if got := RenderContextHelp(ContextList, theme, 100, 40); !strings.Contains(got, plain.Render("Press ` for full tutorial │ Esc to close")) {
+		t.Fatal("plain help hint acquired local attributes")
+	}
+}
 
 func newTestTutorialModel() TutorialModel {
 	return NewTutorialModel(DefaultTheme())

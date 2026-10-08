@@ -16,8 +16,6 @@ package ui
 
 import (
 	"strings"
-
-	"charm.land/lipgloss/v2"
 )
 
 // lensLevel controls how much of the lens sentence renders under width pressure.
@@ -177,16 +175,16 @@ func renderLens(fd FooterData, lvl lensLevel) string {
 	g := activeGlyphs
 	ascii := asciiTier()
 
-	scopeStyle := lipgloss.NewStyle().Foreground(ColorText)
-	chipStyle := lipgloss.NewStyle().Foreground(ColorSubtext)
-	sep := lipgloss.NewStyle().Foreground(ColorMuted).Render(" " + g.Sep + " ")
+	scopeStyle := ActiveTextStyles.Badge
+	chipStyle := ActiveTextStyles.Metadata
+	sep := ActiveTextStyles.Metadata.Render(" " + g.Sep + " ")
 
 	var segs []string
 
 	// Scope (where am I) renders bare in both tiers (doc mockup: "bt" /
 	// "ALL(19)"): the NF folder/globe icons read as oversized dots at
-	// terminal size and bold read poorly (bt-41gr8, dogfood 2026-07-17).
-	// Normal-brightness color against the dim chips carries the hierarchy.
+	// terminal size (bt-41gr8, dogfood 2026-07-17). Formatting now follows
+	// the centrally configurable general workspace badge role.
 	if fd.ScopeLabel != "" {
 		segs = append(segs, scopeStyle.Render(fd.ScopeLabel))
 	}
@@ -214,12 +212,12 @@ func renderLens(fd FooterData, lvl lensLevel) string {
 // navigation, so the per-view action pills were retired from the footer chrome —
 // the per-view key.Maps now feed only those two surfaces.
 func renderStaticHints(compact bool) string {
-	keyStyle := lipgloss.NewStyle().Foreground(ColorSecondary).Bold(true)
+	keyStyle := ActiveTextStyles.Heading
 	if compact {
 		return keyStyle.Render("?") + " " + keyStyle.Render(";")
 	}
-	labelStyle := lipgloss.NewStyle().Foreground(ColorSubtext)
-	sep := lipgloss.NewStyle().Foreground(ColorMuted).Render(" " + activeGlyphs.Sep + " ")
+	labelStyle := ActiveTextStyles.Metadata
+	sep := ActiveTextStyles.Metadata.Render(" " + activeGlyphs.Sep + " ")
 	return keyStyle.Render("?") + labelStyle.Render(" help") + sep +
 		keyStyle.Render(";") + labelStyle.Render(" shortcuts")
 }

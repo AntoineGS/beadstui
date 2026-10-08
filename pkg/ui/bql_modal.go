@@ -24,6 +24,7 @@ type BQLQueryModal struct {
 // NewBQLQueryModal creates a new BQL query input modal.
 func NewBQLQueryModal(theme Theme) BQLQueryModal {
 	ti := textinput.New()
+	styleTextInput(&ti, theme)
 	ti.Placeholder = "status:open priority<P2 label:bug"
 	ti.CharLimit = 256
 	ti.SetWidth(60)

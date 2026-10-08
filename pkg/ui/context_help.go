@@ -49,18 +49,13 @@ func RenderContextHelp(ctx Context, theme Theme, width, height int) string {
 	}
 
 	// Title
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(theme.Primary)
+	titleStyle := theme.Text.Title
 
 	// Content style
-	contentStyle := lipgloss.NewStyle().
-		Foreground(theme.Subtext)
+	contentStyle := theme.Text.Body
 
 	// Footer hint
-	footerStyle := lipgloss.NewStyle().
-		Foreground(theme.Muted).
-		Italic(true)
+	footerStyle := theme.Text.Metadata
 
 	// Build content
 	var b strings.Builder

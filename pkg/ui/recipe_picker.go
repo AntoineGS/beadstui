@@ -5,8 +5,6 @@ import (
 	"strings"
 
 	"github.com/seanmartinsmith/beadstui/pkg/recipe"
-
-	"charm.land/lipgloss/v2"
 )
 
 // RecipePickerModel represents the recipe picker overlay
@@ -97,7 +95,7 @@ func (m *RecipePickerModel) View() string {
 	}
 	start, end := popupMenuWindowRange(entries, m.selectedIndex, l.BodyHeight-2)
 	lines := []string{""}
-	hint := lipgloss.NewStyle().Foreground(m.theme.Subtext).Italic(true)
+	hint := m.theme.Text.Metadata
 	if start > 0 {
 		lines[0] = hint.Render(fmt.Sprintf("↑ %d more", start))
 	}

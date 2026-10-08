@@ -34,7 +34,6 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/watcher"
 
 	"charm.land/bubbles/v2/list"
-	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -1664,29 +1663,9 @@ func (m *Model) refreshThemeConsumers() {
 		state.Suggestion = t.Text.Metadata
 	}
 	for _, input := range []*textinput.Model{&m.list.FilterInput, &m.fieldInput.input, &m.bqlQuery.input, &m.labelPicker.input, &m.repoPicker.input, &m.memories.searchInput, &m.historyView.searchInput, &m.timeTravelInput} {
-		styles := input.Styles()
-		for _, state := range []*textinput.StyleState{&styles.Focused, &styles.Blurred} {
-			state.Prompt = t.Text.Heading
-			state.Text = t.Text.Body
-			state.Placeholder = t.Text.Metadata
-			state.Suggestion = t.Text.Metadata
-		}
-		styles.Cursor.Color = t.TextColor
-		input.SetStyles(styles)
+		styleTextInput(input, t)
 	}
-	styles := m.longformEdit.textarea.Styles()
-	for _, state := range []*textarea.StyleState{&styles.Focused, &styles.Blurred} {
-		state.Base = t.Text.Body
-		state.Text = t.Text.Body
-		state.CursorLine = t.Text.Body
-		state.LineNumber = t.Text.Metadata
-		state.CursorLineNumber = t.Text.Heading
-		state.EndOfBuffer = t.Text.Metadata
-		state.Placeholder = t.Text.Metadata
-		state.Prompt = t.Text.Heading
-	}
-	styles.Cursor.Color = t.TextColor
-	m.longformEdit.textarea.SetStyles(styles)
+	styleTextArea(&m.longformEdit.textarea, t)
 	// Recreate rather than SetWidth: the terminal's dark/light mode may change.
 	for _, renderer := range []**MarkdownRenderer{&m.renderer, &m.insightsPanel.mdRenderer, &m.tutorialModel.markdownRenderer} {
 		if *renderer != nil {
