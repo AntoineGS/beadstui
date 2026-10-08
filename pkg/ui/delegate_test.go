@@ -265,8 +265,32 @@ func TestIssueDelegate_SelectedRowHasUniformHighlight(t *testing.T) {
 			if cell.Style.Bg == nil || cell.Style.Fg == nil {
 				t.Fatalf("width=%d cell=%d: missing selection colors", width, x)
 			}
-			if !cell.Style.Equal(&uv.Style{Bg: d.Theme.Primary, Fg: ColorBgContrast}) {
-				t.Errorf("width=%d cell=%d: non-uniform selection style: %+v", width, x, cell.Style)
+			if !cell.Style.Equal(&uv.Style{Bg: d.Theme.Highlight, Fg: ColorText}) {
+				t.Fatalf("width=%d cell=%d: non-uniform selection style: %+v", width, x, cell.Style)
+			}
+		}
+	}
+}
+
+func TestIssueDelegate_SelectedRowUsesCustomThemeText(t *testing.T) {
+	restoreThemeGlobals(t)
+	tf := &ThemeFile{Colors: ThemeColors{
+		Text:      &AdaptiveHex{Dark: "#eeeeee", Light: "#222222"},
+		Highlight: &AdaptiveHex{Dark: "#333333", Light: "#dddddd"},
+	}}
+	for _, dark := range []bool{false, true} {
+		isDarkBackground = dark
+		d := IssueDelegate{Theme: DefaultTheme()}
+		ApplyThemeToGlobals(tf)
+		ApplyThemeToThemeStruct(&d.Theme, tf)
+		want := uv.Style{Fg: lipgloss.Color("#222222"), Bg: lipgloss.Color("#dddddd")}
+		if dark {
+			want = uv.Style{Fg: lipgloss.Color("#eeeeee"), Bg: lipgloss.Color("#333333")}
+		}
+		row := renderDelegateRow(t, d, newTestIssueItem("api-123"), 80)
+		for x, cell := range uv.NewStyledString(row).Lines(ansi.GraphemeWidth)[0] {
+			if !cell.Style.Equal(&want) {
+				t.Fatalf("dark=%t cell=%d: selected row ignores custom text/highlight colors: %+v", dark, x, cell.Style)
 			}
 		}
 	}

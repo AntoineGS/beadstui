@@ -382,7 +382,7 @@ func (d IssueDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 	// and badge backgrounds cannot punch holes in the highlight.
 	rowStyle := lipgloss.NewStyle().Width(width).MaxWidth(width)
 	if isSelected {
-		row = rowStyle.Background(t.Primary).Foreground(ColorBgContrast).Render(ansi.Strip(row))
+		row = rowStyle.Background(t.Highlight).Foreground(ColorText).Render(ansi.Strip(row))
 	} else {
 		row = rowStyle.Render(row)
 	}
