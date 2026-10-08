@@ -268,12 +268,12 @@ func TestStatusCycleKeyEndToEnd(t *testing.T) {
 	nm, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = nm.(Model)
 
-	if m.filter.currentFilter != "all" {
-		t.Fatalf("precondition: default filter should be all, got %q", m.filter.currentFilter)
+	if m.filter.currentFilter != "open" {
+		t.Fatalf("precondition: default filter should be open, got %q", m.filter.currentFilter)
 	}
 
-	// One '#' per expected stop after "all".
-	want := []string{"open", "in_progress", "blocked", "closed", "deferred", "all"}
+	// One '#' per expected stop after the default "open".
+	want := []string{"in_progress", "blocked", "closed", "deferred", "all", "open"}
 	for _, expect := range want {
 		nm, _ = m.Update(tea.KeyPressMsg{Code: '#', Text: "#"})
 		m = nm.(Model)

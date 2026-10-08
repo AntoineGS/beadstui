@@ -168,6 +168,7 @@ func TestHandleListKeysFiltersAndTimeTravelPrompt(t *testing.T) {
 	m.width = 80
 	m.focused = focusList
 	m.isSplitView = false
+	m.SetFilter("all")
 
 	m = m.handleListKeys(tea.KeyPressMsg{Code: 'o', Text: "o"})
 	if m.filter.currentFilter != "open" {
@@ -926,6 +927,7 @@ func TestRenderSplitAndListViews(t *testing.T) {
 	// Prime layout into split view
 	modelAny, _ := m.Update(tea.WindowSizeMsg{Width: 180, Height: 40})
 	m = modelAny.(Model)
+	m.SetFilter("all")
 	m.isSplitView = true
 	out := m.renderSplitView()
 	if !strings.Contains(out, "Alpha") || !strings.Contains(out, "Beta") {

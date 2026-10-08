@@ -1528,7 +1528,14 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 		}
 	}
 
-	return Model{
+	// cmd/bt pre-filters the issues for a recipe, so the status default
+	// applies only without one.
+	startFilter := defaultStatusFilter
+	if activeRecipe != nil {
+		startFilter = "all"
+	}
+
+	m := Model{
 		data: &DataState{
 			issues:              issues,
 			issueMap:            issueMap,
@@ -1542,7 +1549,7 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 			instanceLock:        instLock,
 		},
 		filter: &FilterState{
-			currentFilter: "all",
+			currentFilter: startFilter,
 			recipeLoader:  recipeLoader,
 			activeRecipe:  activeRecipe,
 			bqlEngine:     bqlEngine,
@@ -1623,6 +1630,10 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 		// Write-routing table (bt-scc35)
 		routeTable: routeTable,
 	}
+	if startFilter != "all" {
+		m.applyFilter()
+	}
+	return m
 }
 
 // replaceIssues swaps the model's issue set, recomputing analysis, maps, counts,

@@ -20,6 +20,7 @@ func repoColumnFixture() (Model, []model.Issue) {
 		{ID: "web-456", SourceRepo: "web", Title: "Other project", Status: model.StatusClosed, IssueType: model.TypeTask, UpdatedAt: time.Now()},
 	}
 	m := NewModel(issues, nil, "", nil, nil)
+	m.SetFilter("all") // web-456 is closed and must stay listed
 	m.EnableWorkspaceMode(WorkspaceInfo{
 		Enabled: true, RepoCount: 3, RepoPrefixes: []string{"statsengine", "web", "api"},
 	})

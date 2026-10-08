@@ -145,7 +145,7 @@ Supports `=`, `!=`, `<`, `>`, `~` (substring), `in`, `not in`, `and`/`or`/`not`,
 | `f` | Flow matrix |
 | `/` | Search |
 | `:` | BQL query |
-| `o` / `c` / `r` | List open / closed / ready issues |
+| `o` / `c` / `r` | Toggle open (the default) / closed / ready issues; press again for all |
 | `l` | Label picker |
 | `p` | Priority hints |
 | `t` | Time travel |

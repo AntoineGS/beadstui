@@ -104,7 +104,7 @@ func (m Model) getDiffStatus(id string) DiffStatus {
 // (status filter, label filter, recipe filter, or fuzzy search)
 func (m *Model) hasActiveFilters() bool {
 	// Check status filter
-	if m.filter.currentFilter != "all" {
+	if m.filter.currentFilter != defaultStatusFilter {
 		return true
 	}
 	// Check label filter
@@ -137,22 +137,34 @@ func (m *Model) selectIssueByID(issueID string) bool {
 	if issueID == "" {
 		return false
 	}
-	for i, it := range m.list.VisibleItems() {
-		if item, ok := it.(IssueItem); ok && item.Issue.ID == issueID {
-			m.list.Select(i)
-			return true
+	selectVisible := func() bool {
+		for i, it := range m.list.VisibleItems() {
+			if item, ok := it.(IssueItem); ok && item.Issue.ID == issueID {
+				m.list.Select(i)
+				return true
+			}
 		}
+		return false
+	}
+	if selectVisible() {
+		return true
 	}
 	// Not in the visible set. If a filter is active, clear it and retry —
 	// the user's intent when jumping from a notification/alert is "take me
 	// there," which outranks preserving an incompatible filter.
 	if m.list.FilterState() != list.Unfiltered {
 		m.list.ResetFilter()
-		for i, it := range m.list.VisibleItems() {
-			if item, ok := it.(IssueItem); ok && item.Issue.ID == issueID {
-				m.list.Select(i)
-				return true
-			}
+		if selectVisible() {
+			return true
+		}
+	}
+	// Hidden only by the default open filter (bt-fx1): epics, alerts and
+	// notifications still reach closed beads. An explicit filter is kept.
+	if m.filter.currentFilter == defaultStatusFilter && m.filter.activeRecipe == nil {
+		if _, ok := m.data.issueMap[issueID]; ok {
+			m.filter.currentFilter = "all"
+			m.applyFilter()
+			return selectVisible()
 		}
 	}
 	return false
@@ -197,9 +209,13 @@ func (m *Model) commitFilterIfTyping() {
 	m.list.SetFilterState(list.FilterApplied)
 }
 
+// defaultStatusFilter is the status filter bt starts with and returns to when
+// filters are cleared (bt-fx1): closed beads stay one o press away.
+const defaultStatusFilter = "open"
+
 // clearAllFilters resets all filters to their default state
 func (m *Model) clearAllFilters() {
-	m.filter.currentFilter = "all"
+	m.filter.currentFilter = defaultStatusFilter
 	m.filter.labelFilter = ""
 	m.filter.sortMode = SortDefault
 	m.setActiveRecipe(nil)       // Clear any active recipe filter

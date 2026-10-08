@@ -43,6 +43,7 @@ func TestModelFiltering(t *testing.T) {
 	m := ui.NewModel(issues, nil, "", nil, nil)
 
 	// Test "All"
+	m.SetFilter("all")
 	if len(m.FilteredIssues()) != 8 {
 		t.Errorf("Expected 8 issues for 'all', got %d", len(m.FilteredIssues()))
 	}

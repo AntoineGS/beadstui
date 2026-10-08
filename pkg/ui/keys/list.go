@@ -123,7 +123,7 @@ func NewListNormalKeys() ListNormalKeys {
 
 		FilterOpen: key.NewBinding(
 			key.WithKeys("o"),
-			key.WithHelp("o", "open issues"),
+			key.WithHelp("o", "open issues / all"),
 		),
 		FilterClosed: key.NewBinding(
 			key.WithKeys("c"),
