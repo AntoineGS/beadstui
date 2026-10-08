@@ -194,6 +194,78 @@ func TestRepoColumnScopeSurvivesRefreshAndSecondaryFilters(t *testing.T) {
 	}
 }
 
+// TestLabelPickerRespectsProjectScope is the repro for bt-obw (gh-61): after
+// narrowing to a project with w, the l picker listed every workspace label
+// with workspace-wide counts.
+func TestLabelPickerRespectsProjectScope(t *testing.T) {
+	issues := []model.Issue{
+		{ID: "proja-1", Title: "A one", Status: model.StatusOpen, Labels: []string{"shared", "a-only"}},
+		{ID: "projb-1", Title: "B one", Status: model.StatusOpen, Labels: []string{"shared", "b-only"}},
+		{ID: "projb-2", Title: "B two", Status: model.StatusOpen, Labels: []string{"shared"}},
+	}
+	m := NewModel(issues, nil, "", nil, nil)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+	m = updated.(Model)
+	m.EnableWorkspaceMode(WorkspaceInfo{
+		Enabled: true, RepoCount: 2, RepoPrefixes: []string{"proja", "projb"},
+	})
+
+	openPicker := func(m Model) Model {
+		t.Helper()
+		updated, _ := m.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})
+		m = updated.(Model)
+		if m.activeModal != ModalLabelPicker {
+			t.Fatalf("expected label picker open, got modal %v", m.activeModal)
+		}
+		m = m.handleLabelPickerKeys(tea.KeyPressMsg{Code: tea.KeyEsc})
+		return m
+	}
+	assertLabels := func(m Model, want map[string]int) {
+		t.Helper()
+		got := make(map[string]int, len(m.labelPicker.allLabels))
+		for _, l := range m.labelPicker.allLabels {
+			got[l] = m.labelPicker.labelCounts[l]
+		}
+		if len(got) != len(want) {
+			t.Fatalf("labels = %v, want %v", got, want)
+		}
+		for l, n := range want {
+			if c, ok := got[l]; !ok || c != n {
+				t.Fatalf("labels = %v, want %v", got, want)
+			}
+		}
+	}
+
+	// No project filter: whole workspace, as before.
+	m = openPicker(m)
+	assertLabels(m, map[string]int{"shared": 3, "a-only": 1, "b-only": 1})
+
+	// Narrow to proja through the w picker's commit path, then press l.
+	m.repoPicker = NewRepoPickerModel(m.availableRepos, m.theme)
+	m.repoPicker.selected = map[string]bool{} // No checkmarks commits the cursor project.
+	for i, repo := range m.repoPicker.filtered {
+		if repo == "proja" {
+			m.repoPicker.selectedIndex = i
+		}
+	}
+	m = m.applyRepoPickerSelection()
+	if !m.activeRepos["proja"] || m.activeRepos["projb"] {
+		t.Fatalf("precondition: expected scope {proja}, got %v", m.activeRepos)
+	}
+	m = openPicker(m)
+	assertLabels(m, map[string]int{"shared": 1, "a-only": 1})
+
+	// An applied label with no issues in scope stays listed (count 0) and
+	// selected, so Enter does not silently drop it from the filter.
+	m.filter.labelFilter = "b-only"
+	updated, _ = m.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})
+	m = updated.(Model)
+	assertLabels(m, map[string]int{"shared": 1, "a-only": 1, "b-only": 0})
+	if sel := m.labelPicker.SelectedLabels(); len(sel) != 1 || sel[0] != "b-only" {
+		t.Fatalf("applied out-of-scope label should stay selected, got %v", sel)
+	}
+}
+
 // buildRecommendationFixture returns a "blocker" issue plus three dependents
 // under the given repo prefix. This mirrors
 // analysis.TestGenerateRecommendationsHighImpactLowPriority's fixture shape
