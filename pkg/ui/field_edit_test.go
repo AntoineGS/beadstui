@@ -58,14 +58,26 @@ func TestFreshSupportingInputsTextRoles(t *testing.T) {
 	if !strings.Contains(field.View(), theme.Text.Heading.Render("Title:")) {
 		t.Error("field label ignored heading role")
 	}
+	bql.SetSize(100, 40)
+	bql.input.SetValue("status:open")
+	out := bql.View()
+	if !strings.Contains(out, theme.Text.Body.Render("status:open")) {
+		t.Error("rendered BQL input ignored body role")
+	}
+	if !strings.Contains(out, theme.Text.Metadata.Render("enter: apply | esc: cancel | up/down: history")) {
+		t.Error("rendered BQL hint ignored metadata role")
+	}
 }
 
 func TestSupportingSurfacesTextRoles(t *testing.T) {
 	restoreThemeGlobals(t)
 	theme := DefaultTheme()
 	role := lipgloss.NewStyle().Foreground(theme.TextColor).Background(theme.Secondary).Underline(true).Bold(false).Italic(false)
-	theme.Text.Body, theme.Text.Metadata, theme.Text.Heading = role, role, role
-	theme.Text.Badge, theme.Text.Selected, theme.Text.Callout = role, role, role
+	theme.Text.Body = role.Foreground(theme.Success)
+	theme.Text.Metadata = role.Foreground(theme.Warning)
+	theme.Text.Heading = role.Foreground(theme.Info)
+	theme.Text.Badge = role.Foreground(theme.Danger)
+	theme.Text.Selected, theme.Text.Callout = role, role
 	m := settingsTestModel(t)
 	m.theme = theme
 	m.refreshThemeConsumers()
@@ -97,7 +109,16 @@ func TestSupportingSurfacesTextRoles(t *testing.T) {
 		{"footer hint", renderStaticHints(false), " help"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if !strings.Contains(tc.out, role.Render(tc.label)) {
+			want := theme.Text.Metadata
+			switch tc.name {
+			case "field", "longform":
+				want = theme.Text.Heading
+			case "settings":
+				want = theme.Text.Body
+			case "footer scope":
+				want = theme.Text.Badge
+			}
+			if !strings.Contains(tc.out, want.Render(tc.label)) {
 				t.Fatalf("%s did not retain explicit false attributes/background for %q:\n%s", tc.name, tc.label, tc.out)
 			}
 		})

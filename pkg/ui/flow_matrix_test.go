@@ -94,6 +94,7 @@ func TestFlowTextRole(t *testing.T) {
 	theme := ui.DefaultTheme()
 	theme.Text.Title = lipgloss.NewStyle().Underline(true).Bold(false)
 	theme.Text.Metadata = lipgloss.NewStyle().Underline(true).Italic(false)
+	theme.Text.Body = lipgloss.NewStyle().Foreground(theme.Warning).Italic(true).Bold(false)
 	m := ui.NewFlowMatrixModel(theme)
 	m.SetData(&analysis.CrossLabelFlow{Labels: []string{"api", "web"}, FlowMatrix: [][]int{{0, 2}, {0, 0}}, TotalCrossLabelDeps: 2}, nil)
 	m.SetSize(120, 30)
@@ -103,6 +104,9 @@ func TestFlowTextRole(t *testing.T) {
 	}
 	if !strings.Contains(out, theme.Text.Metadata.Render("Press Enter to see issues")) {
 		t.Error("flow hint ignored role")
+	}
+	if !strings.Contains(out, theme.Text.Body.Render("web (2)")) {
+		t.Error("populated outgoing label ignored body role")
 	}
 }
 

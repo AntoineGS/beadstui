@@ -246,6 +246,13 @@ func TestTextStylesUseOwnPalette(t *testing.T) {
 func TestAutoTextForeground(t *testing.T) {
 	for _, bg := range []string{"#000000", "#ffffff", "#777777", "#bd93f9", "#ffb8d1"} {
 		c := lipgloss.Color(bg)
+		want := lipgloss.Color("#000000")
+		if textContrastRatio(lipgloss.Color("#ffffff"), c) > textContrastRatio(want, c) {
+			want = lipgloss.Color("#ffffff")
+		}
+		if got := autoTextForeground(c); got != want {
+			t.Fatalf("background %s: foreground %v, want maximum-contrast %v", bg, got, want)
+		}
 		if ratio := textContrastRatio(autoTextForeground(c), c); ratio < 4.5 {
 			t.Fatalf("background %s: contrast %.2f", bg, ratio)
 		}
@@ -276,6 +283,11 @@ func TestTextStylesNamedPalettes(t *testing.T) {
 					}
 					if ratio := textContrastRatio(pair.style.GetForeground(), pair.bg); ratio < 4.5 {
 						t.Fatalf("contrast %.2f < 4.5", ratio)
+					}
+					black := textContrastRatio(lipgloss.Color("#000000"), pair.bg)
+					white := textContrastRatio(lipgloss.Color("#ffffff"), pair.bg)
+					if got := textContrastRatio(pair.style.GetForeground(), pair.bg); got != max(black, white) {
+						t.Fatalf("contrast %v, want maximum %v", got, max(black, white))
 					}
 				}
 			})

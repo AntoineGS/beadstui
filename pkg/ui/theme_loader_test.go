@@ -3,11 +3,39 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
 )
+
+func TestTextRolesDocumentedExample(t *testing.T) {
+	doc, err := os.ReadFile("../../docs/specs/2026-10-08-tui-text-styling.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, block, ok := strings.Cut(string(doc), "```yaml\n")
+	if !ok {
+		t.Fatal("documented YAML example missing")
+	}
+	example, _, ok := strings.Cut(block, "\n```")
+	if !ok {
+		t.Fatal("documented YAML example unterminated")
+	}
+	var overlay ThemeFile
+	if err := yaml.Unmarshal([]byte(example), &overlay); err != nil {
+		t.Fatal(err)
+	}
+	base := &ThemeFile{Text: defaultTextRoleConfigs()}
+	mergeTheme(base, &overlay)
+	want := defaultTextRoleConfigs()
+	want.Metadata.Foreground, want.Metadata.Italic = "text", hptr(false)
+	want.Selected.Background, want.Selected.Underline = "bg_highlight", hptr(true)
+	if overlay.Theme != "dracula" || !reflect.DeepEqual(base.Text, want) {
+		t.Fatalf("documented example resolved incorrectly: theme=%q roles=%+v", overlay.Theme, base.Text)
+	}
+}
 
 func TestTextRolesFieldOverrides(t *testing.T) {
 	var overlay ThemeFile
@@ -48,7 +76,11 @@ func TestTextRolesInvalidFieldsAreIndependent(t *testing.T) {
 				t.Fatal(err)
 			}
 			base := &ThemeFile{Text: defaultTextRoleConfigs()}
+			base.Text.Title.Italic, base.Text.Title.Underline = hptr(true), hptr(true)
 			mergeTheme(base, &overlay)
+			if base.Text.Title.Italic == nil || !*base.Text.Title.Italic || base.Text.Title.Underline == nil || !*base.Text.Title.Underline {
+				t.Fatal("invalid attribute erased inherited italic/underline")
+			}
 			if strings.HasPrefix(invalid, "background:") {
 				if base.Text.Title.Background != "primary" || base.Text.Title.Italic == nil || !*base.Text.Title.Italic {
 					t.Fatal("bad field erased a valid neighbor or inherited background")

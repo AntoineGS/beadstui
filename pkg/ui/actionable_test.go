@@ -132,6 +132,34 @@ func TestActionableRenderShowsSummary(t *testing.T) {
 	}
 }
 
+func TestActionablePagingMeasuredBodyStep(t *testing.T) {
+	plan := analysis.ExecutionPlan{Summary: analysis.PlanSummary{HighestImpact: "issue-00", ImpactReason: "Unblocks work"}}
+	for i := 0; i < 60; i++ {
+		plan.Tracks = append(plan.Tracks, analysis.ExecutionTrack{TrackID: fmt.Sprintf("track-%02d", i), Items: []analysis.PlanItem{{ID: fmt.Sprintf("issue-%02d", i), Title: "界面 e\u0301", UnblocksIDs: []string{"next-a", "next-b"}}}})
+	}
+	for _, height := range []int{12, 40} {
+		m := NewActionableModel(plan, DefaultTheme())
+		m.SetSize(120, height)
+		for i := 0; i < 20; i++ {
+			m.MoveDown()
+		}
+		step := max(1, m.layout().bodyHeight/2)
+		if step >= 20 || step < 1 {
+			t.Fatalf("fixture saturates endpoint: step=%d", step)
+		}
+		m.PageDown()
+		if got, want := m.SelectedIssueID(), fmt.Sprintf("issue-%02d", 20+step); got != want {
+			t.Fatalf("height %d page down = %q, want %q (measured step %d)", height, got, want, step)
+		}
+		assertActionableBounds(t, &m)
+		m.PageUp()
+		if got := m.SelectedIssueID(); got != "issue-20" {
+			t.Fatalf("height %d page up = %q, want issue-20", height, got)
+		}
+		assertActionableBounds(t, &m)
+	}
+}
+
 func TestActionableEmptyTracksAndResize(t *testing.T) {
 	plan := analysis.ExecutionPlan{Tracks: []analysis.ExecutionTrack{
 		{TrackID: "leading"},

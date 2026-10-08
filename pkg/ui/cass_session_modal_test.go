@@ -6,8 +6,31 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/seanmartinsmith/beadstui/pkg/cass"
 )
+
+func TestCassPopulatedTextRoles(t *testing.T) {
+	theme := DefaultTheme()
+	theme.Text.Body = lipgloss.NewStyle().Foreground(theme.Success).Italic(true).Bold(false)
+	theme.Text.Metadata = lipgloss.NewStyle().Foreground(theme.Warning).Underline(true).Bold(false)
+	theme.Text.Selected = lipgloss.NewStyle().Foreground(theme.Info).Background(theme.Primary).Bold(false)
+	m := NewCassSessionModal("role-id", cass.CorrelationResult{TopSessions: []cass.ScoredResult{{SearchResult: cass.SearchResult{Agent: "role-agent", Snippet: "role snippet"}, Strategy: cass.StrategyIDMention}}}, theme)
+	m.SetSize(100, 40)
+	out := m.View()
+	for _, text := range []string{"role-id", "Matched via: bead ID mentioned (role-id)"} {
+		if !strings.Contains(out, theme.Text.Metadata.Render(text)) {
+			t.Errorf("Cass %q ignored metadata role", text)
+		}
+	}
+	snippet := theme.Text.Body.Render("role snippet")
+	if !strings.Contains(out, snippet) {
+		t.Error("Cass snippet ignored body role")
+	}
+	if !strings.Contains(out, strings.TrimSuffix(theme.Text.Selected.Render("role-agent • unknown time"), "\x1b[m")) {
+		t.Error("Cass selected header ignored selected role")
+	}
+}
 
 func TestSessionPopup_SelectedHeaderAndCopyFeedback(t *testing.T) {
 	result := cass.CorrelationResult{TopSessions: []cass.ScoredResult{{SearchResult: cass.SearchResult{Agent: "short", Timestamp: time.Now(), Snippet: "first snippet"}}, {SearchResult: cass.SearchResult{Agent: "longer-agent", Timestamp: time.Now(), Snippet: "second snippet"}}}}
