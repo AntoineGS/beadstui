@@ -252,19 +252,16 @@ func (m Model) renderPluginPrompt() string {
 		return ""
 	}
 	t := m.theme
+	opts := PopupOpts{Title: p.title, Theme: t, Available: &PopupSize{m.width, max(0, m.height-1)}}
+	// The widest body the terminal allows; content narrower than this keeps
+	// the popup content-sized.
+	wide := opts
+	wide.Width = opts.Available.Width
+	maxInner := max(1, MeasurePopup(nil, wide).BodyWidth)
 
-	maxInner := m.width - 8
-	if maxInner < 20 {
-		maxInner = 20
-	}
-
-	textStyle := lipgloss.NewStyle().Foreground(t.Base.GetForeground())
-	cursorStyle := lipgloss.NewStyle().Foreground(t.Primary).Bold(true)
-	descStyle := lipgloss.NewStyle().Foreground(t.Muted)
-	hintStyle := lipgloss.NewStyle().Foreground(t.Secondary).Italic(true)
-
-	var lines []string
 	if p.kind == pluginPromptConfirm {
+		textStyle := lipgloss.NewStyle().Foreground(t.Base.GetForeground())
+		var lines []string
 		for _, para := range strings.Split(p.message, "\n") {
 			for _, l := range wrapPlain(para, maxInner) {
 				lines = append(lines, textStyle.Render(truncateRunesHelper(l, maxInner, "...")))
@@ -277,18 +274,12 @@ func (m Model) renderPluginPrompt() string {
 		if cancel == "" {
 			cancel = "cancel"
 		}
-		lines = append(lines, "", hintStyle.Render(truncateRunesHelper(
-			fmt.Sprintf("y/enter %s  n/esc %s", confirm, cancel), maxInner, "...")))
-		return renderFieldModalLines(p.title, lines, t, maxInner)
+		opts.Footer = []string{fmt.Sprintf("y/enter %s  n/esc %s", confirm, cancel), "y/enter n/esc"}
+		return RenderPopup(lines, opts)
 	}
 
+	entries := make([]PopupMenuEntry, len(p.options))
 	for i, o := range p.options {
-		cursor := "  "
-		labelStyle := textStyle
-		if i == p.cursor {
-			cursor = cursorStyle.Render("> ")
-			labelStyle = cursorStyle
-		}
 		// Fit the row to the panel: the description keeps up to a third of
 		// the width, the label takes the rest.
 		avail := maxInner - 2
@@ -300,12 +291,11 @@ func (m Model) renderPluginPrompt() string {
 			label = truncateRunesHelper(label, avail-2-descMin, "...")
 			desc = truncateRunesHelper(desc, avail-2-ansi.StringWidth(label), "...")
 		}
-		line := cursor + labelStyle.Render(label)
+		entries[i] = PopupMenuEntry{Label: label, Selected: i == p.cursor}
 		if desc != "" {
-			line += "  " + descStyle.Render(desc)
+			entries[i].Suffix = "  " + desc
 		}
-		lines = append(lines, line)
 	}
-	lines = append(lines, "", hintStyle.Render("j/k move  enter select  esc cancel"))
-	return renderFieldModalLines(p.title, lines, t, maxInner)
+	opts.Footer = []string{"j/k move  enter select  esc cancel", "j/k enter esc"}
+	return renderPopupMenuWindow(entries, PopupMenuOpts{}, p.cursor, opts)
 }
