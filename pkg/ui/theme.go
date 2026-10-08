@@ -319,19 +319,20 @@ func (t Theme) GetStatusColor(s string) color.Color {
 	}
 }
 
-func (t Theme) GetTypeIcon(typ string) (string, color.Color) {
+// GetTypeColor supplies styling independently of the canonical glyph lookup.
+func (t Theme) GetTypeColor(typ string) color.Color {
 	switch typ {
 	case "bug":
-		return activeGlyphs.TypeBug, t.Bug
+		return t.Bug
 	case "feature":
-		return activeGlyphs.TypeFeature, t.Feature
+		return t.Feature
 	case "task":
-		return activeGlyphs.TypeTask, t.Task
+		return t.Task
 	case "epic":
-		return activeGlyphs.TypeEpic, t.Epic
+		return t.Epic
 	case "chore":
-		return activeGlyphs.TypeChore, t.Chore
+		return t.Chore
 	default:
-		return activeGlyphs.Bullet, t.Subtext
+		return t.Subtext
 	}
 }

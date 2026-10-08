@@ -2480,13 +2480,7 @@ func (h *HistoryModel) renderBeadLine(idx int, hist correlation.BeadHistory, wid
 	}
 
 	// Status icon
-	statusIcon := "○"
-	switch hist.Status {
-	case "closed":
-		statusIcon = activeGlyphs.Success
-	case "in_progress":
-		statusIcon = "●"
-	}
+	statusIcon := GetStatusIcon(hist.Status)
 
 	// Commit count
 	commitCount := fmt.Sprintf("%d commits", len(hist.Commits))
@@ -2714,13 +2708,7 @@ func (h *HistoryModel) renderDetailPanel(width, height int) string {
 	}
 
 	// Bead info with status indicator
-	statusIcon := "○"
-	switch hist.Status {
-	case "closed":
-		statusIcon = activeGlyphs.Success
-	case "in_progress":
-		statusIcon = "●"
-	}
+	statusIcon := GetStatusIcon(hist.Status)
 	beadInfo := fmt.Sprintf("%s %s: %s", statusIcon, hist.BeadID, hist.Title)
 	if width > 10 && len(beadInfo) > width-6 {
 		beadInfo = beadInfo[:width-7] + "…"
@@ -3317,9 +3305,9 @@ func commitTypeIndicator(msg string) string {
 	if cc.IsConventional {
 		switch cc.Type {
 		case "feat":
-			return activeGlyphs.TypeFeature // feature
+			return GetTypeIcon("feature")
 		case "fix":
-			return activeGlyphs.TypeBug // fix
+			return GetTypeIcon("bug")
 		case "docs":
 			return activeGlyphs.Memo // docs
 		case "refactor":
@@ -3329,7 +3317,7 @@ func commitTypeIndicator(msg string) string {
 		case "test":
 			return activeGlyphs.TestTube // test
 		case "chore":
-			return activeGlyphs.Wrench // chore
+			return GetTypeIcon("chore")
 		case "ci":
 			return activeGlyphs.Refresh // ci
 		case "build":
@@ -3665,18 +3653,13 @@ func (h *HistoryModel) renderGitDetailPanel(width, height int) string {
 
 		// Get bead info from report
 		beadStyle := t.Text.Body
-		statusIcon := "○"
+		statusIcon := GetStatusIcon("")
 		title := beadID
 
 		if h.report != nil {
 			if hist, ok := h.report.Histories[beadID]; ok {
 				title = hist.Title
-				switch hist.Status {
-				case "closed":
-					statusIcon = activeGlyphs.Success
-				case "in_progress":
-					statusIcon = "●"
-				}
+				statusIcon = GetStatusIcon(hist.Status)
 			}
 		}
 
@@ -3909,18 +3892,13 @@ func (h *HistoryModel) renderGitBeadListPanel(width, height int) string {
 		}
 
 		beadStyle := t.Text.Body
-		statusIcon := "○"
+		statusIcon := GetStatusIcon("")
 		title := beadID
 
 		if h.report != nil {
 			if hist, ok := h.report.Histories[beadID]; ok {
 				title = hist.Title
-				switch hist.Status {
-				case "closed":
-					statusIcon = activeGlyphs.Success
-				case "in_progress":
-					statusIcon = "●"
-				}
+				statusIcon = GetStatusIcon(hist.Status)
 			}
 		}
 

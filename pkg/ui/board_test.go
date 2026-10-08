@@ -32,7 +32,7 @@ func TestBoardBodyTextRole(t *testing.T) {
 	theme.Text.Title = theme.Text.Title.Bold(false).Underline(true)
 	b := ui.NewBoardModel([]model.Issue{{ID: "one", Title: "Selected", Status: model.StatusOpen}, {ID: "two", Title: "Ordinary body", Status: model.StatusOpen}}, theme)
 	out := b.View(120, 30)
-	for _, want := range []string{theme.Text.Body.Render("Ordinary body"), theme.Text.Metadata.Render("two"), theme.Text.Selected.Render("Selected"), theme.Text.Selected.Render("one"), theme.Text.Title.Render("Board [by: Status]"), theme.Text.Heading.Foreground(theme.Open).Render(fmt.Sprintf("%s OPEN (2) 2%s", ui.Glyphs().Clipboard, ui.Glyphs().PrCritical))} {
+	for _, want := range []string{theme.Text.Body.Render("Ordinary body"), theme.Text.Metadata.Render("two"), theme.Text.Selected.Render("Selected"), theme.Text.Selected.Render("one"), theme.Text.Title.Render("Board [by: Status]"), theme.Text.Heading.Foreground(theme.Open).Render(fmt.Sprintf("%s OPEN (2) 2%s", ui.GetStatusIcon("open"), ui.GetPriorityIcon(0)))} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing role span %q in %q", want, out)
 		}

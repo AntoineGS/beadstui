@@ -42,7 +42,7 @@ func TestInsightsOrdinaryGapCellsTextRoles(t *testing.T) {
 					}
 				}
 				metric := m.renderInsightRow(issue.ID, 0.85, 100, selected, theme)
-				icon, iconColor := theme.GetTypeIcon(string(issue.IssueType))
+				icon, iconColor := GetTypeIcon(string(issue.IssueType)), theme.GetTypeColor(string(issue.IssueType))
 				valueStyle := theme.Text.Badge.Background(theme.BgHighlight).Foreground(theme.Primary).Padding(0, 1)
 				badgeEnd := 2 + lipgloss.Width(valueStyle.Render("0.850"))
 				assertRange(metric, 0, 2, ordinary)
@@ -56,7 +56,7 @@ func TestInsightsOrdinaryGapCellsTextRoles(t *testing.T) {
 					descriptionStyle = theme.Text.Selected
 				}
 				assertRange(metric, iconEnd+3+len(issue.Title), ansi.StringWidth(ansi.Strip(metric)), descriptionStyle)
-				if !strings.Contains(metric, valueStyle.Render("0.850")) || !strings.Contains(metric, lipgloss.NewStyle().Foreground(iconColor).Render(icon)) || !strings.Contains(metric, lipgloss.NewStyle().Foreground(theme.Open).Render("●")) {
+				if !strings.Contains(metric, valueStyle.Render("0.850")) || !strings.Contains(metric, lipgloss.NewStyle().Foreground(iconColor).Render(icon)) || !strings.Contains(metric, lipgloss.NewStyle().Foreground(theme.Open).Render(GetStatusIcon(string(issue.Status)))) {
 					t.Error("metric badge/type/status semantic styling changed")
 				}
 				priority := m.renderPriorityItem(analysis.TopPick{ID: issue.ID, Score: 0.85, Reasons: []string{"Useful work"}, Unblocks: 2}, 100, 10, selected, theme)

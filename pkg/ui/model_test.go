@@ -134,7 +134,7 @@ func TestTimeTravelMode(t *testing.T) {
 	}
 }
 
-func TestGetTypeIconMD(t *testing.T) {
+func TestGetTypeIcon(t *testing.T) {
 	tests := []struct {
 		issueType string
 		expected  string
@@ -144,14 +144,14 @@ func TestGetTypeIconMD(t *testing.T) {
 		{"task", ui.Glyphs().TypeTask},
 		{"epic", ui.Glyphs().TypeEpic},
 		{"chore", ui.Glyphs().TypeChore},
-		{"unknown", ui.Glyphs().Bullet},
-		{"", ui.Glyphs().Bullet},
+		{"unknown", ui.Glyphs().TypeDefault},
+		{"", ui.Glyphs().TypeDefault},
 	}
 
 	for _, tt := range tests {
-		got := ui.GetTypeIconMD(tt.issueType)
+		got := ui.GetTypeIcon(tt.issueType)
 		if got != tt.expected {
-			t.Errorf("GetTypeIconMD(%q) = %s; want %s", tt.issueType, got, tt.expected)
+			t.Errorf("GetTypeIcon(%q) = %s; want %s", tt.issueType, got, tt.expected)
 		}
 	}
 }

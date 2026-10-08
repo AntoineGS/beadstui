@@ -1017,14 +1017,14 @@ func (m *InsightsModel) renderInsightRow(id string, value float64, width int, is
 	// Issue content
 	if issue != nil {
 		// Type icon - measure actual display width for proper alignment
-		icon, iconColor := t.GetTypeIcon(string(issue.IssueType))
+		icon, iconColor := GetTypeIcon(string(issue.IssueType)), t.GetTypeColor(string(issue.IssueType))
 		iconRendered := lipgloss.NewStyle().Foreground(iconColor).Render(icon)
 		rowBuilder.WriteString(iconRendered)
 		rowBuilder.WriteString(gap)
 
 		// Status indicator
 		statusColor := t.GetStatusColor(string(issue.Status))
-		statusDot := lipgloss.NewStyle().Foreground(statusColor).Render("●")
+		statusDot := lipgloss.NewStyle().Foreground(statusColor).Render(GetStatusIcon(string(issue.Status)))
 		rowBuilder.WriteString(statusDot)
 		rowBuilder.WriteString(gap)
 
@@ -1399,7 +1399,7 @@ func (m *InsightsModel) renderPriorityItem(pick analysis.TopPick, width, height 
 	issue := m.issueMap[pick.ID]
 	if issue != nil {
 		// Type icon + Status
-		icon, iconColor := t.GetTypeIcon(string(issue.IssueType))
+		icon, iconColor := GetTypeIcon(string(issue.IssueType)), t.GetTypeColor(string(issue.IssueType))
 		statusColor := t.GetStatusColor(string(issue.Status))
 
 		sb.WriteString(lipgloss.NewStyle().Foreground(iconColor).Render(icon))
@@ -1785,19 +1785,7 @@ func (m *InsightsModel) renderDrillDownIssue(issueID string, isSelected bool, wi
 	}
 
 	// Type icon
-	icon := "•"
-	switch issue.IssueType {
-	case "bug":
-		icon = activeGlyphs.TypeBug
-	case "feature":
-		icon = activeGlyphs.TypeFeature
-	case "task":
-		icon = activeGlyphs.TypeTask
-	case "chore":
-		icon = activeGlyphs.TypeChore
-	case "epic":
-		icon = activeGlyphs.TypeEpic
-	}
+	icon := GetTypeIcon(string(issue.IssueType))
 	sb.WriteString(icon + " ")
 
 	// Status indicator (matches model.Status constants)
@@ -1877,7 +1865,7 @@ func (m *InsightsModel) buildDetailMarkdown(selectedID string) string {
 	var sb strings.Builder
 
 	// === HEADER: Title with Type Icon ===
-	sb.WriteString(fmt.Sprintf("# %s %s\n\n", GetTypeIconMD(string(issue.IssueType)), issue.Title))
+	sb.WriteString(fmt.Sprintf("# %s %s\n\n", GetTypeIcon(string(issue.IssueType)), issue.Title))
 
 	// === Meta Table ===
 	sb.WriteString("| Field | Value |\n|---|---|\n")

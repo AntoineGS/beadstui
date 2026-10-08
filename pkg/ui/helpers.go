@@ -147,32 +147,6 @@ func naturalIDKey(id string) string {
 	return sb.String()
 }
 
-// statusGlyph returns a chrome mark representing the issue status — used in the
-// detail-pane Epic Progress list. Routed through the glyph table (bt-5f3bo):
-// shapes/nerdfont marks (not emojis) keep the btop/lazygit aesthetic, visual
-// distinction without color dependency, and survive glamour's markdown
-// rendering as plain text.
-func statusGlyph(s model.Status) string {
-	switch s {
-	case model.StatusClosed, model.StatusTombstone:
-		return activeGlyphs.StClosed
-	case model.StatusInProgress:
-		return activeGlyphs.StInProgress
-	case model.StatusBlocked:
-		return activeGlyphs.StBlocked
-	case model.StatusDeferred:
-		return activeGlyphs.StDeferred
-	case model.StatusPinned:
-		return activeGlyphs.StPinned
-	case model.StatusReview:
-		return activeGlyphs.StReview
-	case model.StatusHooked:
-		return activeGlyphs.StHooked
-	default: // open
-		return activeGlyphs.StOpen
-	}
-}
-
 // StateDimension represents a parsed dimension:value label.
 type StateDimension struct {
 	Dimension string
@@ -580,49 +554,6 @@ func getDepTypeIcon(depType string) string {
 		return activeGlyphs.DepDiscovered
 	default:
 		return activeGlyphs.Bullet
-	}
-}
-
-// GetStatusIcon returns a status mark (colored by the caller's row style where
-// present; the marks are shape-distinct so they read without color too).
-func GetStatusIcon(s string) string {
-	switch s {
-	case "open":
-		return activeGlyphs.StOpen
-	case "in_progress":
-		return activeGlyphs.StInProgress
-	case "blocked":
-		return activeGlyphs.StBlocked
-	case "closed":
-		return activeGlyphs.StClosed
-	case "deferred":
-		return activeGlyphs.StDeferred
-	case "pinned":
-		return activeGlyphs.StPinned
-	case "hooked":
-		return activeGlyphs.StHooked
-	case "review":
-		return activeGlyphs.StReview
-	default:
-		return activeGlyphs.StUnknown
-	}
-}
-
-// GetPriorityIcon returns the glyph-table mark for a priority level.
-func GetPriorityIcon(priority int) string {
-	switch priority {
-	case 0:
-		return activeGlyphs.PrCritical
-	case 1:
-		return activeGlyphs.PrHigh
-	case 2:
-		return activeGlyphs.PrMedium
-	case 3:
-		return activeGlyphs.PrLow
-	case 4:
-		return activeGlyphs.PrBacklog
-	default:
-		return "  "
 	}
 }
 

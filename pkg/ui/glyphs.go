@@ -27,7 +27,70 @@ package ui
 import (
 	"os"
 	"strings"
+
+	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
+
+// GetStatusIcon returns the semantic status mark in the active glyph tier.
+// Tombstones are closed-like; missing and unrecognized statuses are unknown.
+func GetStatusIcon(status string) string {
+	switch model.Status(status) {
+	case model.StatusOpen:
+		return activeGlyphs.StOpen
+	case model.StatusInProgress:
+		return activeGlyphs.StInProgress
+	case model.StatusBlocked:
+		return activeGlyphs.StBlocked
+	case model.StatusClosed, model.StatusTombstone:
+		return activeGlyphs.StClosed
+	case model.StatusDeferred:
+		return activeGlyphs.StDeferred
+	case model.StatusPinned:
+		return activeGlyphs.StPinned
+	case model.StatusHooked:
+		return activeGlyphs.StHooked
+	case model.StatusReview:
+		return activeGlyphs.StReview
+	default:
+		return activeGlyphs.StUnknown
+	}
+}
+
+// GetPriorityIcon returns the semantic mark for the zero-based P0-P4 scale.
+func GetPriorityIcon(priority int) string {
+	switch priority {
+	case 0:
+		return activeGlyphs.PrCritical
+	case 1:
+		return activeGlyphs.PrHigh
+	case 2:
+		return activeGlyphs.PrMedium
+	case 3:
+		return activeGlyphs.PrLow
+	case 4:
+		return activeGlyphs.PrBacklog
+	default:
+		return "  "
+	}
+}
+
+// GetTypeIcon returns the semantic issue-type mark in the active glyph tier.
+func GetTypeIcon(issueType string) string {
+	switch model.IssueType(issueType) {
+	case model.TypeBug:
+		return activeGlyphs.TypeBug
+	case model.TypeFeature:
+		return activeGlyphs.TypeFeature
+	case model.TypeTask:
+		return activeGlyphs.TypeTask
+	case model.TypeEpic:
+		return activeGlyphs.TypeEpic
+	case model.TypeChore:
+		return activeGlyphs.TypeChore
+	default:
+		return activeGlyphs.TypeDefault
+	}
+}
 
 // GlyphSet names every chrome glyph the TUI draws. Both tiers implement the
 // same field set; a field is one string (usually one display cell wide).
@@ -39,7 +102,7 @@ type GlyphSet struct {
 	Ellipsis string // truncation suffix
 	Return   string // enter/return key hint glyph
 
-	// --- Lifecycle status marks (detail pane, tree, list) ---
+	// --- Lifecycle status marks (all views via GetStatusIcon) ---
 	StOpen       string
 	StInProgress string
 	StBlocked    string

@@ -416,7 +416,7 @@ func RenderStatusBadge(status string) string {
 // without it. The glyph vocabulary is the existing lifecycle set already used
 // by the tree and detail pane, so the list stops being the odd one out.
 func RenderIssueChip(issueType, status string, priority int) string {
-	typeGlyph, typeColor := issueTypeMark(issueType)
+	typeGlyph, typeColor := GetTypeIcon(issueType), issueTypeColor(issueType)
 
 	statusColor := ColorMuted
 	switch status {
@@ -463,22 +463,22 @@ func RenderIssueChip(issueType, status string, priority int) string {
 		lipgloss.NewStyle().Foreground(prioColor).Bold(true).Render(prioLabel)
 }
 
-// issueTypeMark is the package-level counterpart to Theme.GetTypeIcon, for
+// issueTypeColor is the package-level counterpart to Theme.GetTypeColor, for
 // renderers that work from the Color* globals rather than a Theme value.
-func issueTypeMark(issueType string) (string, color.Color) {
+func issueTypeColor(issueType string) color.Color {
 	switch issueType {
 	case "bug":
-		return activeGlyphs.TypeBug, ColorTypeBug
+		return ColorTypeBug
 	case "feature":
-		return activeGlyphs.TypeFeature, ColorTypeFeature
+		return ColorTypeFeature
 	case "task":
-		return activeGlyphs.TypeTask, ColorTypeTask
+		return ColorTypeTask
 	case "epic":
-		return activeGlyphs.TypeEpic, ColorTypeEpic
+		return ColorTypeEpic
 	case "chore":
-		return activeGlyphs.TypeChore, ColorTypeChore
+		return ColorTypeChore
 	default:
-		return activeGlyphs.TypeDefault, ColorMuted
+		return ColorMuted
 	}
 }
 

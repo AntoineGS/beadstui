@@ -403,7 +403,7 @@ func TestGetStatusColor(t *testing.T) {
 	}
 }
 
-func TestGetTypeIcon(t *testing.T) {
+func TestGetTypeColor(t *testing.T) {
 	theme := DefaultTheme()
 
 	tests := []struct {
@@ -416,11 +416,11 @@ func TestGetTypeIcon(t *testing.T) {
 		{"task", activeGlyphs.TypeTask, theme.Task},
 		{"epic", activeGlyphs.TypeEpic, theme.Epic},
 		{"chore", activeGlyphs.TypeChore, theme.Chore},
-		{"unknown", activeGlyphs.Bullet, theme.Subtext},
+		{"unknown", activeGlyphs.TypeDefault, theme.Subtext},
 	}
 
 	for _, tt := range tests {
-		icon, col := theme.GetTypeIcon(tt.typ)
+		icon, col := GetTypeIcon(tt.typ), theme.GetTypeColor(tt.typ)
 		if icon != tt.wantIcon {
 			t.Errorf("GetTypeIcon(%q) icon = %q, want %q", tt.typ, icon, tt.wantIcon)
 		}

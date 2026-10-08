@@ -535,8 +535,8 @@ func TestStatusGlyph(t *testing.T) {
 		{model.StatusHooked, activeGlyphs.StHooked},
 	}
 	for _, tc := range cases {
-		if got := statusGlyph(tc.status); got != tc.want {
-			t.Errorf("statusGlyph(%s) = %q, want %q", tc.status, got, tc.want)
+		if got := GetStatusIcon(string(tc.status)); got != tc.want {
+			t.Errorf("GetStatusIcon(%s) = %q, want %q", tc.status, got, tc.want)
 		}
 	}
 }

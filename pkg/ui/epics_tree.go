@@ -790,7 +790,7 @@ func (e *EpicsTreeModel) renderChildRow(r epicTreeRow, selected bool) string {
 	prefix := buildEpicTreePrefix(r.lastKid, t)
 	prefixW := 4 * len(r.lastKid)
 
-	glyph := statusGlyph(r.issue.Status)
+	glyph := GetStatusIcon(string(r.issue.Status))
 	statusColor := t.GetStatusColor(string(r.issue.Status))
 
 	id := r.issue.ID

@@ -10,6 +10,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/seanmartinsmith/beadstui/pkg/correlation"
+	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
 
 // setGlyphs swaps the package-level activeGlyphs for the duration of a test and
@@ -20,6 +22,202 @@ func setGlyphs(t *testing.T, g GlyphSet) {
 	prev := activeGlyphs
 	activeGlyphs = g
 	t.Cleanup(func() { activeGlyphs = prev })
+}
+
+// Headers must use the same semantic marks as issue rows, not chrome icons.
+func TestBoardHeadersUseSemanticIcons(t *testing.T) {
+	for _, tier := range []struct {
+		name string
+		g    GlyphSet
+	}{{"nerdfont", nerdfontGlyphs}, {"ascii", asciiGlyphs}} {
+		t.Run(tier.name, func(t *testing.T) {
+			setGlyphs(t, tier.g)
+			for _, tc := range []struct {
+				mode SwimLaneMode
+				want []string
+			}{
+				{SwimByStatus, []string{GetStatusIcon("open"), GetStatusIcon("in_progress"), GetStatusIcon("blocked"), GetStatusIcon("closed")}},
+				{SwimByPriority, []string{GetPriorityIcon(0), GetPriorityIcon(1), GetPriorityIcon(2), GetPriorityIcon(3)}},
+				{SwimByType, []string{tier.g.TypeBug, tier.g.TypeFeature, tier.g.TypeTask, tier.g.TypeEpic}},
+			} {
+				b := BoardModel{swimLaneMode: tc.mode}
+				_, got := b.getColumnHeaders()
+				if !reflect.DeepEqual(got, tc.want) {
+					t.Errorf("mode %d icons = %q, want %q", tc.mode, got, tc.want)
+				}
+			}
+		})
+	}
+}
+
+func TestSemanticStatusMappingsBothTiers(t *testing.T) {
+	for _, tier := range []struct {
+		name string
+		g    GlyphSet
+	}{{"nerdfont", nerdfontGlyphs}, {"ascii", asciiGlyphs}} {
+		t.Run(tier.name, func(t *testing.T) {
+			setGlyphs(t, tier.g)
+			for _, tc := range []struct {
+				status model.Status
+				want   string
+			}{
+				{model.StatusOpen, tier.g.StOpen},
+				{model.StatusInProgress, tier.g.StInProgress},
+				{model.StatusBlocked, tier.g.StBlocked},
+				{model.StatusClosed, tier.g.StClosed},
+				{model.StatusTombstone, tier.g.StClosed},
+				{model.StatusDeferred, tier.g.StDeferred},
+				{model.StatusPinned, tier.g.StPinned},
+				{model.StatusHooked, tier.g.StHooked},
+				{model.StatusReview, tier.g.StReview},
+				{model.Status("unknown"), tier.g.StUnknown},
+				{model.Status(""), tier.g.StUnknown},
+			} {
+				if got := GetStatusIcon(string(tc.status)); got != tc.want {
+					t.Errorf("status %q = %q, want %q", tc.status, got, tc.want)
+				}
+			}
+		})
+	}
+}
+
+func TestGraphPriorityMappingsBothTiers(t *testing.T) {
+	for _, tier := range []struct {
+		name string
+		g    GlyphSet
+	}{{"nerdfont", nerdfontGlyphs}, {"ascii", asciiGlyphs}} {
+		t.Run(tier.name, func(t *testing.T) {
+			setGlyphs(t, tier.g)
+			for _, tc := range []struct {
+				priority int
+				want     string
+			}{
+				{0, tier.g.PrCritical}, {1, tier.g.PrHigh}, {2, tier.g.PrMedium},
+				{3, tier.g.PrLow}, {4, tier.g.PrBacklog}, {-1, "  "}, {5, "  "},
+			} {
+				issue := model.Issue{ID: "bt-icon", Status: model.StatusReview, IssueType: model.TypeTask, Priority: tc.priority}
+				g := GraphModel{}
+				out := ansi.Strip(g.renderEgoNode(issue.ID, &issue, 100, DefaultTheme()))
+				want := tier.g.StReview + " " + tc.want + " " + tier.g.TypeTask + " " + issue.ID
+				if !strings.Contains(out, want) {
+					t.Errorf("graph priority %d missing %q in %q", tc.priority, want, out)
+				}
+			}
+		})
+	}
+}
+
+func TestTypeFallbackConsistentBothTiers(t *testing.T) {
+	for _, tier := range []struct {
+		name string
+		g    GlyphSet
+	}{{"nerdfont", nerdfontGlyphs}, {"ascii", asciiGlyphs}} {
+		t.Run(tier.name, func(t *testing.T) {
+			setGlyphs(t, tier.g)
+			for _, typ := range []string{"", "unknown"} {
+				icon := GetTypeIcon(typ)
+				if icon != tier.g.TypeDefault {
+					t.Errorf("type %q = %q, want %q", typ, icon, tier.g.TypeDefault)
+				}
+				if got := ansi.Strip(RenderIssueChip(typ, "open", 2)); !strings.HasPrefix(got, tier.g.TypeDefault+" ") {
+					t.Errorf("list type %q missing %q in %q", typ, tier.g.TypeDefault, got)
+				}
+			}
+		})
+	}
+}
+
+// A per-view circle/checkmark or an open default would hide these distinctions.
+func TestStatusIconsAcrossViewsBothTiers(t *testing.T) {
+	for _, tier := range []struct {
+		name string
+		g    GlyphSet
+	}{{"nerdfont", nerdfontGlyphs}, {"ascii", asciiGlyphs}} {
+		t.Run(tier.name, func(t *testing.T) {
+			setGlyphs(t, tier.g)
+			theme := DefaultTheme()
+			for _, tc := range []struct {
+				status model.Status
+				want   string
+			}{
+				{model.StatusOpen, tier.g.StOpen},
+				{model.StatusInProgress, tier.g.StInProgress},
+				{model.StatusBlocked, tier.g.StBlocked},
+				{model.StatusClosed, tier.g.StClosed},
+				{model.StatusTombstone, tier.g.StClosed},
+				{model.StatusDeferred, tier.g.StDeferred},
+				{model.StatusPinned, tier.g.StPinned},
+				{model.StatusHooked, tier.g.StHooked},
+				{model.StatusReview, tier.g.StReview},
+				{model.Status("unknown"), tier.g.StUnknown},
+			} {
+				issue := model.Issue{ID: "bt-icon", Title: "Icon fixture", IssueType: model.TypeBug, Status: tc.status}
+				hist := correlation.BeadHistory{
+					BeadID: issue.ID, Title: issue.Title, Status: string(tc.status),
+					Commits: []correlation.CorrelatedCommit{{SHA: "abcdef123", ShortSHA: "abcdef1", Confidence: 1}},
+				}
+				h := NewHistoryModel(&correlation.HistoryReport{Histories: map[string]correlation.BeadHistory{issue.ID: hist}}, theme)
+				h.commitList = []CommitListEntry{{SHA: "abcdef123", ShortSHA: "abcdef1", BeadIDs: []string{issue.ID}}}
+				g := GraphModel{issueMap: map[string]*model.Issue{issue.ID: &issue}}
+				ins := InsightsModel{issueMap: g.issueMap}
+				flow := FlowMatrixModel{theme: theme, width: 100, height: 24, drilldownIssues: []model.Issue{issue}}
+				for name, out := range map[string]string{
+					"history list":       h.renderBeadLine(0, hist, 100),
+					"history detail":     h.renderDetailPanel(100, 8),
+					"history git detail": h.renderGitDetailPanel(100, 16),
+					"graph":              g.renderNodeBox(issue.ID, 24, theme, false),
+					"flow":               flow.renderDrilldown(),
+				} {
+					if !strings.Contains(ansi.Strip(out), tc.want+" "+issue.ID) {
+						t.Errorf("%s status %q missing %q in %q", name, tc.status, tc.want+" "+issue.ID, ansi.Strip(out))
+					}
+				}
+				if out := ansi.Strip(h.renderGitBeadListPanel(100, 8)); !strings.Contains(out, tc.want+" "+issue.Title) {
+					t.Errorf("history git list status %q missing %q in %q", tc.status, tc.want+" "+issue.Title, out)
+				}
+				if out := ansi.Strip(RenderIssueChip(string(issue.IssueType), string(issue.Status), 0)); !strings.HasPrefix(out, tier.g.TypeBug+" "+tc.want+" ") {
+					t.Errorf("list status %q missing semantic chip in %q", tc.status, out)
+				}
+				want := tier.g.TypeBug + " " + tc.want + " "
+				if out := ansi.Strip(ins.renderInsightRow(issue.ID, 0.5, 100, false, theme)); !strings.Contains(out, want) {
+					t.Errorf("insights status %q missing %q in %q", tc.status, want, out)
+				}
+			}
+		})
+	}
+}
+
+func TestSemanticTypeMappingsBothTiers(t *testing.T) {
+	for _, tier := range []struct {
+		name string
+		g    GlyphSet
+	}{{"nerdfont", nerdfontGlyphs}, {"ascii", asciiGlyphs}} {
+		t.Run(tier.name, func(t *testing.T) {
+			setGlyphs(t, tier.g)
+			for _, tc := range []struct {
+				typ  model.IssueType
+				want string
+			}{
+				{model.TypeBug, tier.g.TypeBug}, {model.TypeFeature, tier.g.TypeFeature},
+				{model.TypeTask, tier.g.TypeTask}, {model.TypeEpic, tier.g.TypeEpic},
+				{model.TypeChore, tier.g.TypeChore}, {model.IssueType("unknown"), tier.g.TypeDefault},
+			} {
+				if got := GetTypeIcon(string(tc.typ)); got != tc.want {
+					t.Errorf("type %q = %q, want %q", tc.typ, got, tc.want)
+				}
+				issue := model.Issue{ID: "bt-icon", Title: "Icon fixture", IssueType: tc.typ, Status: model.StatusOpen, Priority: 0}
+				g := GraphModel{}
+				want := tier.g.StOpen + " " + tier.g.PrCritical + " " + tc.want + " " + issue.ID
+				if out := ansi.Strip(g.renderEgoNode(issue.ID, &issue, 100, DefaultTheme())); !strings.Contains(out, want) {
+					t.Errorf("graph type %q missing %q in %q", tc.typ, want, out)
+				}
+				ins := InsightsModel{issueMap: map[string]*model.Issue{issue.ID: &issue}}
+				if out := ansi.Strip(ins.renderDrillDownIssue(issue.ID, false, 100, DefaultTheme())); !strings.HasPrefix(out, "  "+tc.want+" ") {
+					t.Errorf("insights type %q missing %q in %q", tc.typ, tc.want, out)
+				}
+			}
+		})
+	}
 }
 
 // isEmojiRune reports whether r is in a pictographic/emoji range that breaks TUI

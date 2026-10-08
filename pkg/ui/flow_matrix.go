@@ -764,7 +764,7 @@ func (m FlowMatrixModel) renderDrilldown() string {
 		// Status indicator
 		statusColor := m.theme.GetStatusColor(string(iss.Status))
 		statusStyle := lipgloss.NewStyle().Foreground(statusColor)
-		statusIndicator := "●"
+		statusIndicator := GetStatusIcon(string(iss.Status))
 
 		// Issue line
 		idStyle := m.theme.Text.Metadata

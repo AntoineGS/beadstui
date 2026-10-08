@@ -136,7 +136,7 @@ func (m *Model) copyIssueToClipboard() {
 	// Format issue as Markdown
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("# %s %s\n\n", GetTypeIconMD(string(issue.IssueType)), issue.Title))
+	sb.WriteString(fmt.Sprintf("# %s %s\n\n", GetTypeIcon(string(issue.IssueType)), issue.Title))
 	sb.WriteString(fmt.Sprintf("**ID:** %s  \n", issue.ID))
 	sb.WriteString(fmt.Sprintf("**Status:** %s  \n", strings.ToUpper(string(issue.Status))))
 	sb.WriteString(fmt.Sprintf("**Priority:** P%d  \n", issue.Priority))

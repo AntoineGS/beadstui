@@ -594,7 +594,7 @@ func (t *TreeModel) renderNode(node *IssueTreeNode, isSelected bool) string {
 	sb.WriteString(gap)
 
 	// Type icon
-	icon, iconColor := t.theme.GetTypeIcon(string(issue.IssueType))
+	icon, iconColor := GetTypeIcon(string(issue.IssueType)), t.theme.GetTypeColor(string(issue.IssueType))
 	iconStyle := lipgloss.NewStyle().Foreground(iconColor)
 	sb.WriteString(iconStyle.Render(icon))
 	sb.WriteString(gap)

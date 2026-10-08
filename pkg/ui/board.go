@@ -390,13 +390,13 @@ func (b *BoardModel) getColumnHeaders() ([]string, []string) {
 	switch b.swimLaneMode {
 	case SwimByPriority:
 		return []string{"P0 CRITICAL", "P1 HIGH", "P2 MEDIUM", "P3+ OTHER"},
-			[]string{activeGlyphs.PrCritical, activeGlyphs.PrHigh, activeGlyphs.PrMedium, activeGlyphs.PrBacklog}
+			[]string{GetPriorityIcon(0), GetPriorityIcon(1), GetPriorityIcon(2), GetPriorityIcon(3)}
 	case SwimByType:
 		return []string{"BUG", "FEATURE", "TASK", "EPIC"},
-			[]string{activeGlyphs.TypeBug, activeGlyphs.TypeFeature, activeGlyphs.TypeTask, activeGlyphs.TypeEpic}
+			[]string{GetTypeIcon("bug"), GetTypeIcon("feature"), GetTypeIcon("task"), GetTypeIcon("epic")}
 	default: // SwimByStatus
 		return []string{"OPEN", "IN PROGRESS", "BLOCKED", "CLOSED"},
-			[]string{activeGlyphs.Clipboard, activeGlyphs.Refresh, activeGlyphs.NoEntry, activeGlyphs.Success}
+			[]string{GetStatusIcon("open"), GetStatusIcon("in_progress"), GetStatusIcon("blocked"), GetStatusIcon("closed")}
 	}
 }
 
@@ -1128,10 +1128,10 @@ func (b BoardModel) View(width, height int) string {
 			// Medium: add P0/P1 indicators if any exist
 			var indicators []string
 			if stats.P0Count > 0 {
-				indicators = append(indicators, fmt.Sprintf("%d%s", stats.P0Count, activeGlyphs.PrCritical))
+				indicators = append(indicators, fmt.Sprintf("%d%s", stats.P0Count, GetPriorityIcon(0)))
 			}
 			if stats.P1Count > 0 {
-				indicators = append(indicators, fmt.Sprintf("%d%s", stats.P1Count, activeGlyphs.PrHigh))
+				indicators = append(indicators, fmt.Sprintf("%d%s", stats.P1Count, GetPriorityIcon(1)))
 			}
 			if len(indicators) > 0 {
 				headerText = baseHeader + " " + strings.Join(indicators, " ")
@@ -1142,10 +1142,10 @@ func (b BoardModel) View(width, height int) string {
 			// Wide: full stats including oldest age
 			var indicators []string
 			if stats.P0Count > 0 {
-				indicators = append(indicators, fmt.Sprintf("%d%s", stats.P0Count, activeGlyphs.PrCritical))
+				indicators = append(indicators, fmt.Sprintf("%d%s", stats.P0Count, GetPriorityIcon(0)))
 			}
 			if stats.P1Count > 0 {
-				indicators = append(indicators, fmt.Sprintf("%d%s", stats.P1Count, activeGlyphs.PrHigh))
+				indicators = append(indicators, fmt.Sprintf("%d%s", stats.P1Count, GetPriorityIcon(1)))
 			}
 			// Show blocked count in In Progress column (colIdx == ColInProgress when in status mode)
 			if b.swimLaneMode == SwimByStatus && colIdx == ColInProgress && stats.BlockedCount > 0 {
@@ -1400,7 +1400,7 @@ func (b BoardModel) renderCard(issue model.Issue, width int, selected bool, colI
 	// ══════════════════════════════════════════════════════════════════════════
 	// LINE 1: Type icon + Priority (P0/P1/P2) + ID + Age with color (bv-1daf)
 	// ══════════════════════════════════════════════════════════════════════════
-	icon, iconColor := t.GetTypeIcon(string(issue.IssueType))
+	icon, iconColor := GetTypeIcon(string(issue.IssueType)), t.GetTypeColor(string(issue.IssueType))
 
 	// Priority as P0/P1/P2 text (clearer than emoji flame levels)
 	prioText := formatPriority(issue.Priority)
@@ -1560,7 +1560,7 @@ func (b BoardModel) renderExpandedCard(issue model.Issue, width int, _, _ int) s
 	// ══════════════════════════════════════════════════════════════════════════
 	// HEADER: Type icon + Priority + ID + Expand indicator
 	// ══════════════════════════════════════════════════════════════════════════
-	icon, iconColor := t.GetTypeIcon(string(issue.IssueType))
+	icon, iconColor := GetTypeIcon(string(issue.IssueType)), t.GetTypeColor(string(issue.IssueType))
 	prioText := formatPriority(issue.Priority)
 	prioStyle := lipgloss.NewStyle().Bold(true)
 	if issue.Priority <= 1 {
@@ -1727,7 +1727,7 @@ func (b *BoardModel) renderDetailPanel(width, height int) string {
 			var content strings.Builder
 
 			// Header with ID and type
-			icon, _ := t.GetTypeIcon(string(issue.IssueType))
+			icon := GetTypeIcon(string(issue.IssueType))
 			content.WriteString(fmt.Sprintf("## %s %s\n\n", icon, issue.ID))
 
 			// Title

@@ -385,7 +385,7 @@ func (g *GraphModel) renderNodeList(width, height int, t Theme) string {
 		}
 
 		isSelected := i == g.selectedIdx
-		statusIcon := getStatusIcon(issue.Status)
+		statusIcon := GetStatusIcon(string(issue.Status))
 		maxIDLen := width - 4
 		displayID := smartTruncateID(id, maxIDLen)
 		style := t.Text.Metadata
@@ -557,14 +557,14 @@ func (g *GraphModel) renderNodeBox(id string, boxWidth int, t Theme, isEgo bool)
 	var statusColor color.Color
 
 	if issue != nil {
-		statusIcon = getStatusIcon(issue.Status)
+		statusIcon = GetStatusIcon(string(issue.Status))
 		statusColor = t.GetStatusColor(string(issue.Status))
 		displayID = smartTruncateID(id, boxWidth-4)
 		if issue.Title != "" {
 			title = truncateRunesHelper(issue.Title, boxWidth-4, "…")
 		}
 	} else {
-		statusIcon = activeGlyphs.StUnknown
+		statusIcon = GetStatusIcon("")
 		statusColor = t.Secondary
 		displayID = smartTruncateID(id, boxWidth-4)
 		title = "(not in filter)"
@@ -617,9 +617,9 @@ func (g *GraphModel) renderNodeBox(id string, boxWidth int, t Theme, isEgo bool)
 
 // renderEgoNode renders the selected/ego node prominently
 func (g *GraphModel) renderEgoNode(id string, issue *model.Issue, width int, t Theme) string {
-	statusIcon := getStatusIcon(issue.Status)
-	prioIcon := getPriorityIcon(issue.Priority)
-	typeIcon := getTypeIcon(issue.IssueType)
+	statusIcon := GetStatusIcon(string(issue.Status))
+	prioIcon := GetPriorityIcon(issue.Priority)
+	typeIcon := GetTypeIcon(string(issue.IssueType))
 
 	egoWidth := width / 2
 	if egoWidth > 50 {
@@ -900,65 +900,6 @@ func (g *GraphModel) renderMetricsPanel(id string, width int, t Theme) string {
 	rows = append(rows, legendStyle.Render("█ relative score │ #N rank of "+fmt.Sprintf("%d", total)+" issues"))
 
 	return strings.Join(rows, "\n")
-}
-
-// Graph-specific icon helpers. These intentionally use different emoji sets than
-// the public helpers in helpers.go and theme.go. The graph panel uses a distinct
-// visual language (e.g. colored circles for status, different priority/type icons)
-// tuned for the compact node rendering context. If these should be unified with
-// the board/tree icon sets, consolidate into the public helpers and update both.
-
-func getStatusIcon(status model.Status) string {
-	switch {
-	case isClosedLikeStatus(status):
-		return activeGlyphs.StClosed
-	case status == model.StatusOpen:
-		return activeGlyphs.StOpen
-	case status == model.StatusInProgress:
-		return activeGlyphs.StInProgress
-	case status == model.StatusBlocked:
-		return activeGlyphs.StBlocked
-	case status == model.StatusDeferred:
-		return activeGlyphs.StDeferred
-	case status == model.StatusPinned:
-		return activeGlyphs.StPinned
-	case status == model.StatusHooked:
-		return activeGlyphs.StHooked
-	default:
-		return activeGlyphs.StUnknown
-	}
-}
-
-func getPriorityIcon(priority int) string {
-	switch priority {
-	case 1:
-		return activeGlyphs.PrCritical
-	case 2:
-		return activeGlyphs.PrHigh
-	case 3:
-		return activeGlyphs.PrMedium
-	case 4:
-		return activeGlyphs.PrLow
-	default:
-		return "  "
-	}
-}
-
-func getTypeIcon(itype model.IssueType) string {
-	switch itype {
-	case model.TypeBug:
-		return activeGlyphs.TypeBug
-	case model.TypeFeature:
-		return activeGlyphs.TypeFeature
-	case model.TypeTask:
-		return activeGlyphs.TypeTask
-	case model.TypeEpic:
-		return activeGlyphs.TypeEpic
-	case model.TypeChore:
-		return activeGlyphs.TypeChore
-	default:
-		return activeGlyphs.TypeDefault
-	}
 }
 
 func smartTruncateID(id string, maxLen int) string {

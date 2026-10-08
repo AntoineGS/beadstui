@@ -1300,7 +1300,7 @@ func TestOverlaysAndWorkspaceHelpers(t *testing.T) {
 }
 
 func TestGraphIconsAndTruncation(t *testing.T) {
-	if getTypeIcon(model.TypeBug) == "" || getPriorityIcon(1) == "" {
+	if GetTypeIcon(string(model.TypeBug)) == "" || GetPriorityIcon(1) == "" {
 		t.Fatalf("graph icons should not be empty")
 	}
 	if got := smartTruncateID("very_long_identifier_with_parts", 8); len([]rune(got)) > 8 {

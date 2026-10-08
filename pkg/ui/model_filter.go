@@ -1106,7 +1106,7 @@ func (m *Model) updateViewportContent() {
 	// badge for ambient awareness.
 
 	// Title Block
-	addMD(fmt.Sprintf("# %s %s\n\n", GetTypeIconMD(string(item.IssueType)), item.Title))
+	addMD(fmt.Sprintf("# %s %s\n\n", GetTypeIcon(string(item.IssueType)), item.Title))
 
 	// Identity strip: ID, status, priority on a single prose line. Type lives
 	// in the title icon already, so don't duplicate it here. The wide markdown
@@ -1935,22 +1935,4 @@ func (m *Model) applyBQL(query *bql.Query, queryStr string) {
 		m.list.Select(0)
 	}
 	m.updateViewportContent()
-}
-
-// GetTypeIconMD returns the emoji icon for an issue type (for markdown)
-func GetTypeIconMD(t string) string {
-	switch t {
-	case "bug":
-		return activeGlyphs.TypeBug
-	case "feature":
-		return activeGlyphs.TypeFeature
-	case "task":
-		return activeGlyphs.TypeTask
-	case "epic":
-		return activeGlyphs.TypeEpic
-	case "chore":
-		return activeGlyphs.TypeChore
-	default:
-		return "•"
-	}
 }

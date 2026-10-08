@@ -1478,7 +1478,7 @@ func (m Model) renderLabelDrilldown() string {
 		sb.WriteString(labelStyle.Render("Top issues by PageRank:"))
 		sb.WriteString("\n")
 		for _, si := range scoredIssues {
-			line := fmt.Sprintf("  %s  %-10s  PR=%.3f  %s", getStatusIcon(si.issue.Status), si.issue.ID, si.score, si.issue.Title)
+			line := fmt.Sprintf("  %s  %-10s  PR=%.3f  %s", GetStatusIcon(string(si.issue.Status)), si.issue.ID, si.score, si.issue.Title)
 			sb.WriteString(valStyle.Render(line))
 			sb.WriteString("\n")
 		}
@@ -1631,10 +1631,10 @@ func (m Model) renderLabelGraphAnalysis() string {
 		for i := 0; i < showPRCount; i++ {
 			item := r.PageRank.TopIssues[i]
 			title := ""
-			statusIcon := "○"
+			statusIcon := GetStatusIcon("")
 			if iss, ok := r.Subgraph.IssueMap[item.ID]; ok {
 				title = iss.Title
-				statusIcon = getStatusIcon(iss.Status)
+				statusIcon = GetStatusIcon(string(iss.Status))
 			}
 			if title == "" {
 				title = "(no title)"
