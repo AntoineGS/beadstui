@@ -3,10 +3,16 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -88,13 +94,18 @@ func exampleConfig(behaviour string) Config {
 // startHost starts a host for cfg after shortTimers; Stop runs at cleanup.
 func startHost(t *testing.T, cfg Config) *testHost {
 	t.Helper()
-	h := NewHost(Options{
-		Configs:   []Config{cfg},
-		BTVersion: "test",
-		Scope:     Scope{Mode: "project"},
-		DB:        func(*model.Issue) string { return "proj" },
-		Repo:      func(*model.Issue) string { return "" },
+	return startHostWith(t, Options{
+		Configs: []Config{cfg},
+		DB:      func(*model.Issue) string { return "proj" },
+		Repo:    func(*model.Issue) string { return "" },
 	})
+}
+
+func startHostWith(t *testing.T, opts Options) *testHost {
+	t.Helper()
+	opts.BTVersion = "test"
+	opts.Scope = Scope{Mode: "project"}
+	h := NewHost(opts)
 	th := &testHost{Host: h, rec: &recorder{}, reg: slots.NewRegistry()}
 	h.SetSender(th.rec.send)
 	h.Register(th.reg)
@@ -272,6 +283,9 @@ func TestHostCrashDuringInvoke(t *testing.T) {
 		st := th.status()
 		return st.Restarts == 1 && st.State == "active" && len(th.reg.Badges(issue)) == 1
 	})
+	if st := th.status(); st.LastError != "" {
+		t.Errorf("LastError after a successful restart = %q, want empty", st.LastError)
+	}
 }
 
 func TestHostSlowInvokeTimesOut(t *testing.T) {
@@ -339,6 +353,86 @@ func TestHostConfirmPrompt(t *testing.T) {
 		t.Fatal("Invoke did not return after Reply")
 	}
 	prompt.Reply(nil) // after the action ended: no-op
+	select {
+	case <-prompt.Done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Done not closed after the prompt was answered")
+	}
+}
+
+func TestHostPromptDoneWhenActionEnds(t *testing.T) {
+	shortTimers(t)
+	th := startHost(t, exampleConfig("confirm"))
+	th.waitActive(t)
+	issue := openIssue("example-1")
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan ActionResult, 1)
+	go func() {
+		done <- th.Invoke(ctx, Action{Plugin: "example", ID: "dispatch"}, &issue, "list")
+	}()
+	var prompt PromptMsg
+	waitFor(t, 5*time.Second, "PromptMsg", func() bool {
+		for _, m := range th.rec.all() {
+			if p, ok := m.(PromptMsg); ok {
+				prompt = p
+				return true
+			}
+		}
+		return false
+	})
+	select {
+	case <-prompt.Done:
+		t.Fatal("Done closed while the prompt is awaited")
+	default:
+	}
+	cancel()
+	if res := <-done; !res.Unknown {
+		t.Fatalf("cancelled Invoke = %+v, want Unknown", res)
+	}
+	select {
+	case <-prompt.Done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Done not closed after the action ended")
+	}
+	prompt.Reply(true) // stale: no-op
+}
+
+func TestFilterResolvesRepoPerDatabase(t *testing.T) {
+	var calls int
+	h := NewHost(Options{Repo: func(i *model.Issue) string {
+		calls++
+		if i.SourceRepo == "unknown" {
+			return ""
+		}
+		return "/src/" + i.SourceRepo
+	}})
+	s := &session{p: &proc{h: h}, manifest: validManifest()}
+	var issues []syncIssue
+	for i, db := range []string{"proj", "other", "proj", "unknown", "other", "unknown"} {
+		issues = append(issues, syncIssue{issue: model.Issue{ID: fmt.Sprintf("example-%d", i), SourceRepo: db}, db: db})
+	}
+	beads, ok := s.filter(context.Background(), issues)
+	if !ok || len(beads) != len(issues) {
+		t.Fatalf("filter = %d beads, %v", len(beads), ok)
+	}
+	for _, b := range beads {
+		want := "/src/" + b.DB
+		if b.DB == "unknown" {
+			if b.Repo != nil {
+				t.Errorf("%s: repo %q, want null", b.ID, *b.Repo)
+			}
+		} else if b.Repo == nil || *b.Repo != want {
+			t.Errorf("%s: repo %v, want %s", b.ID, b.Repo, want)
+		}
+	}
+	if calls != 3 {
+		t.Errorf("Repo called %d times, want 3", calls)
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, ok := s.filter(cancelled, issues); ok {
+		t.Error("filter must give up when ctx is done")
+	}
 }
 
 func TestHostPromptOutsideActionRejected(t *testing.T) {
@@ -389,5 +483,83 @@ func TestHostStopIsBounded(t *testing.T) {
 	th.Stop()
 	if d := time.Since(start); d > 50*time.Millisecond {
 		t.Fatalf("second Stop took %v", d)
+	}
+}
+
+func TestHostUnknownMethodsIgnored(t *testing.T) {
+	shortTimers(t)
+	th := startHost(t, exampleConfig("unknown-spam"))
+	issues := []model.Issue{openIssue("example-1")}
+	th.SyncIssues(issues)
+	// The toast follows the 11 unknown notifications on the same reader, so
+	// once it arrives all of them were handled.
+	waitFor(t, 5*time.Second, "toast after unknown notifications", func() bool {
+		return th.rec.count(func(m tea.Msg) bool { tm, ok := m.(ToastMsg); return ok && tm.Toast.Message == "unknown done" }) == 1
+	})
+	res := th.Invoke(context.Background(), Action{Plugin: "example", ID: "dispatch"}, &issues[0], "list")
+	if res.Unknown {
+		t.Fatal("plugin was killed for unknown notifications")
+	}
+	if st := th.status(); st.Restarts != 0 || st.State != "active" {
+		t.Fatalf("status = %+v, want active with no restarts", st)
+	}
+}
+
+func TestHostShutdownDeliveredBeforeStdinCloses(t *testing.T) {
+	shortTimers(t)
+	marker := filepath.Join(t.TempDir(), "shutdown")
+	cfg := exampleConfig("ignore-eof-until-shutdown")
+	cfg.Env["BT_TEST_PLUGIN_MARKER"] = marker
+	th := startHost(t, cfg)
+	th.waitActive(t)
+	th.Stop()
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("plugin never received shutdown: %v", err)
+	}
+}
+
+func TestHostStopKillsPluginIgnoringShutdown(t *testing.T) {
+	shortTimers(t)
+	pidFile := filepath.Join(t.TempDir(), "pid")
+	cfg := exampleConfig("ignore-shutdown")
+	cfg.Env["BT_TEST_PLUGIN_PIDFILE"] = pidFile
+	th := startHost(t, cfg)
+	th.waitActive(t)
+	b, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, _ := strconv.Atoi(string(b))
+	start := time.Now()
+	th.Stop()
+	if d, bound := time.Since(start), shutdownGrace+500*time.Millisecond; d > bound {
+		t.Fatalf("Stop took %v, want ≤ %v", d, bound)
+	}
+	if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("plugin process %d still exists after Stop (kill 0: %v)", pid, err)
+	}
+}
+
+func TestHostRepoOncePerDatabase(t *testing.T) {
+	shortTimers(t)
+	var calls atomic.Int32
+	th := startHostWith(t, Options{
+		Configs: []Config{exampleConfig("ok")},
+		DB:      func(i *model.Issue) string { return i.SourceRepo },
+		Repo: func(i *model.Issue) string {
+			calls.Add(1)
+			return "/src/" + i.SourceRepo
+		},
+	})
+	var issues []model.Issue
+	for i := 0; i < 100; i++ {
+		issue := openIssue(fmt.Sprintf("example-%d", i))
+		issue.SourceRepo = []string{"proj", "other"}[i%2]
+		issues = append(issues, issue)
+	}
+	th.SyncIssues(issues)
+	th.waitSection(t, &issues[99], "sync rev 1")
+	if n := calls.Load(); n != 2 {
+		t.Fatalf("Repo called %d times, want 2 (once per database)", n)
 	}
 }

@@ -26,15 +26,17 @@ var (
 )
 
 const (
-	// maxBadLines invalid lines or unknown methods get a plugin killed.
+	// maxBadLines malformed lines or params get a plugin killed.
 	maxBadLines = 10
 	// stderrLines is how many stderr lines are kept per plugin.
 	stderrLines = 50
 	// outboxSize bounds the messages waiting for the sender.
 	outboxSize = 256
-	// stderrSettle bounds the wait for a dead plugin's last stderr lines and
-	// for queueing the shutdown notification.
+	// stderrSettle bounds the wait for a dead plugin's last stderr lines.
 	stderrSettle = 100 * time.Millisecond
+	// shutdownFlush bounds the wait for the shutdown notification to be
+	// written before stdin is closed.
+	shutdownFlush = 200 * time.Millisecond
 )
 
 // newCommand builds a plugin process; a seam for tests.
@@ -57,8 +59,10 @@ type Options struct {
 	// DB returns a bead's database name. It must be cheap: it is called on
 	// the render path.
 	DB func(issue *model.Issue) string
-	// Repo returns a bead's checkout path, or "" when unknown. It may do IO
-	// and is called only when syncing (in the background) or invoking.
+	// Repo returns the checkout path of a bead's database, or "" when
+	// unknown. It may do IO and is called only when syncing (in the
+	// background, at most once per database per sync, with any one bead of
+	// that database) or invoking.
 	Repo func(issue *model.Issue) string
 }
 
@@ -105,6 +109,10 @@ type PromptMsg struct {
 	// Reply delivers the answer; nil means dismissed. Only the first call
 	// counts, and calls after the action ended do nothing.
 	Reply func(answer any)
+	// Done closes once the prompt is no longer awaited: answered, its
+	// action ended, or the plugin went away. The UI should then close a
+	// prompt it still shows.
+	Done <-chan struct{}
 }
 
 // Host runs the configured plugins and holds the state they push. All
@@ -123,8 +131,9 @@ type Host struct {
 	held   []tea.Msg
 	outbox chan tea.Msg
 
-	latestMu sync.Mutex
-	latest   []syncIssue
+	latestMu  sync.Mutex
+	latest    []syncIssue
+	latestGen uint64
 
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -164,8 +173,9 @@ func NewHost(opts Options) *Host {
 }
 
 // SetSender sets the function messages are delivered through, typically
-// tea.Program.Send. Status messages produced before it is set are held and
-// delivered then; other messages are dropped.
+// tea.Program.Send. Call it before Start: status messages produced before
+// it is set are held and delivered then, possibly after later messages, and
+// all other messages are dropped.
 func (h *Host) SetSender(send func(tea.Msg)) {
 	h.sendMu.Lock()
 	h.send = send
@@ -267,6 +277,7 @@ func (h *Host) SyncIssues(issues []model.Issue) {
 	}
 	h.latestMu.Lock()
 	h.latest = latest
+	h.latestGen++
 	h.latestMu.Unlock()
 	for _, p := range h.plugins {
 		select {
@@ -276,10 +287,12 @@ func (h *Host) SyncIssues(issues []model.Issue) {
 	}
 }
 
-func (h *Host) latestIssues() ([]syncIssue, bool) {
+// latestIssues returns the last synced issues and their generation, which
+// changes on every SyncIssues; gen 0 means none yet.
+func (h *Host) latestIssues() (issues []syncIssue, gen uint64) {
 	h.latestMu.Lock()
 	defer h.latestMu.Unlock()
-	return h.latest, h.latest != nil
+	return h.latest, h.latestGen
 }
 
 // Actions lists the plugin actions offered on issue, in config order.

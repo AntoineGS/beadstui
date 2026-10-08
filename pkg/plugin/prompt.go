@@ -50,7 +50,9 @@ func (s *session) handle(ctx context.Context, method string, params json.RawMess
 		}
 		return p.prompt(ctx, PromptMsg{Plugin: p.cfg.Name, Select: &sel})
 	default:
-		s.badLine(fmt.Errorf("unknown method %q", method))
+		// Ignored as a notification; a request gets method not found. Not
+		// counted toward the bad-line kill.
+		debug.Log("plugin %s: unknown method %q", p.cfg.Name, method)
 		return nil, &RPCError{Code: -32601, Message: "method not found: " + method}
 	}
 	return nil, nil
@@ -61,8 +63,8 @@ func (s *session) invalidParams(method string, err error) error {
 	return &RPCError{Code: -32602, Message: fmt.Sprintf("%s: invalid params: %v", method, err)}
 }
 
-// badLine counts a malformed line or unknown method; too many kill the
-// plugin, which then counts as crashed.
+// badLine counts a malformed line or message; too many kill the plugin,
+// which then counts as crashed.
 func (s *session) badLine(err error) {
 	debug.Log("plugin %s: %v", s.p.cfg.Name, err)
 	if s.badLines.Add(1) == maxBadLines {
@@ -87,7 +89,7 @@ func (p *proc) toast(t Toast) {
 
 // prompt shows msg and waits for the answer. It is refused unless one of the
 // plugin's actions is in flight, and cancelled when the last one ends or the
-// connection closes.
+// connection closes. msg.Done closes when the prompt is no longer awaited.
 func (p *proc) prompt(ctx context.Context, msg PromptMsg) (any, error) {
 	p.mu.Lock()
 	if p.inflight == 0 {
@@ -97,6 +99,9 @@ func (p *proc) prompt(ctx context.Context, msg PromptMsg) (any, error) {
 	done := p.actionsDone
 	p.mu.Unlock()
 
+	stale := make(chan struct{})
+	defer close(stale)
+	msg.Done = stale
 	answers := make(chan any, 1)
 	var once sync.Once
 	msg.Reply = func(answer any) {

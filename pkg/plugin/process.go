@@ -50,8 +50,9 @@ type session struct {
 	lastStderr string
 
 	// Used only by the supervisor goroutine.
-	synced   bool
-	lastHash [sha256.Size]byte
+	synced    bool
+	syncedGen uint64
+	lastHash  [sha256.Size]byte
 }
 
 func (p *proc) status() Status {
@@ -248,6 +249,7 @@ func (s *session) serve(ctx context.Context, exited, connDone <-chan struct{}) (
 	p.mu.Lock()
 	p.session = s
 	p.version = s.manifest.Version
+	p.failure = ""
 	p.mu.Unlock()
 	p.setState(stateActive)
 
@@ -269,11 +271,14 @@ func (s *session) serve(ctx context.Context, exited, connDone <-chan struct{}) (
 // sync sends beads.sync when the subscribed beads differ from the last set
 // this process received.
 func (s *session) sync(ctx context.Context) {
-	issues, ok := s.p.h.latestIssues()
+	issues, gen := s.p.h.latestIssues()
+	if gen == 0 || (s.synced && gen == s.syncedGen) {
+		return
+	}
+	beads, ok := s.filter(ctx, issues)
 	if !ok {
 		return
 	}
-	beads := s.filter(issues)
 	b, err := json.Marshal(beads)
 	if err != nil {
 		debug.Log("plugin %s: encode beads.sync: %v", s.p.cfg.Name, err)
@@ -281,6 +286,7 @@ func (s *session) sync(ctx context.Context) {
 	}
 	sum := sha256.Sum256(b)
 	if s.synced && sum == s.lastHash {
+		s.syncedGen = gen
 		return
 	}
 	s.p.mu.Lock()
@@ -291,14 +297,23 @@ func (s *session) sync(ctx context.Context) {
 		debug.Log("plugin %s: beads.sync lost: %v", s.p.cfg.Name, err)
 		return
 	}
-	s.synced, s.lastHash = true, sum
+	s.synced, s.lastHash, s.syncedGen = true, sum, gen
 }
 
-func (s *session) filter(issues []syncIssue) []Bead {
+// filterChunk is how many issues filter handles between ctx checks.
+const filterChunk = 256
+
+// filter builds the subscribed beads, resolving Repo once per database. ok
+// is false when ctx ended first.
+func (s *session) filter(ctx context.Context, issues []syncIssue) (beads []Bead, ok bool) {
 	sub := s.manifest.Subscribe
 	repo := s.p.h.opts.Repo
-	beads := make([]Bead, 0, len(issues))
-	for _, in := range issues {
+	repos := map[string]*string{}
+	beads = make([]Bead, 0, len(issues))
+	for i, in := range issues {
+		if i%filterChunk == 0 && ctx.Err() != nil {
+			return nil, false
+		}
 		if len(sub.Statuses) > 0 && !contains(sub.Statuses, string(in.issue.Status)) {
 			continue
 		}
@@ -315,14 +330,19 @@ func (s *session) filter(issues []syncIssue) []Bead {
 			}
 		}
 		if repo != nil {
-			issue := in.issue
-			if r := repo(&issue); r != "" {
-				b.Repo = &r
+			r, seen := repos[in.db]
+			if !seen {
+				issue := in.issue
+				if path := repo(&issue); path != "" {
+					r = &path
+				}
+				repos[in.db] = r
 			}
+			b.Repo = r
 		}
 		beads = append(beads, b)
 	}
-	return beads
+	return beads, true
 }
 
 func hasAnyPrefix(s string, prefixes []string) bool {
@@ -351,11 +371,14 @@ func notify(ctx context.Context, c *Conn, method string, params any) error {
 	return nil
 }
 
-// shutdown asks the process to exit, closes its stdin, and kills it if it
-// is still running after the grace period.
+// shutdown asks the process to exit, closes its stdin once the request is
+// written (or shutdownFlush passed), and kills it if it is still running
+// after the grace period.
 func (s *session) shutdown(stdin io.Closer, exited <-chan struct{}) {
-	ctx, cancel := context.WithTimeout(context.Background(), stderrSettle)
-	_ = notify(ctx, s.conn, "shutdown", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownFlush)
+	if err := notify(ctx, s.conn, "shutdown", nil); err == nil {
+		_ = s.conn.flush(ctx)
+	}
 	cancel()
 	_ = stdin.Close()
 	select {

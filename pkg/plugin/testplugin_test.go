@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -26,8 +27,10 @@ func TestMain(m *testing.M) {
 // runTestPlugin speaks the protocol on stdin/stdout. spec is a
 // comma-separated list of behaviours; every behaviour also does what "ok"
 // does unless it overrides it. Behaviours that need an active host
-// (toast-spam, garbage, confirm-unsolicited) start on the first beads.sync,
-// which bt only sends once the manifest is accepted.
+// (toast-spam, unknown-spam, garbage, confirm-unsolicited) start on the
+// first beads.sync, which bt only sends once the manifest is accepted.
+// ignore-eof-until-shutdown keeps running after stdin closes and writes
+// $BT_TEST_PLUGIN_MARKER on shutdown; ignore-shutdown ignores both.
 func runTestPlugin(spec string) {
 	has := map[string]bool{}
 	for _, b := range strings.Split(spec, ",") {
@@ -97,12 +100,24 @@ func runTestPlugin(spec string) {
 			}
 			return InvokeResult{Toast: &Toast{Message: fmt.Sprintf("did %s %s", p.Action, p.Bead.ID)}}, nil
 		case "shutdown":
+			if has["ignore-shutdown"] {
+				return nil, nil
+			}
+			if marker := os.Getenv("BT_TEST_PLUGIN_MARKER"); marker != "" {
+				_ = os.WriteFile(marker, []byte("shutdown"), 0o600)
+			}
 			os.Exit(0)
 		}
 		return nil, &RPCError{Code: -32601, Message: "method not found: " + method}
 	}
+	if pidFile := os.Getenv("BT_TEST_PLUGIN_PIDFILE"); pidFile != "" {
+		_ = os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())), 0o600)
+	}
 	conn = NewConn(os.Stdin, os.Stdout, handler, nil)
 	_ = conn.Run(context.Background())
+	if has["ignore-eof-until-shutdown"] || has["ignore-shutdown"] {
+		select {}
+	}
 }
 
 func afterActive(conn *Conn, has map[string]bool) {
@@ -110,6 +125,12 @@ func afterActive(conn *Conn, has map[string]bool) {
 		for i := 0; i < 20; i++ {
 			_ = conn.Notify("ui.toast", Toast{Message: fmt.Sprintf("spam %d", i)})
 		}
+	}
+	if has["unknown-spam"] {
+		for i := 0; i < 11; i++ {
+			_ = conn.Notify("example.unknown", map[string]int{"n": i})
+		}
+		_ = conn.Notify("ui.toast", Toast{Message: "unknown done"})
 	}
 	if has["garbage"] {
 		for i := 0; i < 11; i++ {

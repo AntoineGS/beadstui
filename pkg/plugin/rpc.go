@@ -9,6 +9,7 @@ import (
 	"io"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -76,6 +77,7 @@ type Conn struct {
 
 	w         io.Writer
 	out       chan []byte
+	unwritten atomic.Int64 // queued messages not yet written
 	done      chan struct{}
 	startOnce sync.Once
 
@@ -227,14 +229,34 @@ func (c *Conn) send(ctx context.Context, m message) error {
 		return ErrClosed
 	default:
 	}
+	c.unwritten.Add(1)
 	select {
 	case c.out <- b:
 		return nil
 	case <-c.done:
+		c.unwritten.Add(-1)
 		return ErrClosed
 	case <-ctx.Done():
+		c.unwritten.Add(-1)
 		return ctx.Err()
 	}
+}
+
+// flush waits until every queued message has been written, the connection
+// closes, or ctx is done.
+func (c *Conn) flush(ctx context.Context) error {
+	t := time.NewTicker(time.Millisecond)
+	defer t.Stop()
+	for c.unwritten.Load() > 0 {
+		select {
+		case <-c.done:
+			return ErrClosed
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-t.C:
+		}
+	}
+	return nil
 }
 
 // writeLoop is the only goroutine that writes to w. A write error closes the
@@ -243,7 +265,9 @@ func (c *Conn) writeLoop() {
 	for {
 		select {
 		case b := <-c.out:
-			if _, err := c.w.Write(b); err != nil {
+			_, err := c.w.Write(b)
+			c.unwritten.Add(-1)
+			if err != nil {
 				c.close()
 				return
 			}
