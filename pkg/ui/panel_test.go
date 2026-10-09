@@ -7,7 +7,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -34,22 +33,38 @@ func TestPopupMenuRespectsTextAttributes(t *testing.T) {
 	theme.Text.Metadata = lipgloss.NewStyle().Italic(false).Underline(true)
 	theme.Text.Selected = lipgloss.NewStyle().Bold(false).Underline(true)
 	entries := []PopupMenuEntry{{Label: "Choice", Detail: "Explanation", Selected: true}, {Label: "Other"}}
-	got := strings.Join(RenderPopupMenu(entries, MeasurePopupMenu(entries, PopupMenuOpts{}), theme, 40), "\n")
-	for _, want := range []string{theme.Text.Selected.Render("Choice"), theme.Text.Body.Render("Other"), theme.Text.Metadata.Render("Explanation")} {
+	rows := RenderPopupMenu(entries, MeasurePopupMenu(entries, PopupMenuOpts{}), theme, 40)
+	if rows[0] != renderSelectedRow(theme, ansi.Strip(rows[0]), 40) {
+		t.Fatalf("selected row ignored selected role: %q", rows[0])
+	}
+	got := strings.Join(rows, "\n")
+	for _, want := range []string{theme.Text.Body.Render("Other"), theme.Text.Metadata.Render("Explanation")} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("menu ignored role %q: %q", want, got)
 		}
 	}
 }
 
-func TestPopupMenuSelectedRowCoherentCells(t *testing.T) {
+func TestRenderSelectedRow_PlainFullWidthHighlight(t *testing.T) {
+	theme := DefaultTheme()
+	chip := lipgloss.NewStyle().Foreground(theme.Open).Background(theme.Blocked).Render("CHIP")
+	for _, width := range []int{3, 12, 30} {
+		got := renderSelectedRow(theme, "a "+chip+" title", width)
+		want := theme.Text.Selected.Render(popupPadCell("a CHIP title", width))
+		if got != want {
+			t.Fatalf("width=%d: got %q want %q", width, got, want)
+		}
+	}
+}
+
+// Popup selection is the main list's selection: no cursor glyph, one
+// highlight over the plain row, semantic chips included.
+func TestPopupMenuSelectedRowMatchesListSelection(t *testing.T) {
 	theme := DefaultTheme()
 	theme.Text.Selected = lipgloss.NewStyle().Foreground(theme.TextColor).Background(theme.Highlight).Bold(false).Italic(false).Underline(false)
 	theme.Text.Heading = lipgloss.NewStyle().Foreground(theme.Primary).Background(theme.Warning).Bold(true)
 	theme.Text.Metadata = lipgloss.NewStyle().Foreground(theme.Secondary).Background(theme.Blocked).Italic(true).Underline(true)
 	chipStyle := lipgloss.NewStyle().Foreground(theme.Open).Background(theme.Blocked).Bold(true)
-	selectedStyle := uv.NewStyledString(theme.Text.Selected.Render("X")).Lines(ansi.GraphemeWidth)[0][0].Style
-	semanticStyle := uv.NewStyledString(chipStyle.Render("X")).Lines(ansi.GraphemeWidth)[0][0].Style
 	for _, semantic := range []bool{false, true} {
 		t.Run(fmt.Sprintf("semantic=%v", semantic), func(t *testing.T) {
 			label := "Choice"
@@ -62,23 +77,10 @@ func TestPopupMenuSelectedRowCoherentCells(t *testing.T) {
 				row := RenderPopupMenu(entries, layout, theme, width)[0]
 				blockWidth := min(layout.Width, width)
 				left := max(0, (width-blockWidth)/2)
-				raw := "> " + popupPadCell("a", layout.ShortcutWidth) + "  " + popupPadCell("*", layout.MarkerWidth) + " " + ansi.Strip(label) + " (3)"
+				raw := popupPadCell("a", layout.ShortcutWidth) + "  " + popupPadCell("*", layout.MarkerWidth) + " " + ansi.Strip(label) + " (3)"
 				wantText := popupPadCell(strings.Repeat(" ", left)+popupPadCell(raw, blockWidth), width)
-				if ansi.Strip(row) != wantText {
-					t.Fatalf("width=%d: changed alignment/content: got %q want %q", width, ansi.Strip(row), wantText)
-				}
-				cells := uv.NewStyledString(row).Lines(ansi.GraphemeWidth)
-				if len(cells) != 1 || len(cells[0]) != width {
-					t.Fatalf("width=%d: changed row geometry: %q", width, row)
-				}
-				for x, cell := range cells[0] {
-					want := selectedStyle
-					if semantic && x >= left+layout.LabelX && x < left+layout.LabelX+4 {
-						want = semanticStyle
-					}
-					if !cell.Style.Equal(&want) {
-						t.Fatalf("width=%d cell=%d %q: style=%+v want=%+v", width, x, cell.Content, cell.Style, want)
-					}
+				if row != renderSelectedRow(theme, wantText, width) {
+					t.Fatalf("width=%d: got %q want list selection of %q", width, row, wantText)
 				}
 				if width >= layout.Width && !strings.Contains(ansi.Strip(row), " (3)") {
 					t.Fatalf("suffix lost: %q", row)
@@ -131,6 +133,30 @@ func popupFindRow(t *testing.T, out, text string) (int, string) {
 	}
 	t.Fatalf("missing %q in popup:\n%s", text, ansi.Strip(out))
 	return -1, ""
+}
+
+// popupRowSelected reports whether text sits inside one Text.Selected span,
+// the shared list/popup highlight drawn by renderSelectedRow. Underlined
+// styles render one span per cell, so tests using this avoid underline.
+func popupRowSelected(out, text string, theme Theme) bool {
+	open := strings.TrimSuffix(theme.Text.Selected.Render("x"), "x\x1b[m")
+	for _, line := range strings.Split(out, "\n") {
+		for rest := line; ; {
+			i := strings.Index(rest, open)
+			if i < 0 {
+				break
+			}
+			rest = rest[i+len(open):]
+			span := rest
+			if j := strings.Index(span, "\x1b["); j >= 0 {
+				span = span[:j]
+			}
+			if strings.Contains(span, text) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func TestPopupFrame_FitsAndKeepsFooter(t *testing.T) {
@@ -282,8 +308,8 @@ func TestPopupMenu_ColumnsSurvivePageAndMarkerChanges(t *testing.T) {
 	if len(columns) != 3 || columns[0] != columns[1] || columns[1] != columns[2] {
 		t.Fatalf("label columns=%v", columns)
 	}
-	if columns[0] != 13 {
-		t.Fatalf("centered label column=%d, want 13", columns[0])
+	if columns[0] != 12 {
+		t.Fatalf("centered label column=%d, want 12", columns[0])
 	}
 }
 
@@ -303,7 +329,7 @@ func TestPopupMenu_StyledWideContentKeepsGeometry(t *testing.T) {
 	if x, y := ansi.StringWidth(first[:strings.Index(first, "界面")]), ansi.StringWidth(second[:strings.Index(second, "Plain")]); x != y {
 		t.Fatalf("label columns %d != %d", x, y)
 	}
-	if detail := ansi.Strip(rows[2]); !strings.HasPrefix(detail, "     a long") {
+	if detail := ansi.Strip(rows[2]); !strings.HasPrefix(detail, "   a long") {
 		t.Fatalf("detail not under label: %q", detail)
 	}
 }
@@ -313,7 +339,7 @@ func TestPopupMenu_OptionalColumnsAndNarrowRows(t *testing.T) {
 	for _, tc := range []struct {
 		opts  PopupMenuOpts
 		wantX int
-	}{{PopupMenuOpts{}, 2}, {PopupMenuOpts{Shortcuts: true}, 5}, {PopupMenuOpts{Markers: true}, 5}, {PopupMenuOpts{Shortcuts: true, Markers: true}, 8}} {
+	}{{PopupMenuOpts{}, 0}, {PopupMenuOpts{Shortcuts: true}, 3}, {PopupMenuOpts{Markers: true}, 3}, {PopupMenuOpts{Shortcuts: true, Markers: true}, 6}} {
 		layout := MeasurePopupMenu(entries, tc.opts)
 		if layout.LabelX != tc.wantX {
 			t.Fatalf("column=%d, want %d", layout.LabelX, tc.wantX)

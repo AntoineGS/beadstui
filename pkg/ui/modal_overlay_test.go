@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -9,6 +10,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/seanmartinsmith/beadstui/pkg/cass"
+	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/recipe"
 )
 
 // faintSGR is the ANSI Select-Graphic-Rendition byte sequence for the Faint
@@ -17,15 +20,15 @@ import (
 // presence of this sequence in modal-adjacent rows.
 const faintSGR = "\x1b[2"
 
-func TestConfirmationPopups_ShareBoundsAndKeepHints(t *testing.T) {
+// Confirm and cancel are the shared enter/y and esc/n keys, so confirmation
+// popups do not spell them out.
+func TestConfirmationPopups_ShareBoundsWithoutKeyHints(t *testing.T) {
 	m := newSizedModel(t, fieldEditTestIssues(), 40, 12)
 	m.claimTargetID = "zz-target"
 	m.claimTargetTitle = strings.Repeat("long title ", 8)
 	for _, out := range []string{m.renderQuitConfirm(), m.renderClaimConfirm(), m.renderTimeTravelPrompt()} {
 		assertPopupBounds(t, out, 40, 11)
-		if !strings.Contains(strings.ToLower(ansi.Strip(out)), "esc") {
-			t.Fatalf("cancel hint missing:\n%s", ansi.Strip(out))
-		}
+		assertNoAssumedKeyHints(t, out)
 	}
 	m.width = 8
 	m.height = 3
@@ -39,11 +42,15 @@ func TestHelpPopup_BoundsAndFooter(t *testing.T) {
 		m := newSizedModel(t, fieldEditTestIssues(), size.Width, size.Height)
 		out := m.renderHelpOverlay()
 		assertPopupBounds(t, out, size.Width, size.Height-1)
-		popupFindRow(t, out, "Esc")
-		popupFindRow(t, out, ";")
 		rows := strings.Split(ansi.Strip(out), "\n")
-		if !strings.Contains(rows[len(rows)-3], "Esc") {
-			t.Fatal("help footer not in reserved footer row")
+		if footer := rows[len(rows)-3]; !strings.Contains(footer, "; per-view") || strings.Contains(footer, "Esc") {
+			t.Fatalf("help footer row = %q, want only the ; per-view hint", footer)
+		}
+		m.helpLegend = true
+		out = m.renderHelpOverlay()
+		rows = strings.Split(ansi.Strip(out), "\n")
+		if footer := rows[len(rows)-3]; !strings.Contains(footer, "l shortcuts") || strings.Contains(footer, "j/k") || strings.Contains(footer, "Esc") {
+			t.Fatalf("legend footer row = %q, want only the l shortcuts hint", footer)
 		}
 	}
 }
@@ -55,12 +62,158 @@ func TestAlertsPopup_BoundsAndFooter(t *testing.T) {
 	out := m.renderAlertsPanel()
 	assertPopupBounds(t, out, 40, 11)
 	popupFindRow(t, out, "(4)")
-	popupFindRow(t, out, "esc")
+	popupFindRow(t, out, "s/t/p/o/a")
+	assertNoAssumedKeyHints(t, out)
 	m.activeTab = TabNotifications
 	out = m.renderAlertsPanel()
 	assertPopupBounds(t, out, 40, 11)
 	popupFindRow(t, out, "(0)")
-	popupFindRow(t, out, "esc")
+	popupFindRow(t, out, "c/C")
+	assertNoAssumedKeyHints(t, out)
+}
+
+// assertNoAssumedKeyHints fails when a popup spells out keys every popup
+// shares: movement, enter to select/confirm, esc/q to close or cancel.
+func assertNoAssumedKeyHints(t *testing.T, out string) {
+	t.Helper()
+	plain := ansi.Strip(out)
+	if hint := assumedKeyHint.FindString(plain); hint != "" {
+		t.Errorf("popup spells out assumed key %q:\n%s", hint, plain)
+	}
+}
+
+var assumedKeyHint = regexp.MustCompile(`(?i)\b(j/k|enter|esc|pgup|home/end|navigate|q (to )?close)\b`)
+
+// TestPopupFooters_OnlyNonObviousKeys sweeps every popup: assumed keys are
+// gone, and the keys a user could not guess are still shown.
+func TestPopupFooters_OnlyNonObviousKeys(t *testing.T) {
+	theme := DefaultTheme()
+	sized := func(v interface {
+		SetSize(int, int)
+		View() string
+	}) string {
+		v.SetSize(100, 30)
+		return v.View()
+	}
+	fieldSelect := NewFieldSelectModal(model.StatusOpen, theme)
+	statusPicker := NewStatusPickerModal(model.StatusOpen, theme)
+	fieldInput := NewFieldInputModal("title", "Title", "x", theme)
+	longform := NewLongformEditModal("description", "Description", "x", theme)
+	bql := NewBQLQueryModal(theme)
+	recipes := NewRecipePickerModel([]recipe.Recipe{{Name: "Short", Description: "one"}}, theme)
+	labels := NewLabelPickerModel([]string{"alpha"}, map[string]int{"alpha": 1}, theme)
+	repos := NewRepoPickerModel([]string{"bt", "sym"}, theme)
+	cassModal := NewCassSessionModal("bead", cass.CorrelationResult{TopSessions: []cass.ScoredResult{{SearchResult: cass.SearchResult{Agent: "agent", Snippet: "snippet"}}}}, theme)
+	settings := settingsTestModel(t)
+	settings.settingsMenu.SetSize(100, 30)
+	epic := epicCardModel(epicCardFixture())
+	epic.openEpicCard("ep1")
+	plugins := newPluginActionModel(t, &fakePluginActions{})
+	plugins, _ = sendMsg(plugins, selectPrompt(func(any) {}))
+	for _, tc := range []struct {
+		name string
+		out  string
+		want []string
+	}{
+		{"field select", sized(&fieldSelect), nil},
+		{"status picker", sized(&statusPicker), []string{"* current"}},
+		{"field input", sized(&fieldInput), nil},
+		{"longform", sized(&longform), []string{"ctrl+s commit", "E $EDITOR"}},
+		{"bql", sized(&bql), []string{"↑/↓ history"}},
+		{"recipes", sized(&recipes), nil},
+		{"labels", sized(&labels), []string{"space toggle", "/ search", "←/→ page"}},
+		{"repos", sized(&repos), []string{"space toggle", "/ search", "←/→ page"}},
+		{"cass", sized(&cassModal), []string{"y copy search cmd", "V close"}},
+		{"settings menu", settings.settingsMenu.View(), nil},
+		{"options", sized(&settings.settingsModal), []string{"←/→ change"}},
+		{"epic card", epic.renderEpicCard(), nil},
+		{"plugin select", plugins.renderPluginPrompt(), nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assertNoAssumedKeyHints(t, tc.out)
+			for _, want := range tc.want {
+				popupFindRow(t, tc.out, want)
+			}
+		})
+	}
+}
+
+// Full views follow the popup footer rule: assumed keys are gone, the keys a
+// user could not guess stay (bt-6dv).
+func TestViewHints_OnlyNonObviousKeys(t *testing.T) {
+	theme := DefaultTheme()
+	m := newSizedModel(t, fieldEditTestIssues(), 120, 40)
+
+	epics := EpicsTreeModel{theme: theme}
+	flow := NewFlowMatrixModel(theme)
+	flow.width = 120
+	history := NewHistoryModel(createTestHistoryReport(), theme)
+	history.SetSize(180, 40)
+	history.searchActive = true
+	board := NewBoardModel(nil, theme)
+
+	labels := m
+	labels.focused = focusLabelDashboard
+	labelBadge, _ := labels.extractFilterBadge()
+	drill := m
+	drill.activeModal, drill.labelDrilldownLabel = ModalLabelDrilldown, "area:tui"
+	drillBadge, _ := drill.extractFilterBadge()
+	attention := m
+	attention.mode = ViewAttention
+	boardSearch := m
+	boardSearch.mode = ViewBoard
+	boardSearch.board.searchMode = true
+
+	for _, tc := range []struct {
+		name string
+		out  string
+		want []string
+	}{
+		{"epics tree", epics.footer(), []string{"→ expand", "← collapse", "z collapse-all", "v zoom"}},
+		{"flow footer", flow.renderFooter(), []string{"Tab: switch panel"}},
+		{"flow drilldown", flow.renderDrilldown(), nil},
+		{"history search", history.renderHeader(), nil},
+		{"history dolt-only", m.renderHistoryDoltOnly(120, 30), []string{"Press h to close"}},
+		{"history loading", m.renderHistoryLoadingScreen(), []string{"Press h to cancel"}},
+		{"memories loading", m.renderMemoriesLoadingScreen(), []string{"Press u to cancel"}},
+		{"board empty detail", board.renderDetailPanel(60, 20), []string{"Select a card"}},
+		{"label dashboard badge", labelBadge, []string{"h detail", "d drilldown"}},
+		{"label drilldown badge", drillBadge, []string{"g graph"}},
+		{"attention hint", attention.extractHintText(), []string{"1-9 filter"}},
+		{"board search hint", boardSearch.extractHintText(), []string{"n/N:match"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assertNoAssumedKeyHints(t, tc.out)
+			for _, want := range tc.want {
+				if !strings.Contains(ansi.Strip(tc.out), want) {
+					t.Errorf("missing %q in %q", want, ansi.Strip(tc.out))
+				}
+			}
+		})
+	}
+}
+
+// Plugin confirm labels are plugin content, not key hints: custom labels stay
+// visible, cancel on the left and confirm on the right; defaults are hidden.
+func TestPluginConfirm_CustomLabelsCancelLeftConfirmRight(t *testing.T) {
+	m := newPluginActionModel(t, &fakePluginActions{})
+	msg := confirmPrompt(func(any) {})
+	msg.Confirm.Confirm = "Launch"
+	msg.Confirm.Cancel = "Keep waiting"
+	m, _ = sendMsg(m, msg)
+	out := m.renderPluginPrompt()
+	assertNoAssumedKeyHints(t, out)
+	_, row := popupFindRow(t, out, "n Keep waiting")
+	if !strings.Contains(row, "y Launch") || strings.Index(row, "n Keep waiting") > strings.Index(row, "y Launch") {
+		t.Fatalf("want cancel left of confirm: %q", row)
+	}
+
+	m = newPluginActionModel(t, &fakePluginActions{})
+	m, _ = sendMsg(m, confirmPrompt(func(any) {}))
+	out = ansi.Strip(m.renderPluginPrompt())
+	if strings.Contains(out, "confirm") || strings.Contains(out, "cancel") {
+		t.Fatalf("default labels should be hidden:\n%s", out)
+	}
 }
 
 func TestAlertsPopup_RenderedRowRoutesClick(t *testing.T) {
@@ -113,7 +266,6 @@ func TestBQLPopup_BoundedQueryErrorAndHistory(t *testing.T) {
 	popupFindRow(t, out, "status:open")
 	popupFindRow(t, out, "bad query")
 	popupFindRow(t, out, "history")
-	popupFindRow(t, out, "esc")
 	if m.Value() != "status:open" || m.histIdx != -1 {
 		t.Fatal("rendering changed query or history")
 	}
@@ -219,7 +371,8 @@ func TestNotificationsPopup_ShortWindowShowsSelectedEvent(t *testing.T) {
 		for cursor := 0; cursor < 30; cursor++ {
 			m.notificationsCursor = cursor
 			out := m.renderAlertsPanel()
-			if !strings.Contains(ansi.Strip(out), "▸") {
+			highlight := strings.TrimSuffix(m.theme.Text.Selected.Render("x"), "x\x1b[m")
+			if !strings.Contains(out, highlight) {
 				t.Fatalf("selected notification %d disappeared at height %d:\n%s", cursor, height, ansi.Strip(out))
 			}
 		}

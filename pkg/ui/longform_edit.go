@@ -204,7 +204,7 @@ func (m LongformEditModal) panelDims() (w, h int) {
 
 func (m LongformEditModal) popupOpts() PopupOpts {
 	size := popupAvailableSize(m.popupSize)
-	return PopupOpts{Title: m.panelTitle(), Theme: m.theme, Available: m.popupSize, Width: max(40, size.Width*9/10), Height: max(8, size.Height*85/100), MinBodyRows: 2, Footer: []string{"ctrl+s commit  E $EDITOR  esc back/discard", "ctrl+s save E editor esc back"}}
+	return PopupOpts{Title: m.panelTitle(), Theme: m.theme, Available: m.popupSize, Width: max(40, size.Width*9/10), Height: max(8, size.Height*85/100), MinBodyRows: 2, Footer: []string{"ctrl+s commit  E $EDITOR", "ctrl+s save E editor"}}
 }
 
 // SetSize updates the modal's layout budget and re-flows the inner textarea.

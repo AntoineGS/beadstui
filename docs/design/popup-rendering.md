@@ -89,8 +89,9 @@ the returned body budget. A frame must not silently clip the selected row
 or the footer because a caller filled all available rows with body content.
 
 Footer variants are ordered from detailed to compact. Select the first that
-fits, using the existing `fitModalHint` approach where appropriate. Compact
-menu hints retain navigation, confirm, and cancel/back instructions. If no
+fits, using the existing `fitModalHint` approach where appropriate. Footers
+list only keys a user could not guess; see the footer rule in
+[TUI modal compositing](tui-modal-compositing.md). If no
 variant fits, wrap the smallest variant and account for the extra rows. At
 extreme sizes where chrome and essential hints cannot fit, render a bounded
 "Terminal too small" message, truncated to the available cells, rather than
@@ -110,9 +111,11 @@ entry is selected and what a marker means.
 
 The renderer owns:
 
-- A two-cell cursor column, using `> ` for the selected entry and spaces for
-  other entries. Selection also uses the primary color and bold text, so it
-  is not indicated only through color.
+- Selection drawn exactly like the issue list's: `renderSelectedRow` paints
+  the plain row across the full body width with `Text.Selected`, with no
+  cursor glyph or reserved cursor column (bt-wvy). The selected role's
+  attributes (bold by default) come from the theme, so popups and the list
+  never disagree.
 - Optional shortcut and marker columns, explicitly enabled for the menu.
   Enabled columns are reserved in every row, even where their value is empty.
 - Column widths based on the widest value across the whole filtered menu,

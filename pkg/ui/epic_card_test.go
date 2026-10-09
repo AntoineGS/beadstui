@@ -58,10 +58,9 @@ func TestEpicPopup_SelectedChildAndPillsFit(t *testing.T) {
 	out := m.renderEpicCard()
 	assertPopupBounds(t, out, 36, 13)
 	_, row := popupFindRow(t, out, "ep.10")
-	if !strings.Contains(row, ">") || !strings.Contains(row, "OPEN") || !strings.Contains(row, "P2") {
+	if !popupRowSelected(out, "ep.10", m.theme) || !strings.Contains(row, "OPEN") || !strings.Contains(row, "P2") {
 		t.Fatalf("selected child/status/priority cue missing: %q", row)
 	}
-	popupFindRow(t, out, "esc")
 }
 
 func TestOpenEpicCard(t *testing.T) {
@@ -173,9 +172,7 @@ func TestRenderEpicCard_Basic(t *testing.T) {
 	if !strings.Contains(out, "ep1.1") {
 		t.Error("card should list child ep1.1")
 	}
-	if !strings.Contains(out, "drill") {
-		t.Error("card footer should mention drill")
-	}
+	assertNoAssumedKeyHints(t, out)
 }
 
 func TestRenderEpicCard_NoChildren(t *testing.T) {

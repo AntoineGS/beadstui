@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestUpdateModal_AllStatePopupsBounded(t *testing.T) {
@@ -23,37 +24,30 @@ func TestUpdateModal_AllStatePopupsBounded(t *testing.T) {
 			out := m.View()
 			assertPopupBounds(t, out, 42, 18)
 			popupFindRow(t, out, tc.label)
-			if tc.state == UpdateStateConfirm {
-				popupFindRow(t, out, "Cancel")
-				popupFindRow(t, out, "Enter")
+			// Every state closes or confirms with the shared keys, so none
+			// spells them out, and the confirm state has no buttons.
+			plain := ansi.Strip(out)
+			for _, hint := range []string{"Enter", "Esc", "Cancel", ">"} {
+				if strings.Contains(plain, hint) {
+					t.Errorf("%s popup shows %q:\n%s", tc.label, hint, plain)
+				}
 			}
 		})
 	}
 }
 
-func TestUpdatePopup_ShortConfirmationShowsFocusedAction(t *testing.T) {
-	for _, focus := range []int{0, 1} {
-		for _, height := range []int{11, 7, 6} {
-			m := NewUpdateModal("v1.0.0", "", DefaultTheme())
-			m.SetSize(42, height)
-			m.confirmFocus = focus
-			out := m.View()
-			assertPopupBounds(t, out, 42, height)
-			if height == 6 {
-				if !strings.Contains(out, "Terminal too small") {
-					t.Fatalf("essential actions hidden without fallback:\n%s", out)
-				}
-				continue
-			}
-			label := "> Update"
-			if focus == 1 {
-				label = "> Cancel"
-			}
-			popupFindRow(t, out, label)
-			popupFindRow(t, out, "Current version")
-			popupFindRow(t, out, "New version")
-			popupFindRow(t, out, "Enter")
+func TestUpdatePopup_ShortConfirmationKeepsQuestion(t *testing.T) {
+	for _, height := range []int{11, 7, 5, 4} {
+		m := NewUpdateModal("v1.0.0", "", DefaultTheme())
+		m.SetSize(42, height)
+		out := m.View()
+		assertPopupBounds(t, out, 42, height)
+		if strings.Contains(out, "Terminal too small") {
+			continue
 		}
+		popupFindRow(t, out, "Current version")
+		popupFindRow(t, out, "New version")
+		popupFindRow(t, out, "update now?")
 	}
 }
 
@@ -71,8 +65,8 @@ func TestNewUpdateModal_InitialState(t *testing.T) {
 	if m.newVersion != "v1.0.0" {
 		t.Errorf("expected newVersion v1.0.0, got %s", m.newVersion)
 	}
-	if m.confirmFocus != 0 {
-		t.Errorf("expected confirmFocus 0 (Update button), got %d", m.confirmFocus)
+	if m.Dismissed() {
+		t.Error("expected a new modal not to be dismissed")
 	}
 	if !m.IsConfirming() {
 		t.Error("expected IsConfirming() to return true")
@@ -103,25 +97,11 @@ func TestUpdateModal_IsConfirming(t *testing.T) {
 	}
 }
 
-func TestUpdateModal_IsCancelled(t *testing.T) {
-	theme := DefaultTheme()
-	m := NewUpdateModal("v1.0.0", "", theme)
-
-	// Initially focused on Update button
-	if m.IsCancelled() {
-		t.Error("expected IsCancelled() false when focused on Update")
-	}
-
-	// Move focus to Cancel
-	m.confirmFocus = 1
-	if !m.IsCancelled() {
-		t.Error("expected IsCancelled() true when focused on Cancel")
-	}
-
-	// Not cancelled if not in confirm state
-	m.state = UpdateStateDownloading
-	if m.IsCancelled() {
-		t.Error("expected IsCancelled() false when not in confirm state")
+func TestUpdateModal_EscDismissesConfirm(t *testing.T) {
+	m := NewUpdateModal("v1.0.0", "", DefaultTheme())
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+	if !updated.Dismissed() || updated.state != UpdateStateConfirm || cmd != nil {
+		t.Errorf("esc: dismissed=%v state=%v cmd=%v, want dismissed confirm with no cmd", updated.Dismissed(), updated.state, cmd != nil)
 	}
 }
 
@@ -164,67 +144,14 @@ func TestUpdateModal_IsInProgress(t *testing.T) {
 // Update (key handling) tests
 // ============================================================================
 
-func TestUpdateModal_Update_NavigationKeys(t *testing.T) {
-	theme := DefaultTheme()
-
-	tests := []struct {
-		name          string
-		key           string
-		expectedFocus int
-	}{
-		{"left moves to Update", "left", 0},
-		{"h moves to Update", "h", 0},
-		{"right moves to Cancel", "right", 1},
-		{"l moves to Cancel", "l", 1},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m := NewUpdateModal("v1.0.0", "", theme)
-			// Start with focus in middle state
-			m.confirmFocus = 0
-			if tt.expectedFocus == 0 {
-				m.confirmFocus = 1 // Start on Cancel to test moving to Update
-			}
-
-			var msg tea.Msg
-			switch tt.key {
-			case "left":
-				msg = tea.KeyPressMsg{Code: tea.KeyLeft}
-			case "right":
-				msg = tea.KeyPressMsg{Code: tea.KeyRight}
-			default:
-				msg = tea.KeyPressMsg{Code: rune(tt.key[0]), Text: tt.key}
-			}
-
-			updated, _ := m.Update(msg)
-			if updated.confirmFocus != tt.expectedFocus {
-				t.Errorf("expected confirmFocus %d, got %d", tt.expectedFocus, updated.confirmFocus)
-			}
-		})
-	}
-}
-
-func TestUpdateModal_Update_TabCyclesFocus(t *testing.T) {
-	theme := DefaultTheme()
-	m := NewUpdateModal("v1.0.0", "", theme)
-
-	// Start on Update (0)
-	if m.confirmFocus != 0 {
-		t.Fatal("expected initial focus on Update")
-	}
-
-	// Tab to Cancel (1)
-	msg := tea.KeyPressMsg{Code: tea.KeyTab}
-	m, _ = m.Update(msg)
-	if m.confirmFocus != 1 {
-		t.Errorf("expected focus 1 after first tab, got %d", m.confirmFocus)
-	}
-
-	// Tab back to Update (0)
-	m, _ = m.Update(msg)
-	if m.confirmFocus != 0 {
-		t.Errorf("expected focus 0 after second tab, got %d", m.confirmFocus)
+// There are no buttons to move between; arrows and tab do nothing.
+func TestUpdateModal_Update_ArrowsAndTabIgnored(t *testing.T) {
+	for _, msg := range []tea.KeyPressMsg{{Code: tea.KeyLeft}, {Code: tea.KeyRight}, {Code: tea.KeyTab}, {Code: 'h', Text: "h"}, {Code: 'l', Text: "l"}} {
+		m := NewUpdateModal("v1.0.0", "", DefaultTheme())
+		updated, cmd := m.Update(msg)
+		if updated.state != UpdateStateConfirm || updated.Dismissed() || cmd != nil {
+			t.Errorf("%q changed the confirm dialog", msg.String())
+		}
 	}
 }
 
@@ -268,9 +195,9 @@ func TestUpdateModal_Update_QuickCancelN(t *testing.T) {
 	msg := tea.KeyPressMsg{Code: 'n', Text: "n"}
 	updated, cmd := m.Update(msg)
 
-	// State should remain confirm, cmd should be nil (parent handles close)
-	if updated.state != UpdateStateConfirm {
-		t.Errorf("expected state to remain Confirm, got %v", updated.state)
+	// State should remain confirm, cmd should be nil (parent closes it)
+	if updated.state != UpdateStateConfirm || !updated.Dismissed() {
+		t.Errorf("expected dismissed Confirm, got %v dismissed=%v", updated.state, updated.Dismissed())
 	}
 	if cmd != nil {
 		t.Error("expected nil command for cancel")
@@ -280,7 +207,6 @@ func TestUpdateModal_Update_QuickCancelN(t *testing.T) {
 func TestUpdateModal_Update_EnterConfirmsUpdate(t *testing.T) {
 	theme := DefaultTheme()
 	m := NewUpdateModal("v1.0.0", "", theme)
-	m.confirmFocus = 0 // Focus on Update
 
 	msg := tea.KeyPressMsg{Code: tea.KeyEnter}
 	updated, cmd := m.Update(msg)
@@ -293,23 +219,6 @@ func TestUpdateModal_Update_EnterConfirmsUpdate(t *testing.T) {
 	}
 }
 
-func TestUpdateModal_Update_EnterCancels(t *testing.T) {
-	theme := DefaultTheme()
-	m := NewUpdateModal("v1.0.0", "", theme)
-	m.confirmFocus = 1 // Focus on Cancel
-
-	msg := tea.KeyPressMsg{Code: tea.KeyEnter}
-	updated, cmd := m.Update(msg)
-
-	// Parent handles the close, state remains confirm
-	if updated.state != UpdateStateConfirm {
-		t.Errorf("expected state Confirm, got %v", updated.state)
-	}
-	if cmd != nil {
-		t.Error("expected nil command")
-	}
-}
-
 func TestUpdateModal_Update_IgnoresKeysWhenInProgress(t *testing.T) {
 	theme := DefaultTheme()
 	m := NewUpdateModal("v1.0.0", "", theme)
@@ -319,8 +228,8 @@ func TestUpdateModal_Update_IgnoresKeysWhenInProgress(t *testing.T) {
 	msg := tea.KeyPressMsg{Code: 'n', Text: "n"}
 	updated, _ := m.Update(msg)
 
-	if updated.state != UpdateStateDownloading {
-		t.Errorf("expected state to remain Downloading, got %v", updated.state)
+	if updated.state != UpdateStateDownloading || updated.Dismissed() {
+		t.Errorf("expected undismissed Downloading, got %v dismissed=%v", updated.state, updated.Dismissed())
 	}
 }
 
@@ -335,9 +244,9 @@ func TestUpdateModal_Update_DismissOnComplete(t *testing.T) {
 			msg := tea.KeyPressMsg{Code: tea.KeyEnter}
 			updated, cmd := m.Update(msg)
 
-			// State remains, parent handles dismiss
-			if updated.state != state {
-				t.Errorf("expected state %v, got %v", state, updated.state)
+			// State remains; the parent closes a dismissed modal
+			if updated.state != state || !updated.Dismissed() {
+				t.Errorf("expected dismissed %v, got %v dismissed=%v", state, updated.state, updated.Dismissed())
 			}
 			if cmd != nil {
 				t.Error("expected nil command")
@@ -464,11 +373,8 @@ func TestUpdateModal_View_ConfirmState(t *testing.T) {
 	if !strings.Contains(view, "v2.0.0") {
 		t.Error("expected new version in view")
 	}
-	if !strings.Contains(view, "Update") {
-		t.Error("expected Update button in view")
-	}
-	if !strings.Contains(view, "Cancel") {
-		t.Error("expected Cancel button in view")
+	if !strings.Contains(view, "update now?") {
+		t.Error("expected the confirm question in view")
 	}
 }
 

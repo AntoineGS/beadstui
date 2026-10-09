@@ -465,7 +465,7 @@ func (m *LabelPickerModel) popupEntries() []PopupMenuEntry {
 }
 
 func (m *LabelPickerModel) popupOpts() PopupOpts {
-	return PopupOpts{Title: "Filter by Label", Theme: m.theme, Available: m.popupSize, Footer: []string{"space toggle / search ←/→ page enter apply esc back", "space / ←/→ enter esc"}}
+	return PopupOpts{Title: "Filter by Label", Theme: m.theme, Available: m.popupSize, Footer: searchPickerFooter}
 }
 
 func (m *LabelPickerModel) popupLayout() PopupLayout {

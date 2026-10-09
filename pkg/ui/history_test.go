@@ -121,11 +121,14 @@ func TestHistorySelectedOrdinaryCellsTextRole(t *testing.T) {
 			}
 			expected := uv.NewStyledString(theme.Text.Selected.Render("x")).Lines(ansi.GraphemeWidth)[0][0].Style
 			expectedSpace := uv.NewStyledString(theme.Text.Selected.Render(" ")).Lines(ansi.GraphemeWidth)[0][0].Style
-			assertSpan := func(name, rendered, endText string) {
+			assertSpan := func(name, rendered, startText, endText string) {
 				t.Helper()
+				if strings.Contains(rendered, "▸") {
+					t.Errorf("%s still draws a ▸ cursor", name)
+				}
 				for _, line := range strings.Split(rendered, "\n") {
 					plain := ansi.Strip(line)
-					start := strings.Index(plain, "▸")
+					start := strings.Index(plain, startText)
 					end := strings.LastIndex(plain, endText)
 					if start < 0 || end < start {
 						continue
@@ -148,29 +151,21 @@ func TestHistorySelectedOrdinaryCellsTextRole(t *testing.T) {
 				t.Fatalf("%s selected populated span not found ending %q", name, endText)
 			}
 			h.focused = historyFocusList
-			assertSpan("events", h.renderBeadLine(h.selectedBead, h.histories[h.selectedBead], 100), fmt.Sprintf("%s1", activeGlyphs.Bolt))
+			assertSpan("events", h.renderBeadLine(h.selectedBead, h.histories[h.selectedBead], 100), "bv-1", fmt.Sprintf("%s1", activeGlyphs.Bolt))
 			commit := *h.SelectedGitCommit()
-			assertSpan("git", h.renderGitCommitLine(0, commit, 100), fmt.Sprintf("[%d]", len(commit.BeadIDs)))
+			assertSpan("git", h.renderGitCommitLine(0, commit, 100), commit.ShortSHA, fmt.Sprintf("[%d]", len(commit.BeadIDs)))
 			h.focused = historyFocusMiddle
-			assertSpan("middle commit", h.renderCommitMiddlePanel(100, 20), hist.Commits[0].Message)
-			assertSpan("middle bead", h.renderGitBeadListPanel(100, 20), report.Histories[commit.BeadIDs[0]].Title)
+			assertSpan("middle commit", h.renderCommitMiddlePanel(100, 20), hist.Commits[0].ShortSHA, hist.Commits[0].Message)
+			assertSpan("middle bead", h.renderGitBeadListPanel(100, 20), report.Histories[commit.BeadIDs[0]].Title, report.Histories[commit.BeadIDs[0]].Title)
 			h.focused = historyFocusDetail
-			assertSpan("related bead", h.renderGitDetailPanel(100, 20), report.Histories[commit.BeadIDs[0]].Title)
+			assertSpan("related bead", h.renderGitDetailPanel(100, 20), commit.BeadIDs[0]+" ", report.Histories[commit.BeadIDs[0]].Title)
 			h.fileTreeFocus = true
 			node := &FileTreeNode{Name: "nested.go", Path: "pkg/nested.go", Level: 2, ChangeCount: 3}
 			h.fileFilter = node.Path
 			row := h.renderFileTreeLine(0, node, 100)
-			assertSpan("file tree", row, "(3)")
-			cells := uv.NewStyledString(row).Lines(ansi.GraphemeWidth)[0]
-			for x := 0; x < node.Level*2; x++ {
-				if !reflect.DeepEqual(cells[x].Style.Bg, expectedSpace.Bg) || cells[x].Style.Attrs != expectedSpace.Attrs || cells[x].Style.Underline != expectedSpace.Underline {
-					t.Errorf("file tree indent cell %d lost selection", x)
-				}
-			}
-			nameCell := ansi.StringWidth(ansi.Strip(row)[:strings.Index(ansi.Strip(row), node.Name)])
-			filtered := uv.NewStyledString(theme.Text.Selected.Foreground(theme.Closed).Render("x")).Lines(ansi.GraphemeWidth)[0][0].Style
-			if !reflect.DeepEqual(cells[nameCell].Style.Fg, filtered.Fg) {
-				t.Error("active file filter lost semantic foreground")
+			assertSpan("file tree", row, node.Name, "(3)")
+			if row != renderSelectedRow(theme, row, 100) {
+				t.Error("selected file tree row is not the shared list highlight")
 			}
 		})
 	}
@@ -207,14 +202,22 @@ func TestHistoryPlainSelectedTextRole(t *testing.T) {
 	h := NewHistoryModel(createTestHistoryReport(), theme)
 	h.SetSize(180, 40)
 	row := h.renderBeadLine(0, h.histories[0], 80)
-	for _, text := range []string{h.histories[0].Title, fmt.Sprintf("%d commits", len(h.histories[0].Commits))} {
-		if !strings.Contains(row, theme.Text.Selected.Render(text)) {
-			t.Errorf("selected text %q lost background/false attributes", text)
+	if row != renderSelectedRow(theme, row, 80) {
+		t.Errorf("selected bead row is not the shared list highlight: %q", row)
+	}
+	for _, text := range []string{h.histories[0].BeadID, h.histories[0].Title, fmt.Sprintf("%d commits", len(h.histories[0].Commits))} {
+		if !popupRowSelected(row, text, theme) {
+			t.Errorf("selected text %q is outside the highlight", text)
 		}
 	}
-	idText := h.histories[0].BeadID + strings.Repeat(" ", max(0, 12-lipgloss.Width(h.histories[0].BeadID)))
-	if !strings.Contains(row, theme.Text.Selected.Render(idText)) {
-		t.Error("selected ID lost role")
+	// An unfocused list keeps its selection highlighted, like the main list.
+	h.focused = historyFocusDetail
+	if row := h.renderBeadLine(0, h.histories[0], 80); row != renderSelectedRow(theme, row, 80) {
+		t.Error("unfocused bead list lost its selection highlight")
+	}
+	gitCommit := CommitListEntry{ShortSHA: "abc1234", Message: "message", BeadIDs: []string{"bv-1"}}
+	if row := h.renderGitCommitLine(h.selectedGitCommit, gitCommit, 80); row != renderSelectedRow(theme, row, 80) {
+		t.Error("unfocused git commit list lost its selection highlight")
 	}
 	if !strings.Contains(h.renderListPanel(80, 20), theme.Text.Heading.Render("BEADS WITH HISTORY")) {
 		t.Error("panel did not use own heading")

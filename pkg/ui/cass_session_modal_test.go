@@ -27,7 +27,7 @@ func TestCassPopulatedTextRoles(t *testing.T) {
 	if !strings.Contains(out, snippet) {
 		t.Error("Cass snippet ignored body role")
 	}
-	if !strings.Contains(out, strings.TrimSuffix(theme.Text.Selected.Render("role-agent • unknown time"), "\x1b[m")) {
+	if !popupRowSelected(out, "role-agent • unknown time", theme) {
 		t.Error("Cass selected header ignored selected role")
 	}
 }
@@ -42,11 +42,11 @@ func TestSessionPopup_SelectedHeaderAndCopyFeedback(t *testing.T) {
 	out := m.View()
 	assertPopupBounds(t, out, 42, 18)
 	_, row := popupFindRow(t, out, "longer-agent")
-	if !strings.Contains(row, ">") || !strings.Contains(row, "[2]") {
+	if !popupRowSelected(out, "longer-agent", m.theme) || !strings.Contains(row, "[2]") {
 		t.Fatal("selected session header not visible")
 	}
 	popupFindRow(t, out, "Copied!")
-	popupFindRow(t, out, "Esc")
+	popupFindRow(t, out, "V close")
 	m.SetSize(0, 0)
 	if m.View() != "" {
 		t.Fatal("zero budget rendered session popup")
@@ -269,11 +269,11 @@ func TestCassSessionModal_View_RendersCorrectly(t *testing.T) {
 	}
 
 	// Check footer keybindings
-	if !strings.Contains(view, "[j/k]") {
-		t.Error("View should contain navigation hint")
+	if strings.Contains(view, "j/k") || strings.Contains(view, "Esc") {
+		t.Error("View should not spell out assumed navigation/close keys")
 	}
-	if !strings.Contains(view, "[V/Esc]") {
-		t.Error("View should contain close hint")
+	if !strings.Contains(view, "V close") {
+		t.Error("View should contain the V close hint")
 	}
 }
 

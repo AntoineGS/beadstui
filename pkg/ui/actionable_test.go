@@ -265,9 +265,9 @@ func TestActionableCellAllocationAndRoleStyles(t *testing.T) {
 	if !strings.HasPrefix(l.body[0], theme.Text.Badge.Render(badge)) {
 		t.Fatal("badge role not respected")
 	}
-	prefix := "▸ ├─ " + ansi.Strip(GetPriorityIcon(0)) + " x "
+	prefix := "  ├─ " + ansi.Strip(GetPriorityIcon(0)) + " x "
 	text := ansi.Truncate(plan.Tracks[0].Items[0].Title, 60-ansi.StringWidth(prefix), "…")
-	want := theme.Text.Selected.Width(60).Render(prefix + text)
+	want := renderSelectedRow(theme, prefix+text, 60)
 	if l.body[l.selectedStart] != want {
 		t.Fatalf("selected row has conflicting styles:\ngot %q\nwant %q", l.body[l.selectedStart], want)
 	}

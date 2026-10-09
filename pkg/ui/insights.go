@@ -953,7 +953,7 @@ func (m *InsightsModel) renderMetricPanel(panel MetricPanel, width, height int, 
 
 	for i := startIdx; i < endIdx; i++ {
 		item := items[i]
-		isSelected := isFocused && i == selectedIdx
+		isSelected := i == selectedIdx
 
 		row := m.renderInsightRow(item.ID, item.Value, width-4, isSelected, t)
 		lines = append(lines, row)
@@ -991,20 +991,11 @@ func (m *InsightsModel) renderInsightRow(id string, value float64, width int, is
 		valueStr = fmt.Sprintf("%.2e", value)
 	}
 
-	// Build row content
+	// Build row content; a selected row takes the shared list highlight below.
 	var rowBuilder strings.Builder
 	ordinaryStyle := t.Text.Body
-	if isSelected {
-		ordinaryStyle = t.Text.Selected
-	}
 	gap := ordinaryStyle.Render(" ")
-
-	// Selection indicator
-	if isSelected {
-		rowBuilder.WriteString(t.Text.Selected.Render("▸ "))
-	} else {
-		rowBuilder.WriteString(ordinaryStyle.Render("  "))
-	}
+	rowBuilder.WriteString(ordinaryStyle.Render("  "))
 
 	// Value badge
 	valueStyle := t.Text.Badge.
@@ -1044,12 +1035,7 @@ func (m *InsightsModel) renderInsightRow(id string, value float64, width int, is
 		}
 
 		title := truncateRunesHelper(issue.Title, titleWidth, "…")
-
-		titleStyle := t.Text.Body
-		if isSelected {
-			titleStyle = t.Text.Selected
-		}
-		rowBuilder.WriteString(titleStyle.Render(title))
+		rowBuilder.WriteString(t.Text.Body.Render(title))
 
 		// Description preview (if space allows)
 		if descWidth > 0 && issue.Description != "" {
@@ -1057,22 +1043,18 @@ func (m *InsightsModel) renderInsightRow(id string, value float64, width int, is
 			desc := strings.Join(strings.Fields(issue.Description), " ")
 			desc = truncateRunesHelper(desc, descWidth, "…")
 			descStyle := t.Text.Metadata
-			if isSelected {
-				descStyle = t.Text.Selected
-			}
 			rowBuilder.WriteString(descStyle.Render(" - "))
 			rowBuilder.WriteString(descStyle.Render(desc))
 		}
 	} else {
 		// Fallback: just show ID
 		idTrunc := truncateRunesHelper(id, width-12-len(valueStr), "…")
-		idStyle := t.Text.Metadata
-		if isSelected {
-			idStyle = t.Text.Selected
-		}
-		rowBuilder.WriteString(idStyle.Render(idTrunc))
+		rowBuilder.WriteString(t.Text.Metadata.Render(idTrunc))
 	}
 
+	if isSelected {
+		return renderSelectedRow(t, rowBuilder.String(), width)
+	}
 	return rowBuilder.String()
 }
 
@@ -1167,21 +1149,13 @@ func (m *InsightsModel) renderCyclesPanel(width, height int, t Theme) string {
 
 		for i := startIdx; i < endIdx; i++ {
 			cycle := cycles[i]
-			isSelected := isFocused && i == selectedIdx
-			prefix := "  "
-			if isSelected {
-				prefix = t.Text.Selected.Render("▸ ")
-			}
-
 			// Render cycle as chain
 			cycleStr := m.renderCycleChain(cycle, width-6, t)
-
-			warningStyle := t.Text.Body.Foreground(t.Blocked)
-			if isSelected {
-				warningStyle = t.Text.Selected.Foreground(t.Blocked)
+			row := "  " + t.Text.Body.Foreground(t.Blocked).Render(cycleStr)
+			if i == selectedIdx {
+				row = renderSelectedRow(t, row, width-4)
 			}
-
-			lines = append(lines, prefix+warningStyle.Render(cycleStr))
+			lines = append(lines, row)
 		}
 
 		// Scroll indicator
@@ -1282,7 +1256,7 @@ func (m *InsightsModel) renderPriorityPanel(width, height int, t Theme) string {
 	var pickRenderings []string
 	for i := startIdx; i < endIdx; i++ {
 		pick := picks[i]
-		isSelected := isFocused && i == selectedIdx
+		isSelected := i == selectedIdx
 		pickRenderings = append(pickRenderings, m.renderPriorityItem(pick, itemWidth, height-3, isSelected, t))
 	}
 
@@ -1388,12 +1362,8 @@ func (m *InsightsModel) renderPriorityItem(pick analysis.TopPick, width, height 
 	}
 	gap := ordinaryStyle.Render(" ")
 
-	// Selection indicator
-	if isSelected {
-		sb.WriteString(t.Text.Selected.Render("▸ "))
-	} else {
-		sb.WriteString(ordinaryStyle.Render("  "))
-	}
+	// Selection shows through the primary border and highlighted text.
+	sb.WriteString(ordinaryStyle.Render("  "))
 
 	// Issue details
 	issue := m.issueMap[pick.ID]
@@ -1527,7 +1497,7 @@ func (m *InsightsModel) renderHeatmapPanel(width, height int, t Theme) string {
 
 	// Navigation hint as subtitle
 	subtitleStyle := t.Text.Metadata
-	sb.WriteString(strings.TrimRight(subtitleStyle.Render("j/k/h/l=navigate Enter=drill H=toggle"), "\n\r"))
+	sb.WriteString(strings.TrimRight(subtitleStyle.Render("H=toggle"), "\n\r"))
 	sb.WriteString("\n")
 
 	if m.insights.Stats == nil || len(m.topPicks) == 0 {
@@ -1636,9 +1606,6 @@ func (m *InsightsModel) renderHeatmapPanel(width, height int, t Theme) string {
 		selStyle := t.Text.Metadata
 		sb.WriteString(selStyle.Render(fmt.Sprintf("Selected: %s × %s (%d issues)",
 			depthLabels[m.heatmapRow], scoreLabels[m.heatmapCol], selCount)))
-		if selCount > 0 {
-			sb.WriteString(t.Text.Metadata.Render(" [Enter to view]"))
-		}
 	}
 
 	// Legend with gradient colors
@@ -1725,11 +1692,6 @@ func (m *InsightsModel) renderHeatmapDrillDown(width int, t Theme) string {
 	titleStyle := t.Text.Heading
 	sb.WriteString(titleStyle.Render(fmt.Sprintf(activeGlyphs.Clipboard+" Issues in %s × %s (%d items)",
 		depthLabel, scoreLabel, len(m.heatmapIssues))))
-	sb.WriteString("\n")
-
-	// Navigation hints
-	hintStyle := t.Text.Metadata
-	sb.WriteString(hintStyle.Render("j/k=navigate Enter=view Esc=back"))
 	sb.WriteString("\n\n")
 
 	if len(m.heatmapIssues) == 0 {
@@ -1770,19 +1732,18 @@ func (m *InsightsModel) renderDrillDownIssue(issueID string, isSelected bool, wi
 
 	issue := m.issueMap[issueID]
 	if issue == nil {
-		style := t.Text.Metadata
-		if isSelected {
-			style = t.Text.Selected
-		}
-		return style.Render(fmt.Sprintf("  %s (not found)", issueID))
-	}
-
-	// Selection indicator
-	if isSelected {
-		sb.WriteString(t.Text.Selected.Render("▸ "))
+		sb.WriteString(t.Text.Metadata.Render(fmt.Sprintf("  %s (not found)", issueID)))
 	} else {
-		sb.WriteString("  ")
+		m.writeDrillDownIssue(&sb, issue, width, t)
 	}
+	if isSelected {
+		return renderSelectedRow(t, sb.String(), width)
+	}
+	return sb.String()
+}
+
+func (m *InsightsModel) writeDrillDownIssue(sb *strings.Builder, issue *model.Issue, width int, t Theme) {
+	sb.WriteString("  ")
 
 	// Type icon
 	icon := GetTypeIcon(string(issue.IssueType))
@@ -1805,11 +1766,7 @@ func (m *InsightsModel) renderDrillDownIssue(issueID string, isSelected bool, wi
 
 	// Priority if available (1-5 scale, 0 = unset)
 	if issue.Priority > 0 {
-		priStyle := t.Text.Metadata
-		if isSelected {
-			priStyle = t.Text.Selected
-		}
-		sb.WriteString(priStyle.Render(fmt.Sprintf("P%d ", issue.Priority)))
+		sb.WriteString(t.Text.Metadata.Render(fmt.Sprintf("P%d ", issue.Priority)))
 	}
 
 	// Title (truncated)
@@ -1817,14 +1774,7 @@ func (m *InsightsModel) renderDrillDownIssue(issueID string, isSelected bool, wi
 	if titleWidth < 20 {
 		titleWidth = 20
 	}
-	title := truncateRunesHelper(issue.Title, titleWidth, "…")
-	titleStyle := t.Text.Body
-	if isSelected {
-		titleStyle = t.Text.Selected
-	}
-	sb.WriteString(titleStyle.Render(title))
-
-	return sb.String()
+	sb.WriteString(t.Text.Body.Render(truncateRunesHelper(issue.Title, titleWidth, "…")))
 }
 
 func (m *InsightsModel) renderCycleChain(cycle []string, maxWidth int, t Theme) string {
@@ -2092,9 +2042,7 @@ Navigate to a metric panel and select an item to view its details here.
 
 **Navigation:**
 - ← → to switch panels
-- ↑ ↓ to select items
 - Ctrl+j/k scroll details
-- Enter to view in main view
 `
 		if m.mdRenderer != nil {
 			rendered, err := m.mdRenderer.Render(emptyContent)

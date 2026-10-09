@@ -2245,13 +2245,9 @@ func (h *HistoryModel) renderHeader() string {
 	var rightContent string
 	if h.searchActive {
 		modeStyle := t.Text.Metadata
-		escStyle := t.Text.Metadata.Padding(0, 1)
 
 		modeLabel := modeStyle.Render(fmt.Sprintf("[%s] ", h.GetSearchModeName()))
-		inputView := h.searchInput.View()
-		escHint := escStyle.Render("[Esc] cancel")
-
-		rightContent = modeLabel + inputView + escHint
+		rightContent = modeLabel + h.searchInput.View()
 	} else {
 		// Show close hint and search hint
 		rightContent = t.Text.Metadata.
@@ -2452,7 +2448,7 @@ func (h *HistoryModel) renderListPanel(width, height int) string {
 		var lines []string
 		for i := h.scrollOffset; i < len(h.histories) && i < h.scrollOffset+visibleItems; i++ {
 			hist := h.histories[i]
-			line := h.renderBeadLine(i, hist, width-4)
+			line := h.renderBeadLine(i, hist, width-2) // full inner width, so the highlight meets the border
 			lines = append(lines, line)
 		}
 		content = strings.Join(lines, "\n")
@@ -2471,13 +2467,9 @@ func (h *HistoryModel) renderListPanel(width, height int) string {
 func (h *HistoryModel) renderBeadLine(idx int, hist correlation.BeadHistory, width int) string {
 	t := h.theme
 
+	// The selected row takes the shared list highlight, focused or not.
 	selected := idx == h.selectedBead
-
-	// Indicator
 	indicator := "  "
-	if selected {
-		indicator = "▸ "
-	}
 
 	// Status icon
 	statusIcon := GetStatusIcon(hist.Status)
@@ -2488,11 +2480,7 @@ func (h *HistoryModel) renderBeadLine(idx int, hist correlation.BeadHistory, wid
 	// Event count badge (bv-7k8p) - shows lifecycle events if any
 	eventBadge := ""
 	if len(hist.Events) > 0 {
-		eventStyle := t.Text.Metadata
-		if selected && h.focused == historyFocusList {
-			eventStyle = t.Text.Selected
-		}
-		eventBadge = renderCompactEventBadge(len(hist.Events), eventStyle)
+		eventBadge = renderCompactEventBadge(len(hist.Events), t.Text.Metadata)
 	}
 
 	// Calculate space for event badge
@@ -2534,12 +2522,6 @@ func (h *HistoryModel) renderBeadLine(idx int, hist correlation.BeadHistory, wid
 	countStyle := t.Text.Metadata.Align(lipgloss.Right)
 	titleStyle := t.Text.Body
 
-	if selected && h.focused == historyFocusList {
-		idStyle = t.Text.Selected
-		countStyle = t.Text.Selected.Align(lipgloss.Right)
-		titleStyle = t.Text.Selected
-	}
-
 	idText := hist.BeadID + strings.Repeat(" ", max(0, idDisplayWidth-lipgloss.Width(hist.BeadID)))
 	parts := []string{titleStyle.Render(indicator+statusIcon+" ") + idStyle.Render(idText)}
 
@@ -2555,7 +2537,11 @@ func (h *HistoryModel) renderBeadLine(idx int, hist correlation.BeadHistory, wid
 		parts = append(parts, countPart)
 	}
 
-	return strings.Join(parts, titleStyle.Render(" "))
+	line := strings.Join(parts, titleStyle.Render(" "))
+	if selected {
+		return renderSelectedRow(t, line, width)
+	}
+	return line
 }
 
 // renderFileTreePanel renders the file tree panel (bv-190l)
@@ -2634,11 +2620,7 @@ func (h *HistoryModel) renderFileTreeLine(idx int, node *FileTreeNode, width int
 	// Indentation
 	indent := strings.Repeat("  ", node.Level)
 
-	// Indicator
 	indicator := "  "
-	if selected && h.fileTreeFocus {
-		indicator = "▸ "
-	}
 
 	// Expand/collapse icon for directories
 	icon := "  "
@@ -2676,19 +2658,12 @@ func (h *HistoryModel) renderFileTreeLine(idx int, node *FileTreeNode, width int
 	if isFiltered {
 		nameStyle = nameStyle.Foreground(t.Closed) // Green for active filter
 	}
-	if selected && h.fileTreeFocus {
-		nameStyle = t.Text.Selected
-		countStyle = t.Text.Selected
-		if isFiltered {
-			nameStyle = nameStyle.Foreground(t.Closed)
-		}
-	}
 
 	rowStyle := t.Text.Body
-	if selected && h.fileTreeFocus {
-		rowStyle = t.Text.Selected
-	}
 	line := rowStyle.Render(indent+indicator+icon) + nameStyle.Render(name) + rowStyle.Render(" ") + countStyle.Render(countStr)
+	if selected {
+		return renderSelectedRow(t, line, width)
+	}
 	return line
 }
 
@@ -2742,7 +2717,7 @@ func (h *HistoryModel) renderDetailPanel(width, height int) string {
 
 	// Render commits
 	for i, commit := range hist.Commits {
-		isSelected := i == h.selectedCommit && h.focused == historyFocusDetail
+		isSelected := i == h.selectedCommit
 		commitLines := h.renderCommitDetail(commit, width-4, isSelected)
 		contentLines = append(contentLines, commitLines...)
 		if i < len(hist.Commits)-1 {
@@ -2967,12 +2942,6 @@ func (h *HistoryModel) renderCommitDetail(commit correlation.CorrelatedCommit, w
 	t := h.theme
 	var lines []string
 
-	// Selection indicator
-	indicator := "  "
-	if selected {
-		indicator = "▸ "
-	}
-
 	// === COMMIT HEADER ===
 	// Type icon + SHA + relative time
 	typeIcon := commitTypeIndicator(commit.Message)
@@ -2984,22 +2953,20 @@ func (h *HistoryModel) renderCommitDetail(commit correlation.CorrelatedCommit, w
 	relTimeStyle := t.Text.Metadata
 	authorStyle := t.Text.Metadata
 	bodyStyle := t.Text.Body
-	if selected {
-		shaStyle = t.Text.Selected
-		relTimeStyle = t.Text.Selected
-		authorStyle = t.Text.Selected
-		bodyStyle = t.Text.Selected
-	}
 
 	relTime := relativeTime(commit.Timestamp)
 
-	// Header line: [indicator] [icon] SHA (relative time)
+	// Header line: [icon] SHA (relative time); the selected commit's header
+	// takes the shared list highlight.
 	headerLine := fmt.Sprintf("%s%s%s %s",
-		bodyStyle.Render(indicator),
+		bodyStyle.Render("  "),
 		typeIcon,
 		shaStyle.Render(commit.ShortSHA),
 		relTimeStyle.Render("("+relTime+")"),
 	)
+	if selected {
+		headerLine = renderSelectedRow(t, headerLine, width)
+	}
 	lines = append(lines, headerLine)
 
 	// === AUTHOR LINE ===
@@ -3561,7 +3528,7 @@ func (h *HistoryModel) renderGitCommitListPanel(width, height int) string {
 	commits := h.GetFilteredCommitList()
 	for i := h.gitScrollOffset; i < len(commits) && i < h.gitScrollOffset+visibleItems; i++ {
 		commit := commits[i]
-		line := h.renderGitCommitLine(i, commit, width-4)
+		line := h.renderGitCommitLine(i, commit, width-2) // full inner width, so the highlight meets the border
 		lines = append(lines, line)
 	}
 
@@ -3580,12 +3547,7 @@ func (h *HistoryModel) renderGitCommitLine(idx int, commit CommitListEntry, widt
 	t := h.theme
 
 	selected := idx == h.selectedGitCommit
-
-	// Indicator
 	indicator := "  "
-	if selected {
-		indicator = "▸ "
-	}
 
 	// Bead count badge
 	beadCount := fmt.Sprintf("[%d]", len(commit.BeadIDs))
@@ -3605,13 +3567,10 @@ func (h *HistoryModel) renderGitCommitLine(idx int, commit CommitListEntry, widt
 	msgStyle := t.Text.Body
 	countStyle := t.Text.Metadata
 
-	if selected && h.focused == historyFocusList {
-		shaStyle = t.Text.Selected
-		msgStyle = t.Text.Selected
-		countStyle = t.Text.Selected
-	}
-
 	line := msgStyle.Render(indicator) + shaStyle.Render(commit.ShortSHA) + msgStyle.Render(" ") + msgStyle.Render(msg) + msgStyle.Render(" ") + countStyle.Render(beadCount)
+	if selected {
+		return renderSelectedRow(t, line, width)
+	}
 	return line
 }
 
@@ -3644,12 +3603,7 @@ func (h *HistoryModel) renderGitDetailPanel(width, height int) string {
 
 	// List related beads
 	for i, beadID := range commit.BeadIDs {
-		isSelected := i == h.selectedRelatedBead && h.focused == historyFocusDetail
-
-		indicator := "  "
-		if isSelected {
-			indicator = "▸ "
-		}
+		isSelected := i == h.selectedRelatedBead
 
 		// Get bead info from report
 		beadStyle := t.Text.Body
@@ -3663,10 +3617,6 @@ func (h *HistoryModel) renderGitDetailPanel(width, height int) string {
 			}
 		}
 
-		if isSelected {
-			beadStyle = t.Text.Selected
-		}
-
 		// Truncate title
 		maxLen := width - 8
 		if maxLen < 10 {
@@ -3676,11 +3626,10 @@ func (h *HistoryModel) renderGitDetailPanel(width, height int) string {
 			title = title[:maxLen-1] + "…"
 		}
 
-		idStyle := t.Text.Metadata
+		beadLine := beadStyle.Render("  "+statusIcon+" ") + t.Text.Metadata.Render(beadID) + beadStyle.Render(" ") + beadStyle.Render(title)
 		if isSelected {
-			idStyle = t.Text.Selected
+			beadLine = renderSelectedRow(t, beadLine, detailSepWidth)
 		}
-		beadLine := beadStyle.Render(indicator+statusIcon+" ") + idStyle.Render(beadID) + beadStyle.Render(" ") + beadStyle.Render(title)
 		lines = append(lines, beadLine)
 	}
 
@@ -3801,19 +3750,8 @@ func (h *HistoryModel) renderCommitMiddlePanel(width, height int) string {
 
 	for i := startIdx; i < endIdx; i++ {
 		commit := hist.Commits[i]
-		isSelected := i == h.selectedCommit && h.focused == historyFocusMiddle
-
-		indicator := "  "
-		if isSelected {
-			indicator = "▸ "
-		}
-
 		shaStyle := t.Text.Metadata
 		msgStyle := t.Text.Body
-		if isSelected {
-			shaStyle = t.Text.Selected
-			msgStyle = t.Text.Selected
-		}
 
 		maxMsgLen := width - len(commit.ShortSHA) - 8
 		if maxMsgLen < 10 {
@@ -3824,7 +3762,10 @@ func (h *HistoryModel) renderCommitMiddlePanel(width, height int) string {
 			msg = msg[:maxMsgLen-1] + "…"
 		}
 
-		line := msgStyle.Render(indicator) + shaStyle.Render(commit.ShortSHA) + msgStyle.Render(" ") + msgStyle.Render(msg)
+		line := msgStyle.Render("  ") + shaStyle.Render(commit.ShortSHA) + msgStyle.Render(" ") + msgStyle.Render(msg)
+		if i == h.selectedCommit {
+			line = renderSelectedRow(t, line, width-2)
+		}
 		lines = append(lines, line)
 	}
 
@@ -3884,13 +3825,6 @@ func (h *HistoryModel) renderGitBeadListPanel(width, height int) string {
 
 	for i := startIdx; i < endIdx; i++ {
 		beadID := commit.BeadIDs[i]
-		isSelected := i == h.selectedRelatedBead && h.focused == historyFocusMiddle
-
-		indicator := "  "
-		if isSelected {
-			indicator = "▸ "
-		}
-
 		beadStyle := t.Text.Body
 		statusIcon := GetStatusIcon("")
 		title := beadID
@@ -3902,10 +3836,6 @@ func (h *HistoryModel) renderGitBeadListPanel(width, height int) string {
 			}
 		}
 
-		if isSelected {
-			beadStyle = t.Text.Selected
-		}
-
 		maxLen := width - 12
 		if maxLen < 10 {
 			maxLen = 10
@@ -3914,7 +3844,10 @@ func (h *HistoryModel) renderGitBeadListPanel(width, height int) string {
 			title = title[:maxLen-1] + "…"
 		}
 
-		beadLine := beadStyle.Render(indicator+statusIcon+" ") + beadStyle.Render(title)
+		beadLine := beadStyle.Render("  "+statusIcon+" ") + beadStyle.Render(title)
+		if i == h.selectedRelatedBead {
+			beadLine = renderSelectedRow(t, beadLine, width-2)
+		}
 		lines = append(lines, beadLine)
 	}
 

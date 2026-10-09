@@ -481,9 +481,6 @@ func (m FlowMatrixModel) renderLabelRow(stat labelFlowStats, selected bool, barW
 	}
 
 	rowStyle := m.theme.Text.Body
-	if selected {
-		rowStyle = m.theme.Text.Selected
-	}
 	labelStyle := rowStyle.Foreground(labelColor)
 	label = ansi.Truncate(label, labelWidth, "…")
 	label += strings.Repeat(" ", max(0, labelWidth-ansi.StringWidth(label)))
@@ -513,11 +510,9 @@ func (m FlowMatrixModel) renderLabelRow(stat labelFlowStats, selected bool, barW
 	// Assemble row
 	row := labelStyle.Render(label) + rowStyle.Render(" ") + barStyle.Render(bar) + emptyStyle.Render(barEmpty) + rowStyle.Render(" "+countStr)
 
-	// Selection highlight
 	if selected {
-		row += rowStyle.Render(strings.Repeat(" ", max(0, totalWidth-ansi.StringWidth(row))))
+		return renderSelectedRow(m.theme, row, totalWidth)
 	}
-
 	return row
 }
 
@@ -628,13 +623,7 @@ func (m FlowMatrixModel) renderDetailPanel(width int) string {
 		b.WriteString(columns(moreStyle.Render(leftMore), moreStyle.Render(rightMore)))
 	}
 
-	b.WriteString("\n")
-
-	// Hint
-	hintStyle := m.theme.Text.Metadata
-	b.WriteString(hintStyle.Render("Press Enter to see issues"))
-
-	return b.String()
+	return strings.TrimSuffix(b.String(), "\n")
 }
 
 func (m FlowMatrixModel) getFlowCounts(sourceLabel string, targetLabels []string, outgoing bool) map[string]int {
@@ -721,7 +710,7 @@ func (m FlowMatrixModel) renderFooter() string {
 	borderStyle := lipgloss.NewStyle().Foreground(m.theme.Border)
 	helpStyle := m.theme.Text.Metadata
 
-	help := "j/k: navigate  Enter: drill down  Tab: switch panel  Esc: close"
+	help := "Tab: switch panel"
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		borderStyle.Render(strings.Repeat("─", m.width)),
@@ -769,10 +758,6 @@ func (m FlowMatrixModel) renderDrilldown() string {
 		// Issue line
 		idStyle := m.theme.Text.Metadata
 		titleStyle := m.theme.Text.Body
-		if selected {
-			idStyle = m.theme.Text.Selected
-			titleStyle = m.theme.Text.Selected
-		}
 
 		title := iss.Title
 		maxTitleLen := m.width - 25
@@ -790,8 +775,7 @@ func (m FlowMatrixModel) renderDrilldown() string {
 			titleStyle.Render(title))
 
 		if selected {
-			selectStyle := m.theme.Text.Selected.Width(m.width)
-			row = selectStyle.Render(row)
+			row = renderSelectedRow(m.theme, row, m.width)
 		} else {
 			row = m.theme.Text.Body.Render(row)
 		}
@@ -801,14 +785,6 @@ func (m FlowMatrixModel) renderDrilldown() string {
 			b.WriteString("\n")
 		}
 	}
-
-	// Footer
-	b.WriteString("\n\n")
-	b.WriteString(borderStyle.Render(strings.Repeat("─", m.width)))
-	b.WriteString("\n")
-
-	helpStyle := m.theme.Text.Metadata
-	b.WriteString(helpStyle.Render("j/k: navigate  Esc: back"))
 
 	return b.String()
 }

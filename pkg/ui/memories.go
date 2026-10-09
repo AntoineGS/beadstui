@@ -559,7 +559,7 @@ func (m MemoriesModel) renderSinglePanel(panelH int) string {
 	}
 	return RenderTitledPanel(m.renderMasterLines(), PanelOpts{
 		TitleStyle: &m.theme.Text.Heading,
-		Title:      fmt.Sprintf("Memories (%d) - tab/enter: detail", m.memoryRowCount()),
+		Title:      fmt.Sprintf("Memories (%d) - tab: detail", m.memoryRowCount()),
 		Width:      m.width,
 		Height:     panelH,
 		Focused:    true,

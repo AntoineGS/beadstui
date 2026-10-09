@@ -58,7 +58,7 @@ func (m Model) renderHistoryDoltOnly(width, height int) string {
 		bodyStyle.Render("The history view's git-based correlator is being migrated"),
 		bodyStyle.Render("to read events from Dolt directly (bt-08sh)."),
 		"",
-		hintStyle.Render("Press h or Esc to close"),
+		hintStyle.Render("Press h to close"),
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Center, lines...)
@@ -83,7 +83,7 @@ func (m Model) renderHistoryLoadingScreen() string {
 		"",
 		titleStyle.Render("Loading history..."),
 		"",
-		subStyle.Render("Press h or Esc to cancel"),
+		subStyle.Render("Press h to cancel"),
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Center, lines...)
@@ -107,7 +107,7 @@ func (m Model) renderMemoriesLoadingScreen() string {
 		"",
 		titleStyle.Render("Loading memories..."),
 		"",
-		subStyle.Render("Press u or Esc to cancel"),
+		subStyle.Render("Press u to cancel"),
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Center, lines...)
@@ -443,7 +443,7 @@ func spliceDebugDims(s string, width, height int) string {
 // composites it via OverlayCenterDimBackdrop in View() so the backdrop
 // dims uniformly with the other modals (bt-yly4).
 func (m Model) renderQuitConfirm() string {
-	return RenderPopup([]string{m.theme.Text.Body.Render("Quit beadstui?")}, PopupOpts{Title: "Quit?", Theme: m.theme, Accent: m.theme.Blocked, Available: &PopupSize{m.width, max(0, m.height-1)}, Footer: []string{"esc / y to quit; any other key cancels", "esc/y quit; other cancel"}})
+	return RenderPopup([]string{m.theme.Text.Body.Render("Quit beadstui?")}, PopupOpts{Title: "Quit?", Theme: m.theme, Accent: m.theme.Blocked, Available: &PopupSize{m.width, max(0, m.height-1)}})
 }
 
 // centerLine pads s with spaces on both sides so its visible width
@@ -1056,9 +1056,9 @@ func (m Model) helpOverlayAvailBody() int {
 
 func (m Model) helpPopupOpts() PopupOpts {
 	if m.helpLegend {
-		return PopupOpts{Title: "icon legend", Theme: m.theme, Available: &PopupSize{m.width, max(0, m.height-1)}, Footer: []string{"l shortcuts  -  j/k scroll  -  Esc / q close", "l back - j/k scroll - Esc close", "l back; j/k scroll"}}
+		return PopupOpts{Title: "icon legend", Theme: m.theme, Available: &PopupSize{m.width, max(0, m.height-1)}, Footer: []string{"l shortcuts"}}
 	}
-	return PopupOpts{Title: "shortcuts", Theme: m.theme, Available: &PopupSize{m.width, max(0, m.height-1)}, Footer: []string{"; per-view  -  Esc / q to close", "; Esc/q close"}}
+	return PopupOpts{Title: "shortcuts", Theme: m.theme, Available: &PopupSize{m.width, max(0, m.height-1)}, Footer: []string{"; per-view"}}
 }
 
 // helpScrollMax is the maximum helpScroll offset for the current dimensions.
@@ -1221,16 +1221,15 @@ func (m *Model) renderHelpOverlay() string {
 		window = bodyLines[scroll:end]
 	}
 
-	// Footer: cross-ref + close hint. Must contain ";" and "Esc"; must NOT
-	// contain "shortcuts" (FOOTER WORDING CAVEAT, bt-dx7k.1).
-	footerText := "; per-view  -  Esc / q to close"
+	// Footer: the ; cross-ref plus scroll position. Scroll and close keys are
+	// assumed; must NOT contain "shortcuts" (FOOTER WORDING CAVEAT, bt-dx7k.1).
+	footerText := "; per-view"
 	if maxScroll > 0 {
-		pct := scroll * 100 / maxScroll
-		footerText = fmt.Sprintf("; per-view  -  j/k scroll %d%%  -  Esc / q close", pct)
+		footerText = fmt.Sprintf("; per-view  -  %d%%", scroll*100/maxScroll)
 	}
 	opts := m.helpPopupOpts()
 	if !m.helpLegend {
-		opts.Footer = []string{footerText, "; Esc/q close"}
+		opts.Footer = []string{footerText, "; per-view"}
 	}
 	return RenderPopup(window, opts)
 }
@@ -1356,9 +1355,7 @@ func (m Model) renderLabelHealthDetail(lh analysis.LabelHealth) string {
 		}
 	}
 
-	sb.WriteString(t.Text.Metadata.Render("Press Esc to close"))
-
-	content := boxStyle.Render(sb.String())
+	content := boxStyle.Render(strings.TrimRight(sb.String(), "\n"))
 
 	return lipgloss.Place(
 		m.width,
@@ -1516,7 +1513,7 @@ func (m Model) renderLabelDrilldown() string {
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString(t.Text.Metadata.Render("Press Esc to close • g for graph analysis"))
+	sb.WriteString(t.Text.Metadata.Render("g for graph analysis"))
 
 	content := boxStyle.Render(sb.String())
 
@@ -1662,7 +1659,7 @@ func (m Model) renderLabelGraphAnalysis() string {
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(t.Text.Metadata.Render("Press Esc/q/g to close"))
+	sb.WriteString(t.Text.Metadata.Render("Press g to close"))
 
 	content := boxStyle.Render(sb.String())
 
@@ -1691,7 +1688,7 @@ func (m Model) renderTimeTravelPrompt() string {
 	subtitleStyle := t.Text.Metadata
 	exampleStyle := t.Text.Metadata
 
-	opts := PopupOpts{Title: "Time-Travel Mode", Theme: t, Available: &PopupSize{m.width, max(0, m.height-1)}, Width: 64, MinBodyRows: 3, Footer: []string{"Enter to compare, Esc to cancel", "Enter compare Esc cancel"}}
+	opts := PopupOpts{Title: "Time-Travel Mode", Theme: t, Available: &PopupSize{m.width, max(0, m.height-1)}, Width: 64, MinBodyRows: 3}
 	l := MeasurePopup(nil, opts)
 	m.timeTravelInput.SetWidth(max(1, l.BodyWidth-lipgloss.Width(m.timeTravelInput.Prompt)))
 	contentLines := []string{

@@ -34,8 +34,8 @@ func TestEpicProgressTextRoleCells(t *testing.T) {
 			}
 		}
 	}
-	for _, selected := range []int{-1, 0, 1} {
-		rows := strings.Split(buildEpicProgressANSI(all[0], all, selected, 80), "\n")
+	{
+		rows := strings.Split(buildEpicProgressANSI(all[0], all, 80), "\n")
 		assertSpan(rows[0], "1 / 3 children complete (33%)", ActiveTextStyles.Metadata)
 		for i, child := range all[1:] {
 			row := rows[i+2]
@@ -43,8 +43,8 @@ func TestEpicProgressTextRoleCells(t *testing.T) {
 			if child.Status.IsClosed() {
 				idStyle, titleStyle = idStyle.Faint(true), titleStyle.Faint(true)
 			}
-			if selected == i {
-				idStyle, titleStyle = ActiveTextStyles.Selected, ActiveTextStyles.Selected
+			if strings.Contains(row, "▸") {
+				t.Errorf("detail embed row has a cursor: %q", ansi.Strip(row))
 			}
 			assertSpan(row, child.ID, idStyle)
 			assertSpan(row, child.Title, titleStyle)
@@ -61,20 +61,10 @@ func TestEpicProgressTextRoleCells(t *testing.T) {
 					}
 				}
 			}
-			if selected == i {
-				assertSpan(row, "▸ ", ActiveTextStyles.Selected)
-				cells := uv.NewStyledString(row).Lines(ansi.GraphemeWidth)[0]
-				want := uv.NewStyledString(ActiveTextStyles.Selected.Render(" ")).Lines(ansi.GraphemeWidth)[0][0].Style
-				for _, x := range []int{2 + ansi.StringWidth(statusPill), 3 + ansi.StringWidth(statusPill) + ansi.StringWidth(prioPill)} {
-					if !cells[x].Style.Equal(&want) {
-						t.Errorf("selected inter-pill gap %d lost selection style", x)
-					}
-				}
-			}
 		}
 	}
 	for _, width := range []int{30, 40, 80} {
-		out := buildEpicProgressANSI(all[0], all, 1, width)
+		out := buildEpicProgressANSI(all[0], all, width)
 		for _, row := range strings.Split(out, "\n") {
 			if w := ansi.StringWidth(row); w > width {
 				t.Errorf("width %d: row exceeds budget: %d", width, w)
@@ -82,7 +72,7 @@ func TestEpicProgressTextRoleCells(t *testing.T) {
 		}
 	}
 	childless := model.Issue{ID: "empty", IssueType: model.TypeEpic}
-	if got := buildEpicProgressANSI(childless, []model.Issue{childless}, 0, 30); got != "" {
+	if got := buildEpicProgressANSI(childless, []model.Issue{childless}, 30); got != "" {
 		t.Fatalf("childless epic rendered %q", got)
 	}
 }
@@ -90,7 +80,7 @@ func TestEpicProgressTextRoleCells(t *testing.T) {
 func TestEpicProgress_OrdinaryViewBaseline(t *testing.T) {
 	all := epicProgressFixture()
 	want := "1 / 3 children complete (33%)\n                             \n  DONE P1 ep.1 — first child \n  PROG P0 ep.2 — second child\n  OPEN P2 ep.10 — tenth child"
-	if got := ansi.Strip(buildEpicProgressANSI(all[0], all, -1, 80)); got != want {
+	if got := ansi.Strip(buildEpicProgressANSI(all[0], all, 80)); got != want {
 		t.Fatalf("ordinary epic renderer changed:\ngot %q\nwant %q", got, want)
 	}
 }
@@ -113,7 +103,7 @@ func TestBuildEpicProgressANSI(t *testing.T) {
 	all := epicProgressFixture()
 	epic := all[0]
 
-	out := buildEpicProgressANSI(epic, all, -1, 0)
+	out := buildEpicProgressANSI(epic, all, 0)
 
 	// It must be lipgloss (ANSI SGR), not markdown — the whole point of
 	// bt-gfxhz.3 / the renderSection ANSI track (bt-x5xc4).
@@ -144,39 +134,8 @@ func TestBuildEpicProgressANSI(t *testing.T) {
 
 	// Childless epic -> empty so callers skip the section + heading.
 	childless := model.Issue{ID: "lonely", IssueType: model.TypeEpic}
-	if got := buildEpicProgressANSI(childless, []model.Issue{childless}, -1, 0); got != "" {
+	if got := buildEpicProgressANSI(childless, []model.Issue{childless}, 0); got != "" {
 		t.Errorf("childless epic should render empty, got %q", got)
-	}
-}
-
-func TestBuildEpicProgressANSI_Cursor(t *testing.T) {
-	all := epicProgressFixture()
-	epic := all[0]
-
-	// selectedIdx = 1 -> the ▸ cursor is on the second child (ep.2) only.
-	out := buildEpicProgressANSI(epic, all, 1, 0)
-	lines := strings.Split(ansi.Strip(out), "\n")
-
-	var ep2Line, ep1Line, ep10Line string
-	for _, ln := range lines {
-		switch {
-		case strings.Contains(ln, "ep.10"):
-			ep10Line = ln
-		case strings.Contains(ln, "ep.2"):
-			ep2Line = ln
-		case strings.Contains(ln, "ep.1 "):
-			ep1Line = ln
-		}
-	}
-
-	if !strings.Contains(ep2Line, "▸") {
-		t.Errorf("selected child (ep.2) row missing ▸ cursor: %q", ep2Line)
-	}
-	if strings.Contains(ep1Line, "▸") {
-		t.Errorf("unselected child (ep.1) row should not have ▸ cursor: %q", ep1Line)
-	}
-	if strings.Contains(ep10Line, "▸") {
-		t.Errorf("unselected child (ep.10) row should not have ▸ cursor: %q", ep10Line)
 	}
 }
 
@@ -186,7 +145,7 @@ func TestBuildEpicProgressANSI_TitleTruncation(t *testing.T) {
 		{ID: "ep.1", Title: "this is a very long child title that should be truncated to fit", Status: model.StatusOpen, Priority: 2, Dependencies: pcDep("ep.1", "ep")},
 	}
 	// Narrow width forces truncation; the ellipsis proves the budget applied.
-	out := buildEpicProgressANSI(all[0], all, -1, 40)
+	out := buildEpicProgressANSI(all[0], all, 40)
 	if !strings.Contains(out, "…") {
 		t.Errorf("expected ellipsis from title truncation at width 40, got %q", out)
 	}

@@ -46,7 +46,7 @@ func (m *BQLQueryModal) SetSize(w, h int) {
 }
 
 func (m BQLQueryModal) popupOpts() PopupOpts {
-	return PopupOpts{Title: "BQL Query", Theme: m.theme, Available: m.popupSize, Width: max(1, popupAvailableSize(m.popupSize).Width-4), Footer: []string{"enter: apply | esc: cancel | up/down: history", "enter apply esc cancel ↑/↓ history", "enter esc ↑/↓ history"}}
+	return PopupOpts{Title: "BQL Query", Theme: m.theme, Available: m.popupSize, Width: max(1, popupAvailableSize(m.popupSize).Width-4), Footer: []string{"↑/↓ history"}}
 }
 
 // Value returns the current input value.

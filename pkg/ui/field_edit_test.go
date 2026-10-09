@@ -64,7 +64,7 @@ func TestFreshSupportingInputsTextRoles(t *testing.T) {
 	if !strings.Contains(out, theme.Text.Body.Render("status:open")) {
 		t.Error("rendered BQL input ignored body role")
 	}
-	if !strings.Contains(out, theme.Text.Metadata.Render("enter: apply | esc: cancel | up/down: history")) {
+	if !strings.Contains(out, theme.Text.Metadata.Render("↑/↓ history")) {
 		t.Error("rendered BQL hint ignored metadata role")
 	}
 }
@@ -139,7 +139,7 @@ func TestFieldPickerView_AlignedCurrentAndCursor(t *testing.T) {
 			_, a := popupFindRow(t, out, tc.current)
 			_, b := popupFindRow(t, out, tc.cursor)
 			x, y := ansi.StringWidth(a[:strings.Index(a, tc.current)]), ansi.StringWidth(b[:strings.Index(b, tc.cursor)])
-			if x != y || !strings.Contains(a, "*") || strings.Contains(a, ">") || !strings.Contains(b, ">") {
+			if x != y || !strings.Contains(a, "*") || popupRowSelected(out, tc.current, p.theme) || !popupRowSelected(out, tc.cursor, p.theme) || strings.Contains(b, ">") {
 				t.Fatalf("current/cursor columns or markers wrong:\n%s", ansi.Strip(out))
 			}
 		}
@@ -153,7 +153,7 @@ func TestFieldSelectView_ShortTerminalKeepsSelected(t *testing.T) {
 	out := m.View()
 	assertPopupBounds(t, out, 36, 10)
 	_, row := popupFindRow(t, out, "Close")
-	if !strings.Contains(row, ">") || !strings.Contains(row, "x") {
+	if !popupRowSelected(out, "x  Close", m.theme) || !strings.Contains(row, "x") {
 		t.Fatal("selected accelerator hidden")
 	}
 	popupFindRow(t, out, "esc")
@@ -175,8 +175,7 @@ func TestFieldInputPopup_LeftAlignedAndBounded(t *testing.T) {
 		if m.Value() != "draft" {
 			t.Fatal("sizing changed input")
 		}
-		popupFindRow(t, out, "enter")
-		popupFindRow(t, out, "esc")
+		assertNoAssumedKeyHints(t, out)
 	}
 }
 
@@ -207,22 +206,23 @@ func TestFieldEditPopup_BackAfterResizeFitsRetainedHub(t *testing.T) {
 			}
 			out := m.fieldSelect.View()
 			assertPopupBounds(t, out, 36, 11)
-			popupFindRow(t, out, "esc")
+			popupFindRow(t, out, "Priority")
 		})
 	}
 }
 
 func TestFieldInputPopup_ShortBudgetShowsInputOrFallback(t *testing.T) {
 	for _, err := range []string{"", "invalid title"} {
-		for _, height := range []int{4, 5, 6} {
+		for _, height := range []int{3, 4, 5} {
 			m := NewFieldInputModal("title", "Title", "typed draft", DefaultTheme())
 			m.SetError(err)
 			m.SetSize(32, height)
 			out := m.View()
 			assertPopupBounds(t, out, 32, height)
-			minimum := 5
+			// Label + input (+ error) inside the border; no footer rows.
+			minimum := 4
 			if err != "" {
-				minimum = 6
+				minimum = 5
 			}
 			if height < minimum {
 				if !strings.Contains(out, "Terminal too small") {
@@ -230,7 +230,6 @@ func TestFieldInputPopup_ShortBudgetShowsInputOrFallback(t *testing.T) {
 				}
 			} else {
 				popupFindRow(t, out, "typed draft")
-				popupFindRow(t, out, "esc")
 				if err != "" {
 					popupFindRow(t, out, err)
 				}
@@ -353,7 +352,7 @@ func TestFieldSelectView_AlignedColumns(t *testing.T) {
 				out := ansi.Strip(modal.View())
 				rows := strings.Split(out, "\n")
 				labelColumn := -1
-				for i, entry := range entries {
+				for _, entry := range entries {
 					var row string
 					labelIndex := -1
 					for _, line := range rows {
@@ -362,7 +361,7 @@ func TestFieldSelectView_AlignedColumns(t *testing.T) {
 							break
 						}
 					}
-					if labelIndex < 5 {
+					if labelIndex < 3 {
 						t.Fatalf("missing field row %q in view:\n%s", entry.Label, out)
 					}
 					column := ansi.StringWidth(row[:labelIndex])
@@ -374,12 +373,8 @@ func TestFieldSelectView_AlignedColumns(t *testing.T) {
 					if got := row[labelIndex-3 : labelIndex]; got != entry.Key+"  " {
 						t.Errorf("%s shortcut prefix = %q, want %q", entry.Label, got, entry.Key+"  ")
 					}
-					wantCursor := "  "
-					if i == selected {
-						wantCursor = "> "
-					}
-					if got := row[labelIndex-5 : labelIndex-3]; got != wantCursor {
-						t.Errorf("%s cursor prefix = %q, want %q", entry.Label, got, wantCursor)
+					if strings.Contains(row[:labelIndex], ">") {
+						t.Errorf("%s row has a cursor glyph: %q", entry.Label, row)
 					}
 				}
 			})

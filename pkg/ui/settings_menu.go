@@ -88,5 +88,5 @@ func (s *SettingsMenuModel) View() string {
 	for i, e := range s.entries {
 		entries[i] = PopupMenuEntry{Label: e.label, Detail: e.desc, Selected: i == s.selected}
 	}
-	return renderPopupMenuWindow(entries, PopupMenuOpts{}, s.selected, PopupOpts{Title: "bt", Theme: s.theme, Available: s.popupSize, Width: 34, MinBodyRows: 2, Footer: []string{"j/k move  enter select  esc back", "j/k enter esc"}})
+	return renderPopupMenuWindow(entries, PopupMenuOpts{}, s.selected, PopupOpts{Title: "bt", Theme: s.theme, Available: s.popupSize, Width: 34, MinBodyRows: 2})
 }

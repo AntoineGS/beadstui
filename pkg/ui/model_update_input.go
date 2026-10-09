@@ -117,39 +117,11 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// Handle self-update modal (bv-182)
 	if m.activeModal == ModalUpdate {
 		m.updateModal, cmd = m.updateModal.Update(msg)
-		cmds = append(cmds, cmd)
-
-		// Handle modal state changes
-		switch msg.String() {
-		case "esc", "q":
-			// Always allow escape to close
-			if !m.updateModal.IsInProgress() {
-				m.closeModal()
-				m.focused = focusList
-				return m, tea.Batch(cmds...)
-			}
-		case "enter":
-			// Close on enter if complete or if cancelled
-			if m.updateModal.IsComplete() {
-				m.closeModal()
-				m.focused = focusList
-				return m, tea.Batch(cmds...)
-			}
-			// If confirming and cancelled, close
-			if m.updateModal.IsConfirming() && m.updateModal.IsCancelled() {
-				m.closeModal()
-				m.focused = focusList
-				return m, tea.Batch(cmds...)
-			}
-		case "n", "N":
-			// Quick cancel
-			if m.updateModal.IsConfirming() {
-				m.closeModal()
-				m.focused = focusList
-				return m, tea.Batch(cmds...)
-			}
+		if m.updateModal.Dismissed() {
+			m.closeModal()
+			m.focused = focusList
 		}
-		return m, tea.Batch(cmds...)
+		return m, cmd
 	}
 
 	// Close label health detail modal if open
@@ -593,28 +565,28 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 	// Handle quit confirmation first
 	if m.activeModal == ModalQuitConfirm {
-		switch msg.String() {
-		case "esc", "y", "Y":
+		switch {
+		case msg.String() == "ctrl+c", key.Matches(msg, m.keys.Confirm.Confirm):
 			return m, tea.Quit
-		default:
+		case key.Matches(msg, m.keys.Confirm.Cancel):
 			m.closeModal()
 			m.focused = focusList
-			return m, nil
 		}
+		return m, nil
 	}
 
-	// Handle claim confirmation (bt-oiaj.10). y/Y/enter fires the claim; any
-	// other key cancels. No free-text input anywhere in the path (cp1252 safety).
+	// Handle claim confirmation (bt-oiaj.10) with the shared confirm keys. No
+	// free-text input anywhere in the path (cp1252 safety).
 	if m.activeModal == ModalClaimConfirm {
-		switch msg.String() {
-		case "ctrl+c":
+		switch {
+		case msg.String() == "ctrl+c":
 			return m, tea.Quit
-		case "y", "Y", "enter":
+		case key.Matches(msg, m.keys.Confirm.Confirm):
 			return m.confirmClaim()
-		default:
+		case key.Matches(msg, m.keys.Confirm.Cancel):
 			m.cancelClaim()
-			return m, nil
 		}
+		return m, nil
 	}
 
 	// Handle field-edit modals (bt-oiaj.5): field-select hub, then the two

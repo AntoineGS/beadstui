@@ -529,13 +529,13 @@ func memoriesLabel(n int) string {
 
 func (m *Model) extractFilterBadge() (text, icon string) {
 	if m.focused == focusLabelDashboard {
-		return "LABELS: j/k nav • h detail • d drilldown • enter filter", activeGlyphs.Tag
+		return "LABELS: h detail • d drilldown", activeGlyphs.Tag
 	}
 	if m.activeModal == ModalLabelGraphAnalysis && m.labelGraphAnalysisResult != nil {
-		return fmt.Sprintf("GRAPH %s: esc/q/g close", m.labelGraphAnalysisResult.Label), activeGlyphs.Graph
+		return fmt.Sprintf("GRAPH %s: g close", m.labelGraphAnalysisResult.Label), activeGlyphs.Graph
 	}
 	if m.activeModal == ModalLabelDrilldown && m.labelDrilldownLabel != "" {
-		return fmt.Sprintf("LABEL %s: enter filter • g graph • esc/q/d close", m.labelDrilldownLabel), activeGlyphs.Tag
+		return fmt.Sprintf("LABEL %s: g graph • d close", m.labelDrilldownLabel), activeGlyphs.Tag
 	}
 	switch m.filter.currentFilter {
 	case "all":
@@ -588,7 +588,7 @@ func (m *Model) extractHintText() string {
 			if m.board.SearchMatchCount() > 0 {
 				matchInfo = fmt.Sprintf(" [%d/%d]", m.board.SearchCursorPos(), m.board.SearchMatchCount())
 			}
-			return fmt.Sprintf("/%s%s • n/N:match • enter:done • esc:cancel", m.board.SearchQuery(), matchInfo)
+			return fmt.Sprintf("/%s%s • n/N:match", m.board.SearchQuery(), matchInfo)
 		}
 		filterInfo := ""
 		if m.filter.currentFilter != "all" && m.filter.currentFilter != "" {
@@ -599,7 +599,7 @@ func (m *Model) extractHintText() string {
 		return fmt.Sprintf("%s1-4:col • o/c/r:filter • l:labels • /:search • ?:help", filterInfo)
 	}
 	if m.mode == ViewAttention {
-		return "A:attention • 1-9 filter • esc close"
+		return "A:attention • 1-9 filter"
 	}
 	return "l:labels"
 }

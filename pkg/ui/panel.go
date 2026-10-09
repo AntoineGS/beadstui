@@ -209,7 +209,7 @@ type PopupMenuLayout struct {
 }
 
 func MeasurePopupMenu(entries []PopupMenuEntry, opts PopupMenuOpts) PopupMenuLayout {
-	l := PopupMenuLayout{Shortcuts: opts.Shortcuts, Markers: opts.Markers, LabelX: 2}
+	l := PopupMenuLayout{Shortcuts: opts.Shortcuts, Markers: opts.Markers}
 	if opts.Shortcuts {
 		l.ShortcutWidth = 1
 		for _, e := range entries {
@@ -267,53 +267,45 @@ func popupPadCell(text string, width int) string {
 	return text + strings.Repeat(" ", max(0, width-ansi.StringWidth(text)))
 }
 
-// RenderPopupMenu centers one fixed-width block, never individual rows. Labels
-// with existing ANSI spans retain their specialized status/priority styling.
+// renderSelectedRow is the one selection treatment for the issue list and
+// every popup: the plain row padded to width under Text.Selected. Inline
+// styles are dropped so nested resets and chip backgrounds cannot punch holes
+// in the highlight.
+func renderSelectedRow(theme Theme, row string, width int) string {
+	return theme.Text.Selected.Render(popupPadCell(ansi.Strip(row), width))
+}
+
+// RenderPopupMenu centers one fixed-width block, never individual rows. Idle
+// labels with existing ANSI spans retain their specialized status/priority
+// styling; the selected row is highlighted exactly like the issue list's.
 func RenderPopupMenu(entries []PopupMenuEntry, l PopupMenuLayout, theme Theme, width int) []string {
 	if width <= 0 {
 		return nil
 	}
 	blockWidth := min(l.Width, width)
 	left := strings.Repeat(" ", max(0, (width-blockWidth)/2))
-	primary := theme.Text.Heading
-	idle := theme.Text.Body
-	secondary := theme.Text.Metadata
-	detail := theme.Text.Metadata
+	shortcutStyle := theme.Text.Heading
+	labelStyle := theme.Text.Body
+	metadataStyle := theme.Text.Metadata
 	fit := func(row string) string { return popupPadCell(left+popupPadCell(row, blockWidth), width) }
 	var rows []string
 	for _, e := range entries {
 		e = popupSingleRow(e)
-		cursor, labelStyle := "  ", idle
-		shortcutStyle, metadataStyle := primary, secondary
-		paddingStyle := lipgloss.NewStyle()
-		if e.Selected {
-			cursor = theme.Text.Selected.Render("> ")
-			labelStyle = theme.Text.Selected
-			shortcutStyle, metadataStyle = theme.Text.Selected, theme.Text.Selected
-			paddingStyle = theme.Text.Selected
-		}
-		// Style ordinary gaps separately so semantic ANSI chips retain their
-		// own colors, while their resets cannot leave holes in selected padding.
-		padCell := func(text string, cellWidth int) string {
-			text = ansi.Truncate(text, max(0, cellWidth), "")
-			return text + paddingStyle.Render(strings.Repeat(" ", max(0, cellWidth-ansi.StringWidth(text))))
-		}
-		row := cursor
+		row := ""
 		if l.Shortcuts {
-			row += padCell(popupStyledText(e.Shortcut, shortcutStyle), l.ShortcutWidth) + paddingStyle.Render("  ")
+			row += popupPadCell(popupStyledText(e.Shortcut, shortcutStyle), l.ShortcutWidth) + "  "
 		}
 		if l.Markers {
-			row += padCell(popupStyledText(e.Marker, metadataStyle), l.MarkerWidth) + paddingStyle.Render(" ")
+			row += popupPadCell(popupStyledText(e.Marker, metadataStyle), l.MarkerWidth) + " "
 		}
 		row += popupStyledText(e.Label, labelStyle) + popupStyledText(e.Suffix, metadataStyle)
 		if e.Selected {
-			row = ansi.Truncate(row, blockWidth, "")
-			rows = append(rows, paddingStyle.Render(left)+row+paddingStyle.Render(strings.Repeat(" ", max(0, width-len(left)-ansi.StringWidth(row)))))
+			rows = append(rows, renderSelectedRow(theme, fit(row), width))
 		} else {
 			rows = append(rows, fit(row))
 		}
 		if e.Detail != "" {
-			rows = append(rows, fit(strings.Repeat(" ", max(0, l.LabelX))+popupStyledText(e.Detail, detail)))
+			rows = append(rows, fit(strings.Repeat(" ", max(0, l.LabelX))+popupStyledText(e.Detail, metadataStyle)))
 		}
 	}
 	return rows
@@ -359,6 +351,11 @@ func popupMenuWindowRange(entries []PopupMenuEntry, cursor, rows int) (start, en
 	}
 	return start, end
 }
+
+// searchPickerFooter lists only the keys a user could not guess; movement,
+// enter and esc are assumed. Select-all ("a") lives in the ; sidebar and ?
+// overlay to keep the line short.
+var searchPickerFooter = []string{"space toggle / search ←/→ page", "space / ←/→"}
 
 // measureSearchPopup shares geometry for searchable multi-select pickers.
 // slots is a caller policy: fixed for labels, content-sized for projects.

@@ -49,12 +49,12 @@ func (m AgentPromptModal) Update(msg tea.Msg) (AgentPromptModal, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "left", "h", "shift+tab":
+		case "up", "k", "shift+tab":
 			m.selection--
 			if m.selection < 0 {
 				m.selection = 2
 			}
-		case "right", "l", "tab":
+		case "down", "j", "tab":
 			m.selection++
 			if m.selection > 2 {
 				m.selection = 0
@@ -83,7 +83,7 @@ func (m AgentPromptModal) Update(msg tea.Msg) (AgentPromptModal, tea.Cmd) {
 
 // View renders the modal.
 func (m AgentPromptModal) View() string {
-	opts := PopupOpts{Title: "Enhance AI Agent Integration?", Theme: m.theme, Available: m.popupSize, Width: 70, Height: min(26, popupAvailableSize(m.popupSize).Height), Footer: []string{"← → to select • Enter to confirm • Esc to cancel", "←/→ select Enter confirm Esc cancel", "←/→ Enter Esc"}}
+	opts := PopupOpts{Title: "Enhance AI Agent Integration?", Theme: m.theme, Available: m.popupSize, Width: 70, Height: min(26, popupAvailableSize(m.popupSize).Height)}
 	l := MeasurePopup(nil, opts)
 	if l.Compact || l.Height == 0 {
 		return RenderPopup(nil, opts)
@@ -99,8 +99,8 @@ func (m AgentPromptModal) View() string {
 	preview = preview[:min(len(preview), max(1, previewRows-2))]
 	box := m.theme.Text.Body.Border(lipgloss.NormalBorder()).BorderForeground(m.theme.Border).Padding(0, 1).Width(max(1, l.BodyWidth-2))
 	lines := append(intro, m.theme.Text.Metadata.Render("Preview of content to add:"), box.Render(strings.Join(preview, "\n")))
-	entries := []PopupMenuEntry{{Label: "Yes, add it", Selected: m.selection == 0}, {Label: "No thanks", Selected: m.selection == 1}, {Label: "Don't ask again", Selected: m.selection == 2}}
-	lines = append(lines, RenderPopupMenu(entries, MeasurePopupMenu(entries, PopupMenuOpts{}), m.theme, l.BodyWidth)...)
+	entries := []PopupMenuEntry{{Label: "Yes, add it", Shortcut: "y", Selected: m.selection == 0}, {Label: "No thanks", Shortcut: "n", Selected: m.selection == 1}, {Label: "Don't ask again", Shortcut: "d", Selected: m.selection == 2}}
+	lines = append(lines, RenderPopupMenu(entries, MeasurePopupMenu(entries, PopupMenuOpts{Shortcuts: true}), m.theme, l.BodyWidth)...)
 	opts.MinBodyRows = l.BodyHeight
 	return RenderPopup(lines, opts)
 }

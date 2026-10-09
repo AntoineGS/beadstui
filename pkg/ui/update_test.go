@@ -44,22 +44,29 @@ func TestInsightsOrdinaryGapCellsTextRoles(t *testing.T) {
 				metric := m.renderInsightRow(issue.ID, 0.85, 100, selected, theme)
 				icon, iconColor := GetTypeIcon(string(issue.IssueType)), theme.GetTypeColor(string(issue.IssueType))
 				valueStyle := theme.Text.Badge.Background(theme.BgHighlight).Foreground(theme.Primary).Padding(0, 1)
-				badgeEnd := 2 + lipgloss.Width(valueStyle.Render("0.850"))
-				assertRange(metric, 0, 2, ordinary)
-				assertRange(metric, badgeEnd, badgeEnd+1, ordinary)
-				iconEnd := badgeEnd + 1 + ansi.StringWidth(icon)
-				assertRange(metric, iconEnd, iconEnd+1, ordinary)
-				assertRange(metric, iconEnd+2, iconEnd+3, ordinary)
-				assertRange(metric, iconEnd+3, iconEnd+3+len(issue.Title), ordinary)
-				descriptionStyle := theme.Text.Metadata
 				if selected {
-					descriptionStyle = theme.Text.Selected
-				}
-				assertRange(metric, iconEnd+3+len(issue.Title), ansi.StringWidth(ansi.Strip(metric)), descriptionStyle)
-				if !strings.Contains(metric, valueStyle.Render("0.850")) || !strings.Contains(metric, lipgloss.NewStyle().Foreground(iconColor).Render(icon)) || !strings.Contains(metric, lipgloss.NewStyle().Foreground(theme.Open).Render(GetStatusIcon(string(issue.Status)))) {
-					t.Error("metric badge/type/status semantic styling changed")
+					// The selected row is the shared list highlight: one span,
+					// no cursor glyph.
+					if metric != renderSelectedRow(theme, metric, 100) || strings.Contains(metric, "▸") {
+						t.Errorf("selected metric row is not the shared highlight: %q", ansi.Strip(metric))
+					}
+				} else {
+					badgeEnd := 2 + lipgloss.Width(valueStyle.Render("0.850"))
+					assertRange(metric, 0, 2, ordinary)
+					assertRange(metric, badgeEnd, badgeEnd+1, ordinary)
+					iconEnd := badgeEnd + 1 + ansi.StringWidth(icon)
+					assertRange(metric, iconEnd, iconEnd+1, ordinary)
+					assertRange(metric, iconEnd+2, iconEnd+3, ordinary)
+					assertRange(metric, iconEnd+3, iconEnd+3+len(issue.Title), ordinary)
+					assertRange(metric, iconEnd+3+len(issue.Title), ansi.StringWidth(ansi.Strip(metric)), theme.Text.Metadata)
+					if !strings.Contains(metric, valueStyle.Render("0.850")) || !strings.Contains(metric, lipgloss.NewStyle().Foreground(iconColor).Render(icon)) || !strings.Contains(metric, lipgloss.NewStyle().Foreground(theme.Open).Render(GetStatusIcon(string(issue.Status)))) {
+						t.Error("metric badge/type/status semantic styling changed")
+					}
 				}
 				priority := m.renderPriorityItem(analysis.TopPick{ID: issue.ID, Score: 0.85, Reasons: []string{"Useful work"}, Unblocks: 2}, 100, 10, selected, theme)
+				if strings.Contains(priority, "▸") {
+					t.Error("selected priority card should rely on its border and highlight, not a cursor glyph")
+				}
 				statusStyle := theme.Text.Badge.Foreground(theme.Open).UnsetBackground()
 				if selected {
 					statusStyle = theme.Text.Selected.Foreground(theme.Open)
@@ -104,6 +111,19 @@ func TestInsightsOrdinaryGapCellsTextRoles(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// Like the main list while details has focus, an unfocused insights panel
+// keeps its selected row highlighted.
+func TestInsightsUnfocusedPanelKeepsSelectionHighlight(t *testing.T) {
+	theme := DefaultTheme()
+	issue := &model.Issue{ID: "keep", Title: "Keep me lit", Status: model.StatusOpen, IssueType: model.TypeTask}
+	m := NewInsightsModel(analysis.Insights{Bottlenecks: []analysis.InsightItem{{ID: issue.ID, Value: 0.5}}}, map[string]*model.Issue{issue.ID: issue}, theme)
+	m.focusedPanel = PanelKeystones
+	out := m.renderMetricPanel(PanelBottlenecks, 80, 20, theme)
+	if strings.Contains(out, "▸") || !popupRowSelected(out, "Keep me lit", theme) {
+		t.Fatalf("unfocused panel lost its selection highlight:\n%s", ansi.Strip(out))
 	}
 }
 

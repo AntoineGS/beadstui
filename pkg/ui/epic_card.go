@@ -22,7 +22,7 @@ func (m Model) renderEpicCard() string {
 		return ""
 	}
 
-	opts := PopupOpts{Title: "Epic " + epic.ID, Theme: m.theme, Available: &PopupSize{m.width, max(0, m.height-1)}, Width: 70, Footer: []string{"j/k move · enter drill · esc close", "j/k enter esc"}}
+	opts := PopupOpts{Title: "Epic " + epic.ID, Theme: m.theme, Available: &PopupSize{m.width, max(0, m.height-1)}, Width: 70}
 	children := epicChildrenSorted(epic.ID, m.data.issues)
 	if len(children) == 0 {
 		return RenderPopup([]string{m.theme.Text.Metadata.Render("No children.")}, opts)
@@ -35,9 +35,6 @@ func (m Model) renderEpicCard() string {
 		if child.Status.IsClosed() {
 			done++
 			idStyle, titleStyle = idStyle.Faint(true), titleStyle.Faint(true)
-		}
-		if selected {
-			idStyle, titleStyle = m.theme.Text.Selected, m.theme.Text.Selected
 		}
 		gap := titleStyle.Render(" ")
 		label := RenderStatusBadge(string(child.Status)) + gap + RenderPriorityBadge(child.Priority) + gap + idStyle.Render(child.ID) + titleStyle.Render(" — ") + titleStyle.Render(child.Title)

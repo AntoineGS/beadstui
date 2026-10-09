@@ -320,7 +320,7 @@ func TestEpicsTree_ViewPinsFooterToBottom(t *testing.T) {
 			t.Errorf("height %d: View() emitted %d lines, want %d\n%s", h, got, h, v)
 		}
 		lines := strings.Split(v, "\n")
-		if last := lines[len(lines)-1]; !strings.Contains(last, "nav") {
+		if last := lines[len(lines)-1]; !strings.Contains(last, "zoom") {
 			t.Errorf("height %d: last line should be the key-hint footer, got %q", h, last)
 		}
 	}

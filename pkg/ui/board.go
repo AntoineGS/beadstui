@@ -1709,7 +1709,7 @@ func (b *BoardModel) renderDetailPanel(width, height int) string {
 		// No issue selected - show help text (use special marker to detect "no selection" state)
 		if b.lastDetailID != "_none_" {
 			b.lastDetailID = "_none_"
-			helpText := "## No Selection\n\nNavigate to a card with **h/l** and **j/k** to see details here.\n\nPress **Tab** to hide this panel."
+			helpText := "## No Selection\n\nSelect a card to see details here.\n\nPress **Tab** to hide this panel."
 			rendered := helpText
 			if b.mdRenderer != nil {
 				if md, err := b.mdRenderer.Render(helpText); err == nil {
