@@ -28,6 +28,7 @@ type proc struct {
 	mu          sync.Mutex
 	state       string
 	version     string
+	actions     []Action
 	failure     string
 	stderr      []string
 	restarts    int
@@ -61,7 +62,10 @@ type session struct {
 func (p *proc) status() Status {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	st := Status{Name: p.cfg.Name, State: p.state, Version: p.version, LastError: p.failure, Restarts: p.restarts}
+	st := Status{
+		Name: p.cfg.Name, State: p.state, Version: p.version, LastError: p.failure, Restarts: p.restarts,
+		Actions: append([]Action(nil), p.actions...),
+	}
 	if st.LastError == "" && len(p.stderr) > 0 {
 		st.LastError = p.stderr[len(p.stderr)-1]
 	}
@@ -128,7 +132,7 @@ func (p *proc) supervise(ctx context.Context) {
 		p.mu.Lock()
 		p.failure = end.reason
 		p.mu.Unlock()
-		if end.fatal || failures > len(p.h.restartBackoff) {
+		if end.fatal || p.h.opts.NoRestart || failures > len(p.h.restartBackoff) {
 			p.setState(stateFailed)
 			return
 		}
@@ -272,6 +276,10 @@ func (s *session) serve(ctx context.Context, exited, connDone <-chan struct{}) (
 	p.mu.Lock()
 	p.session = s
 	p.version = s.manifest.Version
+	p.actions = nil
+	for _, d := range s.manifest.Actions {
+		p.actions = append(p.actions, declaredAction(p.cfg, d))
+	}
 	p.failure = ""
 	p.mu.Unlock()
 	p.setState(stateActive)

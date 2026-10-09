@@ -15,6 +15,7 @@ import (
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/plugin"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 )
 
 // pluginActionSource lists and runs plugin actions. SetPluginHost sets it to
@@ -87,27 +88,59 @@ func (m Model) pluginView() string {
 // btBindsKey reports whether bt itself binds msg in view: a global binding,
 // one of the view's bindings, or a key the view's handler consumes anyway.
 func (m Model) btBindsKey(msg tea.KeyPressMsg, view string) bool {
-	maps := []help.KeyMap{m.keys.Global}
-	if km := m.viewSpecificKeyMap(); km != nil {
-		maps = append(maps, km)
+	return btBindsKeyIn(m.keys, view, msg.String())
+}
+
+// pluginViews are the views plugin action keys apply to.
+var pluginViews = []string{"list", "board", "tree", "epics"}
+
+// btBindsKeyIn reports whether ks binds key k in plugin view view (one of
+// pluginViews), as pluginView sees it: list not filtering, board not
+// searching.
+func btBindsKeyIn(ks keys.AppKeys, view, k string) bool {
+	maps := []help.KeyMap{ks.Global}
+	switch view {
+	case "list":
+		maps = append(maps, ks.ListNormal)
+	case "board":
+		maps = append(maps, ks.BoardNormal)
+	case "tree":
+		maps = append(maps, ks.Tree)
+	case "epics":
+		maps = append(maps, ks.Epics)
 	}
 	for _, km := range maps {
 		for _, group := range km.FullHelp() {
-			if key.Matches(msg, group...) {
+			if bindingsMatch(k, group...) {
 				return true
 			}
 		}
-		if key.Matches(msg, km.ShortHelp()...) {
+		if bindingsMatch(k, km.ShortHelp()...) {
 			return true
 		}
 	}
 	switch view {
 	case "list":
-		return key.Matches(msg, listPagingKeys)
+		return bindingsMatch(k, listPagingKeys)
 	case "board":
 		// handleBoardKeys reuses the list's status filter keys.
-		ln := m.keys.ListNormal
-		return key.Matches(msg, ln.FilterOpen, ln.FilterClosed, ln.FilterReady, ln.CycleStatusFilter)
+		ln := ks.ListNormal
+		return bindingsMatch(k, ln.FilterOpen, ln.FilterClosed, ln.FilterReady, ln.CycleStatusFilter)
+	}
+	return false
+}
+
+// bindingsMatch is key.Matches for a key string.
+func bindingsMatch(k string, bs ...key.Binding) bool {
+	for _, b := range bs {
+		if !b.Enabled() {
+			continue
+		}
+		for _, bk := range b.Keys() {
+			if bk == k {
+				return true
+			}
+		}
 	}
 	return false
 }

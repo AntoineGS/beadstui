@@ -260,7 +260,7 @@ func TestPluginStatusNotices(t *testing.T) {
 
 	updated, _ = m.Update(plugin.StatusMsg{Status: plugin.Status{Name: "example", State: "failed", LastError: "boom"}})
 	got := updated.(Model)
-	if got.statusMsg != "Plugin example failed: boom" || got.statusSeverity != SeverityFailure {
+	if got.statusMsg != "Plugin example failed: boom (P for details)" || got.statusSeverity != SeverityFailure {
 		t.Fatalf("failure notice = %q (%v)", got.statusMsg, got.statusSeverity)
 	}
 }
