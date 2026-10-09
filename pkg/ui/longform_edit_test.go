@@ -472,13 +472,29 @@ func TestEscalateLongformEditor_NoEditorSet(t *testing.T) {
 	m.requestFieldEdit()
 	m2, _ := m.handleFieldSelectKeys(tea.KeyPressMsg{Code: 'd', Text: "d"})
 	m = m2
-	m2, cmd := m.handleLongformEditKeys(tea.KeyPressMsg{Code: 'E', Text: "E"})
+	m2, cmd := m.handleLongformEditKeys(tea.KeyPressMsg{Code: 'e', Mod: tea.ModCtrl})
 	m = m2
 	if cmd != nil {
 		t.Error("escalate with no $EDITOR/$VISUAL must not dispatch a cmd")
 	}
 	if m.statusSeverity != SeverityFailure || !strings.Contains(m.statusMsg, "$EDITOR") {
 		t.Errorf("expected a failure toast naming $EDITOR, got severity=%v msg=%q", m.statusSeverity, m.statusMsg)
+	}
+}
+
+// E is an ordinary letter in a long-form buffer; only ctrl+e escalates.
+func TestLongformEdit_CapitalETypesIntoBuffer(t *testing.T) {
+	t.Setenv("EDITOR", "some-editor-binary-that-does-not-need-to-exist")
+	m := newSizedModel(t, longformTestIssues(), 120, 32)
+	mustSelectTarget(t, &m)
+	m.requestFieldEdit()
+	m2, _ := m.handleFieldSelectKeys(tea.KeyPressMsg{Code: 'd', Text: "d"})
+	m = m2
+	m.longformEdit.textarea.SetValue("")
+	m2, _ = m.handleLongformEditKeys(tea.KeyPressMsg{Code: 'E', Text: "E"})
+	m = m2
+	if got := m.longformEdit.textarea.Value(); got != "E" {
+		t.Fatalf("textarea value = %q, want %q", got, "E")
 	}
 }
 
@@ -496,7 +512,7 @@ func TestEscalateLongformEditor_WritesTempfileWhenEditorSet(t *testing.T) {
 	m = m2
 	m.longformEdit.textarea.SetValue("buffer at escalation time")
 
-	m2, cmd := m.handleLongformEditKeys(tea.KeyPressMsg{Code: 'E', Text: "E"})
+	m2, cmd := m.handleLongformEditKeys(tea.KeyPressMsg{Code: 'e', Mod: tea.ModCtrl})
 	m = m2
 	if cmd == nil {
 		t.Fatal("escalate with $EDITOR set should return a non-nil cmd")

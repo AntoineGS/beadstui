@@ -238,9 +238,9 @@ type LongformEditKeys struct {
 	Commit key.Binding
 
 	// Escalate hands the current buffer to $EDITOR/$VISUAL via tea.ExecProcess
-	// (tkhq Q5). Bound to uppercase E ONLY inside this modal - the global `E`
-	// binding elsewhere in bt stays Epics (list.go); this binding intercepts
-	// before the textarea would otherwise insert the literal character.
+	// (tkhq Q5). ctrl+e, not a letter, so every character stays typeable
+	// (bt-y07). It intercepts before the textarea, shadowing the textarea's
+	// emacs line-end binding; End still moves to the end of the line.
 	Escalate key.Binding
 
 	// Cancel is dirty-guard gated (handleLongformEscape, longform_edit.go):
@@ -259,8 +259,8 @@ func NewLongformEditKeys() LongformEditKeys {
 			key.WithHelp("ctrl+s", "commit edit"),
 		),
 		Escalate: key.NewBinding(
-			key.WithKeys("E"),
-			key.WithHelp("E", "escalate to $EDITOR"),
+			key.WithKeys("ctrl+e"),
+			key.WithHelp("ctrl+e", "escalate to $EDITOR"),
 		),
 		Cancel: key.NewBinding(
 			key.WithKeys("esc"),
