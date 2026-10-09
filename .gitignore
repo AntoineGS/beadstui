@@ -26,6 +26,8 @@ benchmarks/current.txt
 # .bt.lock is a sibling lock file (not inside .bt/), leaked into the tree by
 # test runs that launch bt; matches in any directory.
 .bt.lock
+# bd's flock beside .beads/; bd leaves it in place by design.
+.beads.gate.lock
 beads_report_beadstui_*.md
 
 # Nix build artifacts
