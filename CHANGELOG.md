@@ -6,6 +6,14 @@ For architectural decisions, see `docs/adr/`. For issue tracking, use `bd list`.
 
 ---
 
+## 2026-10-08 - Long-form editor: ctrl+e opens $EDITOR
+
+**A capital E typed into a description, comment or notes popup opened $EDITOR instead of inserting the letter. The editor shortcut is now ctrl+e.**
+
+- **fix: `ctrl+e` escalates to $EDITOR in long-form edit popups.** Every letter is typeable again. ctrl+e replaces the textarea's emacs line-end key inside these popups; End still moves to the end of the line. (bt-y07)
+
+---
+
 ## 2026-10-08 - Plugins: beads.sync carries updated_at and blocked
 
 **Plugins had to guess when a bead last changed and shell out to `bd ready` to learn whether it was blocked. `beads.sync` now sends both.**

@@ -118,7 +118,7 @@ func TestPopupFooters_OnlyNonObviousKeys(t *testing.T) {
 		{"field select", sized(&fieldSelect), nil},
 		{"status picker", sized(&statusPicker), []string{"* current"}},
 		{"field input", sized(&fieldInput), nil},
-		{"longform", sized(&longform), []string{"ctrl+s commit", "E $EDITOR"}},
+		{"longform", sized(&longform), []string{"ctrl+s commit", "ctrl+e $EDITOR"}},
 		{"bql", sized(&bql), []string{"↑/↓ history"}},
 		{"recipes", sized(&recipes), nil},
 		{"labels", sized(&labels), []string{"space toggle", "/ search", "←/→ page"}},
