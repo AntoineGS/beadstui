@@ -83,19 +83,20 @@ func openBrowserURL(url string) error {
 	return cmd.Start()
 }
 
-// exportToMarkdown exports all issues to a Markdown file with auto-generated filename
+// exportToMarkdown exports the visible issues to a Markdown file with an
+// auto-generated filename.
 func (m *Model) exportToMarkdown() {
 	// Generate smart filename: beads_report_<project>_YYYY-MM-DD.md
 	filename := m.generateExportFilename()
 
-	// Export the issues
-	err := export.SaveMarkdownToFile(m.data.issues, filename)
+	issues := m.visibleIssues()
+	err := export.SaveMarkdownToFile(issues, filename)
 	if err != nil {
 		m.setFailure(fmt.Sprintf("%s Export failed: %v", activeGlyphs.Cross, err))
 		return
 	}
 
-	m.setStatus(fmt.Sprintf("%s Exported %d issues to %s", activeGlyphs.Success, len(m.data.issues), filename))
+	m.setStatus(fmt.Sprintf("%s Exported %d issues to %s", activeGlyphs.Success, len(issues), filename))
 }
 
 // generateExportFilename creates a smart filename based on project and date

@@ -711,7 +711,14 @@ type FilterState struct {
 	recipeLoader  *recipe.Loader
 	bqlEngine     *bql.MemoryExecutor
 	activeBQLExpr *bql.Query // Parsed BQL expression (nil = no BQL filter active)
-	appliedKey    string     // filterKey of the list's current contents (bt-qc3)
+	appliedKey    string     // cursorKey of the list's current contents (bt-qc3)
+
+	// The visible set (bt-imh): every display and count reads these. Set by
+	// refreshVisible and reordered to list order by applyFilter.
+	visible    []model.Issue
+	visibleIDs map[string]struct{}
+	visibleKey string // FilterSpec.Key of visible
+	scopeCount int    // issues in project scope, ignoring primary and labels
 }
 
 // AnalysisCache holds derived data computed from graph analysis. Not filter state -
@@ -732,6 +739,13 @@ type AnalysisCache struct {
 	blockerSet        map[string]bool                             // issueID -> true if significant blocker
 	priorityHints     map[string]*analysis.PriorityRecommendation // issueID -> recommendation
 	showPriorityHints bool
+
+	// Triage over the visible set (bt-imh). triageKey is the visibleKey it was
+	// computed for; triageWaitPhase2 holds recomputation between new data and
+	// Phase2Ready so a reload pays for triage once.
+	triage           *analysis.TriageResult
+	triageKey        string
+	triageWaitPhase2 bool
 }
 
 // DataState holds the core issue data, analysis engine, and data loading infrastructure.
@@ -1085,9 +1099,8 @@ type labelFlowSummary struct {
 // getCrossFlowsForLabel returns outgoing cross-label dependency counts for a label
 func (m Model) getCrossFlowsForLabel(label string) labelFlowSummary {
 	cfg := analysis.DefaultLabelHealthConfig()
-	// Scope to the active workspace repo filter (bt-dcby.3) so cross-label
-	// dependencies from other projects don't leak into the drilldown.
-	flow := analysis.ComputeCrossLabelFlow(m.workspacePrefilter(m.data.issues), cfg)
+	// Scoped to the visible set (bt-imh).
+	flow := analysis.ComputeCrossLabelFlow(m.filter.visible, cfg)
 	out := labelFlowSummary{}
 	inCounts := make(map[string]int)
 	outCounts := make(map[string]int)
@@ -1133,7 +1146,7 @@ func (m Model) filterIssuesByLabel(label string) []model.Issue {
 	}
 
 	var out []model.Issue
-	for _, iss := range m.data.issues {
+	for _, iss := range m.filter.visible {
 		for _, l := range iss.Labels {
 			if l == label {
 				out = append(out, iss)
@@ -1560,6 +1573,7 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 			unblocksMap:       unblocksMap,
 			quickWinSet:       quickWinSet,
 			blockerSet:        blockerSet,
+			triageWaitPhase2:  true,
 		},
 		list:                   l,
 		viewport:               vp,
@@ -1625,10 +1639,8 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 		// Write-routing table (bt-scc35)
 		routeTable: routeTable,
 	}
-	if startFilter != "all" {
-		m.applyFilter()
-	}
-	m.filter.appliedKey = m.filterKey()
+	m.applyFilter()
+	m.filter.appliedKey = m.cursorKey()
 	m.refreshThemeConsumers()
 	return m
 }
@@ -1745,6 +1757,9 @@ func (m *Model) replaceIssues(newIssues []model.Issue) {
 	m.data.analysis = cachedAnalyzer.AnalyzeAsync(context.Background())
 	m.labelHealthCached = false
 	m.attentionCached = false
+	m.ac.triage = nil
+	m.ac.triageWaitPhase2 = true
+	m.filter.visibleKey = "" // new data: applyFilter refreshes open analysis views
 
 	// Rebuild lookup map
 	m.data.issueMap = make(map[string]*model.Issue, len(newIssues))
@@ -1767,26 +1782,6 @@ func (m *Model) replaceIssues(newIssues []model.Issue) {
 		m.closeModal()
 	}
 
-	// Rebuild list items
-	items := make([]list.Item, len(m.data.issues))
-	for i := range m.data.issues {
-		item := IssueItem{
-			Issue:      m.data.issues[i],
-			GraphScore: m.data.analysis.GetPageRankScore(m.data.issues[i].ID),
-			Impact:     m.data.analysis.GetCriticalPathScore(m.data.issues[i].ID),
-			RepoPrefix: ExtractRepoPrefix(m.data.issues[i].ID),
-		}
-		item.TriageScore = m.ac.triageScores[m.data.issues[i].ID]
-		if reasons, exists := m.ac.triageReasons[m.data.issues[i].ID]; exists {
-			item.TriageReason = reasons.Primary
-			item.TriageReasons = reasons.All
-		}
-		item.IsQuickWin = m.ac.quickWinSet[m.data.issues[i].ID]
-		item.IsBlocker = m.ac.blockerSet[m.data.issues[i].ID]
-		item.UnblocksCount = len(m.ac.unblocksMap[m.data.issues[i].ID])
-		items[i] = item
-	}
-	m.updateSemanticIDs(items)
 	m.clearSemanticScores()
 	if m.semanticSearch != nil {
 		m.semanticSearch.ResetCache()
@@ -1794,7 +1789,7 @@ func (m *Model) replaceIssues(newIssues []model.Issue) {
 	}
 	m.semanticHybridReady = false
 	m.semanticHybridBuilding = false
-	m.setListItems(items)
+	m.applyFilter()
 
 	// Invalidate label-derived caches
 	m.labelHealthCached = false

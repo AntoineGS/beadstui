@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/bql"
 	"github.com/seanmartinsmith/beadstui/pkg/correlation"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
@@ -18,8 +19,7 @@ import (
 )
 
 // setListItems sets list items while preserving any active Bubbles filter
-// (bt-nzsy) AND any active workspace project filter (bt-lwdy). It is the single
-// source of truth for what lands in the list view across all refresh paths.
+// (bt-nzsy).
 //
 //   - Bubbles filter (the `/` search): list.Model.SetItems clears the internal
 //     filteredItems slice when a filter is active but does not re-run the match,
@@ -27,37 +27,13 @@ import (
 //     text to trigger a re-match. SetFilterText synchronously re-runs the
 //     filter against the new items, restoring search persistence across
 //     background refreshes.
-//   - activeRepos (the project picker in workspace/global mode): some refresh
-//     paths (replaceIssues -> handleDataSourceReload, sync handleFileChanged)
-//     hand us the full unfiltered item set rebuilt straight from m.data.issues.
-//     Without this safety net the project picker selection is wiped on every
-//     Dolt poll. Filtering here keeps activeRepos sticky regardless of which
-//     path called us — already-filtered callers (applyFilter, applyRecipe,
-//     applyBQL, the recipe/non-recipe branches of handleSnapshotReady) pass
-//     items that already satisfy activeRepos, so the additional filter is a
-//     no-op for them.
+//   - Every caller passes items built from the visible set (bt-imh), so this
+//     function no longer filters.
 //
 // All refresh paths that replace list items MUST go through this wrapper.
 // A guard test (TestNoRawListSetItems) fails if m.list.SetItems is called
 // directly outside this function.
 func (m *Model) setListItems(items []list.Item) {
-	if m.workspaceMode && m.activeRepos != nil {
-		filtered := make([]list.Item, 0, len(items))
-		for _, it := range items {
-			issueItem, ok := it.(IssueItem)
-			if !ok {
-				// Non-IssueItem entries (none today, but be safe) pass through.
-				filtered = append(filtered, it)
-				continue
-			}
-			repoKey := IssueRepoKey(issueItem.Issue)
-			if repoKey == "" || m.activeRepos[repoKey] {
-				filtered = append(filtered, it)
-			}
-		}
-		items = filtered
-	}
-
 	// The footer's actionable triad is scoped to exactly what the list shows.
 	// setListItems is the single chokepoint for list contents, so computing the
 	// triad here keeps it in lockstep with TotalItems (= len(list items)) and
@@ -78,35 +54,264 @@ func (m *Model) setListItems(items []list.Item) {
 
 	// A new filter starts at the first row; a refresh under the same filter
 	// keeps the selection (bt-qc3).
-	if key := m.filterKey(); key != m.filter.appliedKey {
+	if key := m.cursorKey(); key != m.filter.appliedKey {
 		m.filter.appliedKey = key
 		m.list.Select(0)
 	}
 }
 
-// filterKey identifies what the list is filtered by: status/BQL/recipe,
-// label and project scope. The / search is tracked separately.
-func (m *Model) filterKey() string {
-	status, recipeName := m.filter.currentFilter, ""
-	if m.filter.activeRecipe != nil {
-		recipeName = m.filter.activeRecipe.Name
-		// cmd/bt starts a recipe as "all" and the first snapshot renames it.
-		if status == "recipe:"+recipeName {
-			status = "all"
-		}
+// filterSpec derives the engine's spec from the model's filter state.
+func (m *Model) filterSpec() FilterSpec {
+	spec := FilterSpec{
+		Workspace: m.workspaceMode,
+		Repos:     m.activeRepos,
+		Status:    m.filter.currentFilter,
+		ShowWisps: m.showWisps,
 	}
-	scope := "*" // all projects
-	if m.workspaceMode && m.activeRepos != nil {
-		var repos []string
-		for repo, on := range m.activeRepos {
-			if on {
-				repos = append(repos, repo)
+	if m.filter.labelFilter != "" {
+		spec.Labels = strings.Split(m.filter.labelFilter, ",")
+	}
+	switch {
+	case m.filter.activeBQLExpr != nil && strings.HasPrefix(m.filter.currentFilter, "bql:"):
+		spec.BQL = m.filter.activeBQLExpr
+		spec.BQLText = strings.TrimPrefix(m.filter.currentFilter, "bql:")
+	case m.filter.activeRecipe != nil:
+		spec.Recipe = m.filter.activeRecipe
+	}
+	return spec
+}
+
+func (m *Model) filterEnv() FilterEnv {
+	return FilterEnv{
+		IssueMap: m.data.issueMap,
+		BQL:      m.filter.bqlEngine,
+		BQLOpts:  m.bqlExecuteOpts(),
+		Stats:    m.data.analysis,
+	}
+}
+
+// applySpec evaluates a variant of the active filter (facet counts, scope
+// totals) against the full corpus.
+func (m *Model) applySpec(spec FilterSpec) []model.Issue {
+	return spec.Apply(m.data.issues, m.filterEnv())
+}
+
+// refreshVisible recomputes the visible set from the active filter.
+func (m *Model) refreshVisible() {
+	spec := m.filterSpec()
+	m.filter.visible = m.applySpec(spec)
+	m.filter.visibleIDs = make(map[string]struct{}, len(m.filter.visible))
+	for i := range m.filter.visible {
+		m.filter.visibleIDs[m.filter.visible[i].ID] = struct{}{}
+	}
+	m.filter.visibleKey = spec.Key()
+	m.filter.scopeCount = len(m.applySpec(spec.Without(DimPrimary | DimLabels)))
+}
+
+// visibleIssues is the visible set in list order.
+func (m *Model) visibleIssues() []model.Issue {
+	return m.filter.visible
+}
+
+// cursorKey identifies a filter for bt-qc3 (a new filter starts at the first
+// row). Toggling wisps is a refresh, not a new filter.
+func (m *Model) cursorKey() string {
+	return m.filterSpec().Without(DimWisps).Key()
+}
+
+// canUseSnapshot reports whether the precomputed board/graph/tree in the
+// snapshot shows exactly the visible set. The count check catches hidden
+// wisps, which snapshots include.
+func (m *Model) canUseSnapshot(spec FilterSpec, visibleCount int) bool {
+	s := m.data.snapshot
+	if s == nil || visibleCount != len(s.Issues) {
+		return false
+	}
+	if spec.Recipe != nil && spec.BQL == nil {
+		return spec.Without(DimPrimary).IsUnfiltered() &&
+			s.RecipeName == spec.Recipe.Name && s.RecipeHash == recipeFingerprint(spec.Recipe)
+	}
+	return spec.IsUnfiltered()
+}
+
+// buildIssueItem is the one place list items are built from issues.
+func (m *Model) buildIssueItem(issue model.Issue, epics map[string]epicProgressCount) IssueItem {
+	item := IssueItem{
+		Issue:      issue,
+		DiffStatus: m.getDiffStatus(issue.ID),
+		RepoPrefix: ExtractRepoPrefix(issue.ID),
+	}
+	if m.data.analysis != nil {
+		item.GraphScore = m.data.analysis.GetPageRankScore(issue.ID)
+		item.Impact = m.data.analysis.GetCriticalPathScore(issue.ID)
+	}
+	item.TriageScore = m.ac.triageScores[issue.ID]
+	if reasons, ok := m.ac.triageReasons[issue.ID]; ok {
+		item.TriageReason = reasons.Primary
+		item.TriageReasons = reasons.All
+	}
+	item.IsQuickWin = m.ac.quickWinSet[issue.ID]
+	item.IsBlocker = m.ac.blockerSet[issue.ID]
+	item.UnblocksCount = len(m.ac.unblocksMap[issue.ID])
+	if issue.IssueType == model.TypeEpic {
+		c := epics[issue.ID]
+		item.EpicDone, item.EpicTotal = c.done, c.total
+	}
+	item.GateAwaitType = gateAwaitFromBlockers(issue, m.data.issueMap)
+	return item
+}
+
+// ensureTriageForVisible ranks triage over the visible set: list-row badges,
+// insights top picks and recommendations. It recomputes once per filter key
+// and data load; force skips the Phase 2 wait (opening insights).
+func (m *Model) ensureTriageForVisible(force bool) {
+	if m.ac.triage != nil && m.ac.triageKey == m.filter.visibleKey {
+		return
+	}
+	if m.ac.triageWaitPhase2 && !force {
+		return
+	}
+	triage := analysis.ComputeTriageWithOptions(m.filter.visible, analysis.TriageOptions{WaitForPhase2: true})
+	m.setTriage(&triage)
+	m.ac.triageKey = m.filter.visibleKey
+}
+
+// setTriage installs a triage result as the list-row badge maps.
+func (m *Model) setTriage(t *analysis.TriageResult) {
+	scores := make(map[string]float64, len(t.Recommendations))
+	reasons := make(map[string]analysis.TriageReasons, len(t.Recommendations))
+	unblocks := make(map[string][]string, len(t.Recommendations))
+	quickWins := make(map[string]bool, len(t.QuickWins))
+	blockers := make(map[string]bool, len(t.BlockersToClear))
+	for _, rec := range t.Recommendations {
+		scores[rec.ID] = rec.Score
+		if len(rec.Reasons) > 0 {
+			reasons[rec.ID] = analysis.TriageReasons{Primary: rec.Reasons[0], All: rec.Reasons, ActionHint: rec.Action}
+		}
+		unblocks[rec.ID] = rec.UnblocksIDs
+	}
+	for _, qw := range t.QuickWins {
+		quickWins[qw.ID] = true
+	}
+	for _, bl := range t.BlockersToClear {
+		blockers[bl.ID] = true
+	}
+	m.ac.triage = t
+	m.ac.triageScores, m.ac.triageReasons, m.ac.unblocksMap = scores, reasons, unblocks
+	m.ac.quickWinSet, m.ac.blockerSet = quickWins, blockers
+}
+
+func triageDataHash(t *analysis.TriageResult) string {
+	return fmt.Sprintf("v%s@%s#%d", t.Meta.Version, t.Meta.GeneratedAt.Format("15:04:05"), t.Meta.IssueCount)
+}
+
+// visibleInsights drops hidden issues from the graph-metric rankings. The
+// metrics themselves stay computed over the full graph (spec exceptions);
+// ClusterDensity and Velocity are whole-graph values and pass through.
+func (m *Model) visibleInsights(ins analysis.Insights) analysis.Insights {
+	ids := m.filter.visibleIDs
+	if ids == nil || len(m.filter.visible) == len(m.data.issueMap) {
+		return ins
+	}
+	keepItems := func(items []analysis.InsightItem) []analysis.InsightItem {
+		out := items[:0:0]
+		for _, it := range items {
+			if _, ok := ids[it.ID]; ok {
+				out = append(out, it)
 			}
 		}
-		sort.Strings(repos)
-		scope = strings.Join(repos, ",")
+		return out
 	}
-	return strings.Join([]string{status, m.filter.labelFilter, recipeName, scope}, "\x00")
+	keepIDs := func(in []string) []string {
+		out := in[:0:0]
+		for _, id := range in {
+			if _, ok := ids[id]; ok {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+	ins.Bottlenecks = keepItems(ins.Bottlenecks)
+	ins.Keystones = keepItems(ins.Keystones)
+	ins.Influencers = keepItems(ins.Influencers)
+	ins.Hubs = keepItems(ins.Hubs)
+	ins.Authorities = keepItems(ins.Authorities)
+	ins.Cores = keepItems(ins.Cores)
+	ins.Slack = keepItems(ins.Slack)
+	ins.Articulation = keepIDs(ins.Articulation)
+	ins.Orphans = keepIDs(ins.Orphans)
+	// A cycle is shown only when every member is visible: listing a partial
+	// cycle would show hidden issues or invent a cycle that isn't there.
+	var cycles [][]string
+	for _, c := range ins.Cycles {
+		if len(keepIDs(c)) == len(c) {
+			cycles = append(cycles, c)
+		}
+	}
+	ins.Cycles = cycles
+	return ins
+}
+
+// refreshLabelDashboard computes label health over the visible set.
+func (m *Model) refreshLabelDashboard() {
+	if !m.labelHealthCached {
+		cfg := analysis.DefaultLabelHealthConfig()
+		m.labelHealthCache = analysis.ComputeAllLabelHealth(m.filter.visible, cfg, time.Now().UTC(), m.data.analysis)
+		m.labelHealthCached = true
+	}
+	m.labelDashboard.SetData(m.labelHealthCache.Labels)
+	m.labelDashboard.SetSize(m.width, m.height-1)
+	m.setStatus(fmt.Sprintf("Labels: %d total • critical %d • warning %d", m.labelHealthCache.TotalLabels, m.labelHealthCache.CriticalCount, m.labelHealthCache.WarningCount))
+}
+
+// refreshAttentionView computes attention scores and text over the visible set.
+func (m *Model) refreshAttentionView() {
+	if !m.attentionCached {
+		cfg := analysis.DefaultLabelHealthConfig()
+		m.attentionCache = analysis.ComputeLabelAttentionScores(m.filter.visible, cfg, time.Now().UTC())
+		m.attentionCached = true
+	}
+	attText, _ := ComputeAttentionView(m.filter.visible, max(40, m.width-4))
+	m.insightsPanel = NewInsightsModel(analysis.Insights{}, m.data.issueMap, m.theme)
+	m.insightsPanel.labelAttention = m.attentionCache.Labels
+	m.insightsPanel.extraText = attText
+	m.insightsPanel.SetSize(m.width, max(3, m.height-2))
+}
+
+// refreshFlowMatrix computes cross-label flow over the visible set.
+func (m *Model) refreshFlowMatrix() {
+	cfg := analysis.DefaultLabelHealthConfig()
+	flow := analysis.ComputeCrossLabelFlow(m.filter.visible, cfg)
+	m.flowMatrix = NewFlowMatrixModel(m.theme)
+	m.flowMatrix.SetData(&flow, m.filter.visible)
+	m.flowMatrix.SetSize(m.width, max(3, m.height-2))
+}
+
+// refreshActionableView builds the execution plan from the visible set.
+func (m *Model) refreshActionableView() {
+	plan := analysis.NewAnalyzer(m.filter.visible).GetExecutionPlan()
+	m.actionableView = NewActionableModel(plan, m.theme)
+	m.actionableView.SetSize(m.width, m.height-2)
+}
+
+// refreshAnalysisViews recomputes the open analysis view after a filter change.
+func (m *Model) refreshAnalysisViews() {
+	switch m.mode {
+	case ViewActionable:
+		m.refreshActionableView()
+	case ViewLabelDashboard:
+		m.refreshLabelDashboard()
+	case ViewAttention:
+		m.refreshAttentionView()
+	case ViewFlowMatrix:
+		m.refreshFlowMatrix()
+	case ViewInsights:
+		// Rebuilding the panel resets its cursor; keep the user's pane and row.
+		panel := m.insightsPanel.FocusedPanel()
+		row := m.insightsPanel.SelectedIndexFor(panel)
+		m.openInsightsView()
+		m.insightsPanel.RestoreCursor(panel, row)
+	}
 }
 
 // lensTriad (footer_triad.go) is the bt-p8y2f successor to the former
@@ -264,231 +469,54 @@ func (m *Model) setActiveRecipe(r *recipe.Recipe) {
 	}
 }
 
-func (m *Model) matchesCurrentFilter(issue model.Issue) bool {
-	// Workspace repo filter (nil = all repos)
-	if m.workspaceMode && m.activeRepos != nil {
-		repoKey := IssueRepoKey(issue)
-		if repoKey != "" && !m.activeRepos[repoKey] {
-			return false
-		}
-	}
-
-	// Status filter
-	switch m.filter.currentFilter {
-	case "all":
-		// pass
-	case "open":
-		if isClosedLikeStatus(issue.Status) {
-			return false
-		}
-	case "in_progress":
-		if issue.Status != model.StatusInProgress {
-			return false
-		}
-	case "blocked":
-		if issue.Status != model.StatusBlocked {
-			return false
-		}
-	case "deferred":
-		if issue.Status != model.StatusDeferred {
-			return false
-		}
-	case "closed":
-		if !isClosedLikeStatus(issue.Status) {
-			return false
-		}
-	case "ready":
-		// Ready = Open/InProgress AND NO Open Blockers
-		if isClosedLikeStatus(issue.Status) || issue.Status == model.StatusBlocked {
-			return false
-		}
-		for _, dep := range issue.Dependencies {
-			if dep == nil || !dep.Type.IsBlocking() {
-				continue
-			}
-			if blocker, exists := m.data.issueMap[dep.DependsOnID]; exists && !isClosedLikeStatus(blocker.Status) {
-				return false
-			}
-		}
-	default:
-		// Legacy: handle "label:X" in currentFilter for backwards compat
-		// (new path uses labelFilter field)
-		if strings.HasPrefix(m.filter.currentFilter, "label:") {
-			lf := strings.TrimPrefix(m.filter.currentFilter, "label:")
-			if !matchesLabelFilter(issue, lf) {
-				return false
-			}
-		} else {
-			return false
-		}
-	}
-
-	// Label filter (independent dimension, composes with status filter)
-	if m.filter.labelFilter != "" {
-		if !matchesLabelFilter(issue, m.filter.labelFilter) {
-			return false
-		}
-	}
-
-	return true
-}
-
-// matchesLabelFilter checks if an issue has any of the comma-separated labels.
-func matchesLabelFilter(issue model.Issue, labelFilter string) bool {
-	labels := strings.Split(labelFilter, ",")
-	for _, fl := range labels {
-		for _, l := range issue.Labels {
-			if l == fl {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func (m *Model) filteredIssuesForActiveView() []model.Issue {
-	// BQL filter active? Use BQL executor (set-level operations: ORDER BY, EXPAND)
-	if m.filter.activeBQLExpr != nil && strings.HasPrefix(m.filter.currentFilter, "bql:") {
-		issues := m.workspacePrefilter(m.data.issues)
-		// bt-9kdo: skip wisps when hidden
-		if !m.showWisps {
-			filtered := make([]model.Issue, 0, len(issues))
-			for _, issue := range issues {
-				if issue.Ephemeral == nil || !*issue.Ephemeral {
-					filtered = append(filtered, issue)
-				}
-			}
-			issues = filtered
-		}
-		opts := m.bqlExecuteOpts()
-		return m.filter.bqlEngine.Execute(m.filter.activeBQLExpr, issues, opts)
-	}
-
-	filtered := make([]model.Issue, 0, len(m.data.issues))
-	recipeFilterActive := m.filter.activeRecipe != nil && strings.HasPrefix(m.filter.currentFilter, "recipe:")
-	if recipeFilterActive {
-		for _, issue := range m.data.issues {
-			// bt-9kdo: skip wisps when hidden
-			if !m.showWisps && issue.Ephemeral != nil && *issue.Ephemeral {
-				continue
-			}
-			if m.workspaceMode && m.activeRepos != nil {
-				repoKey := IssueRepoKey(issue)
-				if repoKey != "" && !m.activeRepos[repoKey] {
-					continue
-				}
-			}
-			if issueMatchesRecipe(issue, m.data.issueMap, m.filter.activeRecipe) {
-				filtered = append(filtered, issue)
-			}
-		}
-		sortIssuesByRecipe(filtered, m.data.analysis, m.filter.activeRecipe)
-		return filtered
-	}
-	for _, issue := range m.data.issues {
-		// bt-9kdo: skip wisps when hidden
-		if !m.showWisps && issue.Ephemeral != nil && *issue.Ephemeral {
-			continue
-		}
-		if m.matchesCurrentFilter(issue) {
-			filtered = append(filtered, issue)
-		}
-	}
-	return filtered
-}
-
-// reapplyActiveFilter re-runs whichever filter (recipe, BQL, or plain
-// status/label) is currently active by dispatching to the same apply*
-// code paths the interactive filter UI uses (the BQL modal, the recipe
-// picker, the status/label filter keys). Reload paths that rebuild list
-// items straight from the full m.data.issues (e.g. replaceIssues) MUST call
-// this afterward -- setListItems only preserves the Bubbles `/` text filter
-// and the workspace activeRepos filter, not BQL, recipe, or plain-filter
-// state, so without this an active filter silently reverts to the full
-// unfiltered corpus on the next reload (bt-hhg1r.1, bt-k9f6f).
-//
-// This is the single reapply helper for every rebuild-from-scratch path
-// (handleDataSourceReload, handleFileChanged, handlePhase2Ready,
-// rebuildListWithDiffInfo) -- do not duplicate this recipe/BQL/plain
-// dispatch inline at a new call site; call this instead (bt-k9f6f).
-func (m *Model) reapplyActiveFilter() {
-	if m.filter.activeRecipe != nil {
-		m.applyRecipe(m.filter.activeRecipe)
-		return
-	}
-	if m.filter.activeBQLExpr != nil && strings.HasPrefix(m.filter.currentFilter, "bql:") {
-		queryStr := strings.TrimPrefix(m.filter.currentFilter, "bql:")
-		m.applyBQL(m.filter.activeBQLExpr, queryStr)
-		return
-	}
-	// No recipe or BQL active: fall back to the plain status/label filter
-	// path. applyFilter() reads m.filter.currentFilter/labelFilter directly
-	// against m.data.issues, so it's correct for "all" (no-op reapply) as
-	// well as "open"/"closed"/"ready"/"label:X" (bt-k9f6f).
-	m.applyFilter()
-}
-
 func (m *Model) refreshBoardAndGraphForCurrentFilter() {
 	if m.mode != ViewBoard && m.mode != ViewGraph {
 		return
 	}
 
-	filteredIssues := m.filteredIssuesForActiveView()
-	recipeFilterActive := m.filter.activeRecipe != nil && strings.HasPrefix(m.filter.currentFilter, "recipe:")
-	if m.mode == ViewBoard {
-		useSnapshot := m.data.snapshot != nil && m.data.snapshot.BoardState != nil && (!m.workspaceMode || m.activeRepos == nil) && len(filteredIssues) == len(m.data.snapshot.Issues)
-		if useSnapshot {
-			if recipeFilterActive {
-				useSnapshot = m.data.snapshot.RecipeName == m.filter.activeRecipe.Name && m.data.snapshot.RecipeHash == recipeFingerprint(m.filter.activeRecipe)
-			} else {
-				useSnapshot = m.filter.currentFilter == "all"
-			}
-		}
-		if useSnapshot {
-			m.board.SetSnapshot(m.data.snapshot)
-		} else {
-			m.board.SetIssues(filteredIssues)
-		}
-	}
+	m.refreshBoardAndGraph(m.filter.visible)
+}
 
-	if m.mode == ViewGraph {
-		useSnapshot := m.data.snapshot != nil && m.data.snapshot.GraphLayout != nil && len(filteredIssues) == len(m.data.snapshot.Issues)
-		if useSnapshot {
-			if recipeFilterActive {
-				useSnapshot = m.data.snapshot.RecipeName == m.filter.activeRecipe.Name && m.data.snapshot.RecipeHash == recipeFingerprint(m.filter.activeRecipe)
-			} else {
-				useSnapshot = m.filter.currentFilter == "all"
-			}
+// refreshBoardAndGraph feeds the board and graph from the visible set,
+// reusing the snapshot's precomputed layout only when it shows the same set.
+func (m *Model) refreshBoardAndGraph(issues []model.Issue) {
+	snap := m.canUseSnapshot(m.filterSpec(), len(issues))
+	if snap && m.data.snapshot.BoardState != nil {
+		m.board.SetSnapshot(m.data.snapshot)
+	} else {
+		m.board.SetIssues(issues)
+	}
+	if snap && m.data.snapshot.GraphLayout != nil {
+		m.graphView.SetSnapshot(m.data.snapshot)
+	} else {
+		var ins analysis.Insights
+		if m.data.analysis != nil {
+			ins = m.data.analysis.GenerateInsights(len(issues))
 		}
-		if useSnapshot {
-			m.graphView.SetSnapshot(m.data.snapshot)
-		} else {
-			filterIns := m.data.analysis.GenerateInsights(len(filteredIssues))
-			m.graphView.SetIssues(filteredIssues, &filterIns)
-		}
+		m.graphView.SetIssues(issues, &ins)
 	}
 }
 
-// rebuildTreeForCurrentFilter rebuilds the tree view's bead set from the
-// current data, respecting the workspace-mode project filter (activeRepos).
-// Mirrors refreshBoardAndGraphForCurrentFilter for the tree consumer (bt-dcby.2).
-//
-// No-op when the tree view is not the active mode. The snapshot's precomputed
-// tree is built over the full unfiltered set, so when activeRepos is filtering
-// we bypass the snapshot fast path and Build() over the prefiltered slice.
+// rebuildTreeForCurrentFilter rebuilds the tree view from the visible set
+// (bt-imh). A child whose parent is filtered out becomes a root. No-op outside
+// the tree view.
 func (m *Model) rebuildTreeForCurrentFilter() {
 	if m.mode != ViewTree {
 		return
 	}
-	if m.workspaceMode && m.activeRepos != nil {
-		m.tree.Build(m.workspacePrefilter(m.data.issues))
-		return
-	}
-	if m.data.snapshot != nil {
+	if m.canUseSnapshot(m.filterSpec(), len(m.filter.visible)) {
 		m.tree.BuildFromSnapshot(m.data.snapshot)
 		return
 	}
-	m.tree.Build(m.data.issues)
+	// Build resets the cursor; keep the selection like BuildFromSnapshot does.
+	selectedID := ""
+	if sel := m.tree.SelectedIssue(); sel != nil {
+		selectedID = sel.ID
+	}
+	m.tree.Build(m.filter.visible)
+	if selectedID != "" {
+		m.tree.SelectByID(selectedID)
+	}
 }
 
 // toggleWisps flips ephemeral (wisp) issue visibility, re-applies the active
@@ -504,70 +532,46 @@ func (m *Model) toggleWisps() {
 	}
 }
 
+// applyFilter is the single apply path (bt-imh): it refreshes the visible set
+// and feeds every surface from it. Recipes and BQL go through it too.
 func (m *Model) applyFilter() {
-	var filteredItems []list.Item
-	var filteredIssues []model.Issue
-
-	for _, issue := range m.data.issues {
-		// bt-9kdo: skip wisps when hidden
-		if !m.showWisps && issue.Ephemeral != nil && *issue.Ephemeral {
-			continue
-		}
-		if m.matchesCurrentFilter(issue) {
-			// Use pre-computed graph scores (avoid redundant calculation)
-			item := IssueItem{
-				Issue:      issue,
-				GraphScore: m.data.analysis.GetPageRankScore(issue.ID),
-				Impact:     m.data.analysis.GetCriticalPathScore(issue.ID),
-				DiffStatus: m.getDiffStatus(issue.ID),
-				RepoPrefix: ExtractRepoPrefix(issue.ID),
-			}
-			// Add triage data (bv-151)
-			item.TriageScore = m.ac.triageScores[issue.ID]
-			if reasons, exists := m.ac.triageReasons[issue.ID]; exists {
-				item.TriageReason = reasons.Primary
-				item.TriageReasons = reasons.All
-			}
-			item.IsQuickWin = m.ac.quickWinSet[issue.ID]
-			item.IsBlocker = m.ac.blockerSet[issue.ID]
-			item.UnblocksCount = len(m.ac.unblocksMap[issue.ID])
-			item.GateAwaitType = gateAwaitFromBlockers(issue, m.data.issueMap)
-			filteredItems = append(filteredItems, item)
-			filteredIssues = append(filteredIssues, issue)
-		}
+	prevKey := m.filter.visibleKey
+	m.refreshVisible()
+	keyChanged := m.filter.visibleKey != prevKey
+	if keyChanged {
+		m.labelHealthCached = false
+		m.attentionCached = false
+		m.labelDrilldownCache = make(map[string][]model.Issue)
 	}
+	m.ensureTriageForVisible(false)
 
-	// Apply sort mode (bv-3ita)
-	m.sortFilteredItems(filteredItems, filteredIssues)
+	issues := append([]model.Issue(nil), m.filter.visible...)
+	epics := epicProgressIndex(m.data.issues) // epic progress counts all children
+	items := make([]list.Item, len(issues))
+	for i := range issues {
+		items[i] = m.buildIssueItem(issues[i], epics)
+	}
+	// Recipes and BQL keep their own order; the s sort mode applies otherwise.
+	if spec := m.filterSpec(); spec.Recipe == nil && spec.BQL == nil {
+		m.sortFilteredItems(items, issues)
+	}
+	m.filter.visible = issues
 
-	m.setListItems(filteredItems)
-	m.updateSemanticIDs(filteredItems)
-	if m.data.snapshot != nil && m.data.snapshot.BoardState != nil && m.filter.currentFilter == "all" && (!m.workspaceMode || m.activeRepos == nil) && len(filteredIssues) == len(m.data.snapshot.Issues) {
-		m.board.SetSnapshot(m.data.snapshot)
-	} else {
-		m.board.SetIssues(filteredIssues)
-	}
-	if m.data.snapshot != nil && m.data.snapshot.GraphLayout != nil && m.filter.currentFilter == "all" && len(filteredIssues) == len(m.data.snapshot.Issues) {
-		m.graphView.SetSnapshot(m.data.snapshot)
-	} else {
-		// Generate insights for graph view (for metric rankings and sorting)
-		filterIns := m.data.analysis.GenerateInsights(len(filteredIssues))
-		m.graphView.SetIssues(filteredIssues, &filterIns)
-	}
-	// Tree view consumes activeRepos through this path too (bt-dcby.2).
+	m.setListItems(items)
+	m.updateSemanticIDs(items)
+	m.refreshBoardAndGraph(issues)
 	m.rebuildTreeForCurrentFilter()
-	// Epics overview is a projection over the same scope/label filter (bt-ryi5z).
 	m.refreshEpicsForCurrentFilter()
-	// Priority hints are computed from the filtered set (bt-gcuv); only
-	// pay the recompute cost while the feature is actually visible, but
-	// keep it live so activeRepos/status/label filter changes don't leave
-	// stale out-of-scope recommendations on screen.
+	// Priority hints are computed from the visible set (bt-gcuv); only pay
+	// the recompute cost while the feature is visible.
 	if m.ac.showPriorityHints {
 		m.recomputePriorityHints()
 	}
+	if keyChanged {
+		m.refreshAnalysisViews()
+	}
 
-	// Keep selection in bounds
-	if len(filteredItems) > 0 && m.list.Index() >= len(filteredItems) {
+	if len(items) > 0 && m.list.Index() >= len(items) {
 		m.list.Select(0)
 	}
 	m.updateViewportContent()
@@ -786,246 +790,17 @@ func matchesRecipeStatus(status model.Status, filter string) bool {
 	}
 }
 
-// applyRecipe applies a recipe's filters and sort to the current view
+// applyRecipe makes r the primary filter and applies it.
 func (m *Model) applyRecipe(r *recipe.Recipe) {
 	if r == nil {
 		return
 	}
-
-	var filteredItems []list.Item
-	var filteredIssues []model.Issue
-
-	for _, issue := range m.data.issues {
-		include := true
-
-		// Workspace repo filter (nil = all repos)
-		if m.workspaceMode && m.activeRepos != nil {
-			repoKey := IssueRepoKey(issue)
-			if repoKey != "" && !m.activeRepos[repoKey] {
-				include = false
-			}
-		}
-
-		// Apply status filter
-		if len(r.Filters.Status) > 0 {
-			statusMatch := false
-			for _, s := range r.Filters.Status {
-				if matchesRecipeStatus(issue.Status, s) {
-					statusMatch = true
-					break
-				}
-			}
-			include = include && statusMatch
-		}
-
-		// Apply priority filter
-		if include && len(r.Filters.Priority) > 0 {
-			prioMatch := false
-			for _, p := range r.Filters.Priority {
-				if issue.Priority == p {
-					prioMatch = true
-					break
-				}
-			}
-			include = include && prioMatch
-		}
-
-		// Apply tags filter (must have ALL specified tags)
-		if include && len(r.Filters.Tags) > 0 {
-			labelSet := make(map[string]bool)
-			for _, l := range issue.Labels {
-				labelSet[l] = true
-			}
-			for _, required := range r.Filters.Tags {
-				if !labelSet[required] {
-					include = false
-					break
-				}
-			}
-		}
-
-		// Apply actionable filter
-		if include && r.Filters.Actionable != nil && *r.Filters.Actionable {
-			// Check if issue is blocked
-			isBlocked := false
-			for _, dep := range issue.Dependencies {
-				if dep == nil || !dep.Type.IsBlocking() {
-					continue
-				}
-				if blocker, exists := m.data.issueMap[dep.DependsOnID]; exists && !isClosedLikeStatus(blocker.Status) {
-					isBlocked = true
-					break
-				}
-			}
-			include = !isBlocked
-		}
-
-		if include {
-			item := IssueItem{
-				Issue:      issue,
-				GraphScore: m.data.analysis.GetPageRankScore(issue.ID),
-				Impact:     m.data.analysis.GetCriticalPathScore(issue.ID),
-				DiffStatus: m.getDiffStatus(issue.ID),
-				RepoPrefix: ExtractRepoPrefix(issue.ID),
-			}
-			// Add triage data (bv-151)
-			item.TriageScore = m.ac.triageScores[issue.ID]
-			if reasons, exists := m.ac.triageReasons[issue.ID]; exists {
-				item.TriageReason = reasons.Primary
-				item.TriageReasons = reasons.All
-			}
-			item.IsQuickWin = m.ac.quickWinSet[issue.ID]
-			item.IsBlocker = m.ac.blockerSet[issue.ID]
-			item.UnblocksCount = len(m.ac.unblocksMap[issue.ID])
-			item.GateAwaitType = gateAwaitFromBlockers(issue, m.data.issueMap)
-			filteredItems = append(filteredItems, item)
-			filteredIssues = append(filteredIssues, issue)
-		}
+	if m.filter.activeRecipe != r {
+		m.setActiveRecipe(r)
 	}
-
-	// Apply sort
-	field := r.Sort.Field
-	descending := r.Sort.Direction == "desc"
-	if field != "" {
-		compare := func(a, b model.Issue) int {
-			switch field {
-			case "priority":
-				switch {
-				case a.Priority < b.Priority:
-					return -1
-				case a.Priority > b.Priority:
-					return 1
-				default:
-					return 0
-				}
-			case "created", "created_at":
-				switch {
-				case a.CreatedAt.Before(b.CreatedAt):
-					return -1
-				case a.CreatedAt.After(b.CreatedAt):
-					return 1
-				default:
-					return 0
-				}
-			case "updated", "updated_at":
-				switch {
-				case a.UpdatedAt.Before(b.UpdatedAt):
-					return -1
-				case a.UpdatedAt.After(b.UpdatedAt):
-					return 1
-				default:
-					return 0
-				}
-			case "impact":
-				if m.data.analysis == nil {
-					switch {
-					case a.Priority < b.Priority:
-						return -1
-					case a.Priority > b.Priority:
-						return 1
-					default:
-						return 0
-					}
-				}
-				aScore := m.data.analysis.GetCriticalPathScore(a.ID)
-				bScore := m.data.analysis.GetCriticalPathScore(b.ID)
-				switch {
-				case aScore < bScore:
-					return -1
-				case aScore > bScore:
-					return 1
-				default:
-					return 0
-				}
-			case "pagerank":
-				if m.data.analysis == nil {
-					switch {
-					case a.Priority < b.Priority:
-						return -1
-					case a.Priority > b.Priority:
-						return 1
-					default:
-						return 0
-					}
-				}
-				aScore := m.data.analysis.GetPageRankScore(a.ID)
-				bScore := m.data.analysis.GetPageRankScore(b.ID)
-				switch {
-				case aScore < bScore:
-					return -1
-				case aScore > bScore:
-					return 1
-				default:
-					return 0
-				}
-			default:
-				switch {
-				case a.Priority < b.Priority:
-					return -1
-				case a.Priority > b.Priority:
-					return 1
-				default:
-					return 0
-				}
-			}
-		}
-
-		sort.Slice(filteredItems, func(i, j int) bool {
-			iItem := filteredItems[i].(IssueItem)
-			jItem := filteredItems[j].(IssueItem)
-
-			cmp := compare(iItem.Issue, jItem.Issue)
-			if cmp == 0 {
-				return iItem.Issue.ID < jItem.Issue.ID
-			}
-			if descending {
-				return cmp > 0
-			}
-			return cmp < 0
-		})
-
-		// Re-sort issues list too
-		sort.Slice(filteredIssues, func(i, j int) bool {
-			ii := filteredIssues[i]
-			jj := filteredIssues[j]
-
-			cmp := compare(ii, jj)
-			if cmp == 0 {
-				return ii.ID < jj.ID
-			}
-			if descending {
-				return cmp > 0
-			}
-			return cmp < 0
-		})
-	}
-
-	m.setListItems(filteredItems)
-	m.updateSemanticIDs(filteredItems)
-	m.board.SetIssues(filteredIssues)
-	// Generate insights for graph view (for metric rankings and sorting)
-	recipeIns := m.data.analysis.GenerateInsights(len(filteredIssues))
-	m.graphView.SetIssues(filteredIssues, &recipeIns)
-	// Tree view consumes activeRepos through this path too (bt-dcby.2).
-	m.rebuildTreeForCurrentFilter()
-	// Epics overview is a projection over the same scope/label filter (bt-ryi5z).
-	m.refreshEpicsForCurrentFilter()
-
-	// Update filter indicator
+	m.filter.activeBQLExpr = nil
 	m.filter.currentFilter = "recipe:" + r.Name
-
-	// Priority hints are computed from the filtered set (bt-gcuv); this
-	// must run after currentFilter is updated above so
-	// filteredIssuesForActiveView() takes the recipe-active branch.
-	if m.ac.showPriorityHints {
-		m.recomputePriorityHints()
-	}
-
-	// Keep selection in bounds
-	if len(filteredItems) > 0 && m.list.Index() >= len(filteredItems) {
-		m.list.Select(0)
-	}
-	m.updateViewportContent()
+	m.applyFilter()
 }
 
 // recalculateSplitPaneSizes updates list and viewport dimensions after pane ratio changes
@@ -1300,12 +1075,15 @@ func (m *Model) updateViewportContent() {
 		// neighbouring sections (Centrality, Search Scores). Only the
 		// numeric rows go through ANSI — labels in ColorMuted, values default —
 		// since that's where the lipgloss styling actually matters (bt-x5xc4).
-		pr := m.data.analysis.GetPageRankScore(item.ID)
-		bt := m.data.analysis.GetBetweennessScore(item.ID)
-		imp := m.data.analysis.GetCriticalPathScore(item.ID)
-		ev := m.data.analysis.GetEigenvectorScore(item.ID)
-		hub := m.data.analysis.GetHubScore(item.ID)
-		auth := m.data.analysis.GetAuthorityScore(item.ID)
+		var pr, bt, imp, ev, hub, auth float64
+		if m.data.analysis != nil {
+			pr = m.data.analysis.GetPageRankScore(item.ID)
+			bt = m.data.analysis.GetBetweennessScore(item.ID)
+			imp = m.data.analysis.GetCriticalPathScore(item.ID)
+			ev = m.data.analysis.GetEigenvectorScore(item.ID)
+			hub = m.data.analysis.GetHubScore(item.ID)
+			auth = m.data.analysis.GetAuthorityScore(item.ID)
+		}
 		// Rendered only when the graph actually says something. A bead with no
 		// edges has all six metrics structurally zero, and printing
 		// "PR 0.0000 - BW 0.0000 - EV 0.0000 - Hub 0.0000 - Authority 0.0000"
@@ -1636,22 +1414,6 @@ func truncateString(s string, maxLen int) string {
 	return string(runes[:maxLen-1]) + "…"
 }
 
-// workspacePrefilter removes issues not in the active repo set (workspace mode).
-// Returns the input slice unchanged if not in workspace mode or all repos are active.
-func (m *Model) workspacePrefilter(issues []model.Issue) []model.Issue {
-	if !m.workspaceMode || m.activeRepos == nil {
-		return issues
-	}
-	filtered := make([]model.Issue, 0, len(issues))
-	for _, issue := range issues {
-		repoKey := IssueRepoKey(issue)
-		if repoKey == "" || m.activeRepos[repoKey] {
-			filtered = append(filtered, issue)
-		}
-	}
-	return filtered
-}
-
 // searchScoreContrib represents one component's contribution to the hybrid score,
 // sorted descending by absolute value for the bar display. (bt-gfxhz.6)
 type searchScoreContrib struct {
@@ -1894,45 +1656,10 @@ func searchScoreSummary(components map[string]float64, item model.Issue) string 
 	return strings.Join(parts, " + ")
 }
 
-// applyBQL applies a parsed BQL query using the dedicated BQL execution path.
-// This bypasses matchesCurrentFilter() because BQL has set-level operations
-// (ORDER BY, EXPAND) that can't work per-issue.
+// applyBQL makes query the primary filter and applies it. BQL runs after the
+// per-issue dimensions inside FilterSpec.Apply because of ORDER BY / EXPAND.
 func (m *Model) applyBQL(query *bql.Query, queryStr string) {
-	issues := m.workspacePrefilter(m.data.issues)
-	opts := m.bqlExecuteOpts()
-	filtered := m.filter.bqlEngine.Execute(query, issues, opts)
-
-	var filteredItems []list.Item
-	for _, issue := range filtered {
-		item := IssueItem{
-			Issue:      issue,
-			GraphScore: m.data.analysis.GetPageRankScore(issue.ID),
-			Impact:     m.data.analysis.GetCriticalPathScore(issue.ID),
-			DiffStatus: m.getDiffStatus(issue.ID),
-			RepoPrefix: ExtractRepoPrefix(issue.ID),
-		}
-		item.TriageScore = m.ac.triageScores[issue.ID]
-		if reasons, exists := m.ac.triageReasons[issue.ID]; exists {
-			item.TriageReason = reasons.Primary
-			item.TriageReasons = reasons.All
-		}
-		item.IsQuickWin = m.ac.quickWinSet[issue.ID]
-		item.IsBlocker = m.ac.blockerSet[issue.ID]
-		item.UnblocksCount = len(m.ac.unblocksMap[issue.ID])
-		item.GateAwaitType = gateAwaitFromBlockers(issue, m.data.issueMap)
-		filteredItems = append(filteredItems, item)
-	}
-
-	m.setListItems(filteredItems)
-	m.updateSemanticIDs(filteredItems)
+	m.filter.activeBQLExpr = query
 	m.filter.currentFilter = "bql:" + queryStr
-
-	m.board.SetIssues(filtered)
-	filterIns := m.data.analysis.GenerateInsights(len(filtered))
-	m.graphView.SetIssues(filtered, &filterIns)
-
-	if len(filteredItems) > 0 && m.list.Index() >= len(filteredItems) {
-		m.list.Select(0)
-	}
-	m.updateViewportContent()
+	m.applyFilter()
 }

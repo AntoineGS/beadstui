@@ -197,6 +197,7 @@ func (m Model) showRepoColumn() bool {
 func (m *Model) SetActiveRepos(repos map[string]bool) {
 	m.activeRepos = repos
 	m.updateListDelegate()
+	m.applyFilter()
 }
 
 // SetPluginHost attaches the plugin host and registers its badge, section
@@ -427,11 +428,8 @@ func (m *Model) exitTimeTravelMode() {
 }
 
 // rebuildListWithDiffInfo recreates list items with current diff state.
-// Dispatches through reapplyActiveFilter so recipe, BQL, and plain
-// status/label filters are all honored (bt-k9f6f) instead of only recipe
-// vs. plain applyFilter().
 func (m *Model) rebuildListWithDiffInfo() {
-	m.reapplyActiveFilter()
+	m.applyFilter()
 }
 
 // IsTimeTravelMode returns whether time-travel mode is active
@@ -540,7 +538,7 @@ func (m Model) ShowDetails() bool {
 }
 
 // CurrentFilter returns the active filter string (e.g. "open", "closed", "ready",
-// "label:X", "bql:..."). Stable accessor for Phase 1 refactor - this field will
+// "recipe:...", "bql:..."). Stable accessor for Phase 1 refactor - this field will
 // move into FilterState.
 func (m Model) CurrentFilter() string {
 	return m.filter.currentFilter

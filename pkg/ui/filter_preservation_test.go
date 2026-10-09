@@ -241,56 +241,21 @@ func TestPhase2ReadyPreservesFilter(t *testing.T) {
 	}
 }
 
-// TestSetListItemsPreservesActiveRepos asserts the wrapper enforces the
-// workspace project filter (activeRepos) against a too-broad item set, so a
-// background Dolt poll refresh that hands us all-projects data does not wipe
-// the user's project picker selection (bt-lwdy). Sister to bt-nzsy.
-//
-// Repro path before the fix: replaceIssues -> handleDataSourceReload rebuilt
-// items straight from m.data.issues (full multi-project set) and called
-// setListItems(items). With activeRepos pinned to a single project, the list
-// would render every project's issues, footer would show 0 visible issues
-// (since the items pane bypassed activeRepos), and the user had to re-open
-// the project picker to recover.
-func TestSetListItemsPreservesActiveRepos(t *testing.T) {
+// TestPollReloadPreservesActiveRepos asserts a background Dolt poll refresh
+// (replaceIssues, all-projects data) does not wipe the user's project picker
+// selection (bt-lwdy). Sister to bt-nzsy. The reload goes through the single
+// apply path, which reads activeRepos (bt-imh).
+func TestPollReloadPreservesActiveRepos(t *testing.T) {
 	issues := []model.Issue{
 		{ID: "api-AUTH-1", Title: "API auth", Status: model.StatusOpen, CreatedAt: time.Now()},
 		{ID: "api-AUTH-2", Title: "API token", Status: model.StatusOpen, CreatedAt: time.Now()},
 		{ID: "web-UI-1", Title: "Web UI", Status: model.StatusOpen, CreatedAt: time.Now()},
 	}
-	cached := analysis.NewCachedAnalyzer(issues, nil)
-	items := make([]list.Item, len(issues))
-	for i := range issues {
-		items[i] = IssueItem{Issue: issues[i]}
-	}
-	lst := list.New(items, list.NewDefaultDelegate(), 80, 20)
-	lst.SetFilteringEnabled(true)
-	m := Model{
-		filter: &FilterState{currentFilter: "all"},
-		data: &DataState{
-			issues:   issues,
-			analyzer: cached.Analyzer,
-			analysis: cached.AnalyzeAsync(context.Background()),
-		},
-		ac:       &AnalysisCache{},
-		list:     lst,
-		theme:    DefaultTheme(),
-		renderer: NewMarkdownRendererWithTheme(80, DefaultTheme()),
-	}
-	m.workspaceMode = true
-	m.activeRepos = map[string]bool{"api": true}
+	m := NewModel(issues, nil, "", nil, nil)
+	m.EnableWorkspaceMode(WorkspaceInfo{Enabled: true, RepoCount: 2, RepoPrefixes: []string{"api-", "web-"}})
+	m.SetActiveRepos(map[string]bool{"api": true})
 
-	// Simulate a Dolt poll refresh by handing setListItems the full
-	// (unfiltered) item set, mirroring what replaceIssues / handleFileChanged
-	// pass when they rebuild from m.data.issues. Pre-fix this would clobber
-	// the project filter and render all three issues; post-fix the wrapper
-	// enforces activeRepos.
-	rawItems := []list.Item{
-		IssueItem{Issue: issues[0]},
-		IssueItem{Issue: issues[1]},
-		IssueItem{Issue: issues[2]},
-	}
-	m.setListItems(rawItems)
+	m.replaceIssues(append([]model.Issue(nil), issues...))
 
 	// Visible items should only be from the api project.
 	if got := len(m.list.Items()); got != 2 {
@@ -307,56 +272,33 @@ func TestSetListItemsPreservesActiveRepos(t *testing.T) {
 		}
 	}
 
-	// Clearing activeRepos restores the full set on the next refresh.
-	m.activeRepos = nil
-	m.setListItems(rawItems)
+	// Clearing activeRepos restores the full set, and the next refresh keeps it.
+	m.SetActiveRepos(nil)
+	m.replaceIssues(append([]model.Issue(nil), issues...))
 	if got := len(m.list.Items()); got != 3 {
 		t.Fatalf("expected 3 items after clearing activeRepos, got %d", got)
 	}
 }
 
-// TestSetListItemsActiveReposComposesWithSearchFilter asserts that activeRepos
+// TestPollReloadActiveReposComposesWithSearchFilter asserts that activeRepos
 // preservation (bt-lwdy) and the bt-nzsy search-filter preservation cooperate
 // rather than fighting: a poll refresh with both an active project filter and
 // an active `/`-search must keep both narrowing dimensions intact.
-func TestSetListItemsActiveReposComposesWithSearchFilter(t *testing.T) {
+func TestPollReloadActiveReposComposesWithSearchFilter(t *testing.T) {
 	issues := []model.Issue{
 		{ID: "api-AUTH-1", Title: "API auth flow", Status: model.StatusOpen, CreatedAt: time.Now()},
 		{ID: "api-LIST-1", Title: "API list endpoint", Status: model.StatusOpen, CreatedAt: time.Now()},
 		{ID: "web-AUTH-1", Title: "Web auth landing", Status: model.StatusOpen, CreatedAt: time.Now()},
 	}
-	cached := analysis.NewCachedAnalyzer(issues, nil)
-	items := make([]list.Item, len(issues))
-	for i := range issues {
-		items[i] = IssueItem{Issue: issues[i]}
-	}
-	lst := list.New(items, list.NewDefaultDelegate(), 80, 20)
-	lst.SetFilteringEnabled(true)
-	m := Model{
-		filter: &FilterState{currentFilter: "all"},
-		data: &DataState{
-			issues:   issues,
-			analyzer: cached.Analyzer,
-			analysis: cached.AnalyzeAsync(context.Background()),
-		},
-		ac:       &AnalysisCache{},
-		list:     lst,
-		theme:    DefaultTheme(),
-		renderer: NewMarkdownRendererWithTheme(80, DefaultTheme()),
-	}
-	m.workspaceMode = true
-	m.activeRepos = map[string]bool{"api": true}
+	m := NewModel(issues, nil, "", nil, nil)
+	m.EnableWorkspaceMode(WorkspaceInfo{Enabled: true, RepoCount: 2, RepoPrefixes: []string{"api-", "web-"}})
+	m.SetActiveRepos(map[string]bool{"api": true})
 
 	// Engage the `/`-search for "auth".
 	m.list.SetFilterText("auth")
 	m.list.SetFilterState(list.FilterApplied)
 
-	rawItems := []list.Item{
-		IssueItem{Issue: issues[0]},
-		IssueItem{Issue: issues[1]},
-		IssueItem{Issue: issues[2]},
-	}
-	m.setListItems(rawItems)
+	m.replaceIssues(append([]model.Issue(nil), issues...))
 
 	if got := m.list.FilterValue(); got != "auth" {
 		t.Fatalf("search filter value lost: got %q", got)
@@ -589,9 +531,9 @@ func TestPlainFilterSurvivesDataSourceReload(t *testing.T) {
 }
 
 // TestPlainFilterSurvivesPhase2Ready covers the same bt-k9f6f defect class
-// against the handlePhase2Ready reload path (consolidated onto
-// reapplyActiveFilter alongside handleDataSourceReload / handleFileChanged /
-// rebuildListWithDiffInfo).
+// against the handlePhase2Ready reload path (consolidated onto the single
+// applyFilter path alongside handleDataSourceReload / handleFileChanged /
+// rebuildListWithDiffInfo, bt-imh).
 func TestPlainFilterSurvivesPhase2Ready(t *testing.T) {
 	issues := []model.Issue{
 		{ID: "proj-open-1", Status: model.StatusOpen, CreatedAt: time.Now()},

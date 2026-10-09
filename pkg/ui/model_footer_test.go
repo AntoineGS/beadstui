@@ -794,7 +794,7 @@ func TestFooterCounts_ScopedToActiveFilter(t *testing.T) {
 		t.Fatalf("all filter: triad=%d but %d non-closed items visible", got, want)
 	}
 
-	// Open (= not closed-like, per matchesCurrentFilter): every visible item
+	// Open (= not closed-like, per matchesStatusFilter): every visible item
 	// is non-closed, so the triad must account for all of them.
 	m.filter.currentFilter = "open"
 	m.applyFilter()

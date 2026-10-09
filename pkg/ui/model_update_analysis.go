@@ -254,8 +254,14 @@ func (m Model) handlePhase2Ready(msg Phase2ReadyMsg) (Model, tea.Cmd) {
 	// Phase2ReadyMsg with msg.Stats == m.data.analysis, and historically both
 	// re-ran the full O(N) triage / recommendations / alerts pipeline. Once
 	// the snapshot is marked Phase2Ready we have already processed this stats
-	// pointer; subsequent identical messages are no-ops (bt-kfkrb).
+	// pointer; subsequent identical messages are no-ops (bt-kfkrb). Reloads
+	// that keep the old snapshot (replaceIssues, handleFileChanged) still wait
+	// on this message to rank triage over the visible set (bt-imh).
 	if m.data.snapshot != nil && m.data.snapshot.Phase2Ready {
+		if m.ac.triageWaitPhase2 {
+			m.ac.triageWaitPhase2 = false
+			m.applyFilter()
+		}
 		return m, nil
 	}
 
@@ -270,7 +276,7 @@ func (m Model) handlePhase2Ready(msg Phase2ReadyMsg) (Model, tea.Cmd) {
 		m.data.snapshot.Insights = ins
 	}
 	insightsStart := time.Now()
-	m.insightsPanel.SetInsights(ins)
+	m.insightsPanel.SetInsights(m.visibleInsights(ins))
 	m.insightsPanel.issueMap = m.data.issueMap
 	bodyHeight := m.height - 1
 	if bodyHeight < 5 {
@@ -280,61 +286,25 @@ func (m Model) handlePhase2Ready(msg Phase2ReadyMsg) (Model, tea.Cmd) {
 	debug.LogTiming("phase2.insightsPanel.setup", time.Since(insightsStart))
 
 	graphStart := time.Now()
-	if m.data.snapshot != nil {
-		if m.data.snapshot.GraphLayout != nil {
-			m.data.snapshot.GraphLayout.UpdatePhase2Ranks(msg.Stats)
-		}
+	if m.data.snapshot != nil && m.data.snapshot.GraphLayout != nil {
+		m.data.snapshot.GraphLayout.UpdatePhase2Ranks(msg.Stats)
+	}
+	if m.canUseSnapshot(m.filterSpec(), len(m.filter.visible)) && m.data.snapshot.GraphLayout != nil {
 		m.graphView.SetSnapshot(m.data.snapshot)
 	} else {
-		m.graphView.SetIssues(m.data.issues, &ins)
+		m.graphView.SetIssues(m.filter.visible, &ins)
 	}
 	debug.LogTiming("phase2.graphView.setup", time.Since(graphStart))
 
-	// Generate triage for priority panel, scoped to the active workspace
-	// repo filter (bt-dcby.3) rather than the full cross-project corpus.
-	// Reusing the global analyzer/stats here wouldn't scope the result -
-	// TopPicks/Recommendations/QuickWins are ranked from the analyzer's own
-	// issueMap, not the trailing issues slice - so a fresh analyzer must be
-	// built over the workspace-filtered set (mirrors bt-gcuv's
-	// recomputePriorityHints; workspacePrefilter rather than
-	// filteredIssuesForActiveView so these list-row badges survive
-	// status/label filter toggles, matching openInsightsView's twin call).
+	// Triage over the visible set (bt-imh); Phase 2 is the point new data
+	// gets ranked.
 	triageStart := time.Now()
-	triage := analysis.ComputeTriageWithOptions(m.workspacePrefilter(m.data.issues), analysis.TriageOptions{WaitForPhase2: true})
+	m.ac.triageWaitPhase2 = false
+	m.ac.triage = nil
+	m.ensureTriageForVisible(false)
 	debug.LogTiming("phase2.ComputeTriageFromAnalyzer", time.Since(triageStart))
-	triageScores := make(map[string]float64, len(triage.Recommendations))
-	triageReasons := make(map[string]analysis.TriageReasons, len(triage.Recommendations))
-	quickWinSet := make(map[string]bool, len(triage.QuickWins))
-	blockerSet := make(map[string]bool, len(triage.BlockersToClear))
-	unblocksMap := make(map[string][]string, len(triage.Recommendations))
-
-	for _, rec := range triage.Recommendations {
-		triageScores[rec.ID] = rec.Score
-		if len(rec.Reasons) > 0 {
-			triageReasons[rec.ID] = analysis.TriageReasons{
-				Primary:    rec.Reasons[0],
-				All:        rec.Reasons,
-				ActionHint: rec.Action,
-			}
-		}
-		unblocksMap[rec.ID] = rec.UnblocksIDs
-	}
-	for _, qw := range triage.QuickWins {
-		quickWinSet[qw.ID] = true
-	}
-	for _, bl := range triage.BlockersToClear {
-		blockerSet[bl.ID] = true
-	}
-
-	m.ac.triageScores = triageScores
-	m.ac.triageReasons = triageReasons
-	m.ac.quickWinSet = quickWinSet
-	m.ac.blockerSet = blockerSet
-	m.ac.unblocksMap = unblocksMap
-
-	m.insightsPanel.SetTopPicks(triage.QuickRef.TopPicks)
-	dataHash := fmt.Sprintf("v%s@%s#%d", triage.Meta.Version, triage.Meta.GeneratedAt.Format("15:04:05"), triage.Meta.IssueCount)
-	m.insightsPanel.SetRecommendations(triage.Recommendations, dataHash)
+	m.insightsPanel.SetTopPicks(m.ac.triage.QuickRef.TopPicks)
+	m.insightsPanel.SetRecommendations(m.ac.triage.Recommendations, triageDataHash(m.ac.triage))
 
 	// Generate priority recommendations, scoped to the currently filtered
 	// view (bt-gcuv) rather than the full cross-project m.data.issues.
@@ -347,16 +317,10 @@ func (m Model) handlePhase2Ready(msg Phase2ReadyMsg) (Model, tea.Cmd) {
 	m.alerts, m.alertsCritical, m.alertsWarning, m.alertsInfo = computeAlerts(m.data.issues, m.workspaceMode)
 	debug.LogTiming("phase2.computeAlerts", time.Since(alertsStart))
 
-	// Invalidate label health cache. Scope the issue enumeration to the
-	// active workspace repo filter (bt-dcby.3), matching the toggle-key
-	// call site in model_update_input.go.
+	// Label health is recomputed over the visible set (bt-imh).
 	m.labelHealthCached = false
 	if m.focused == focusLabelDashboard {
-		cfg := analysis.DefaultLabelHealthConfig()
-		m.labelHealthCache = analysis.ComputeAllLabelHealth(m.workspacePrefilter(m.data.issues), cfg, time.Now().UTC(), m.data.analysis)
-		m.labelHealthCached = true
-		m.labelDashboard.SetData(m.labelHealthCache.Labels)
-		m.setStatus(fmt.Sprintf("Labels: %d total • critical %d • warning %d", m.labelHealthCache.TotalLabels, m.labelHealthCache.CriticalCount, m.labelHealthCache.WarningCount))
+		m.refreshLabelDashboard()
 	}
 
 	// Re-sort if sorting by Phase 2 metrics
@@ -401,16 +365,14 @@ func (m Model) handlePhase2Ready(msg Phase2ReadyMsg) (Model, tea.Cmd) {
 		}
 	}
 
-	// Re-apply filters. When nothing is active, refreshListItemsPhase2 is an
-	// in-place score refresh (avoids rebuilding the filtered set and losing
-	// selection); everything else (recipe, BQL, plain status/label) goes
-	// through the shared reapplyActiveFilter dispatcher so a BQL filter
-	// doesn't fall through to applyFilter() and zero out (bt-0iajg).
+	// Re-apply filters. When nothing filters, refreshListItemsPhase2 is an
+	// in-place score refresh that keeps the selection; otherwise the single
+	// apply path rebuilds (a recipe may have re-sorted by a Phase 2 metric).
 	filterStart := time.Now()
-	if m.filter.currentFilter == "" || m.filter.currentFilter == "all" {
+	if m.filterSpec().IsUnfiltered() {
 		m.refreshListItemsPhase2()
 	} else {
-		m.reapplyActiveFilter()
+		m.applyFilter()
 	}
 	debug.LogTiming("phase2.filter.reapply", time.Since(filterStart))
 
@@ -423,14 +385,14 @@ func (m Model) handlePhase2Ready(msg Phase2ReadyMsg) (Model, tea.Cmd) {
 // (bt-gcuv). GenerateRecommendations normalizes PageRank/Betweenness/etc.
 // against whatever issue set it's given, so a globally-built Analyzer would
 // surface "high impact" arrows for issues outside the active project
-// filter - building a fresh Analyzer over filteredIssuesForActiveView()
-// scopes the recommendations to what the user can actually see.
+// filter - building a fresh Analyzer over the visible set scopes the
+// recommendations to what the user can actually see.
 //
 // Callers must also refresh the list delegate (done here) since
 // IssueDelegate.PriorityHints is a snapshot taken at SetDelegate time, not
 // a live reference to m.ac.priorityHints.
 func (m *Model) recomputePriorityHints() {
-	issues := m.filteredIssuesForActiveView()
+	issues := m.visibleIssues()
 	analyzer := analysis.NewAnalyzer(issues)
 	recommendations := analyzer.GenerateRecommendations()
 	hints := make(map[string]*analysis.PriorityRecommendation, len(recommendations))

@@ -41,7 +41,7 @@ func isAttentionAnomaly(a drift.Alert) bool {
 }
 
 // passesAlertBaseScope reports whether an alert survives the non-stackable
-// filters: dismissed state and (workspace) active-repo scope. The stackable
+// filters: dismissed state and membership in the visible set. The stackable
 // severity/type/project/class filters are applied on top of this in
 // filteredAlerts; the status header counts against this base so the badge
 // reconciliation stays stable regardless of how the user has filtered the list.
@@ -49,10 +49,12 @@ func (m Model) passesAlertBaseScope(a drift.Alert) bool {
 	if m.dismissedAlerts[alertKey(a)] {
 		return false
 	}
-	if m.workspaceMode && m.activeRepos != nil && a.IssueID != "" {
-		if issue, ok := m.data.issueMap[a.IssueID]; ok {
-			repoKey := IssueRepoKey(*issue)
-			if repoKey != "" && !m.activeRepos[repoKey] {
+	// Issue-linked alerts follow the visible set (bt-imh). Before the first
+	// apply (visibleIDs nil) nothing is hidden; alerts without an issue and
+	// alerts for unknown issues always pass.
+	if a.IssueID != "" && m.filter != nil && m.filter.visibleIDs != nil {
+		if _, known := m.data.issueMap[a.IssueID]; known {
+			if _, shown := m.filter.visibleIDs[a.IssueID]; !shown {
 				return false
 			}
 		}

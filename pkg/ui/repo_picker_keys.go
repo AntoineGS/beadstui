@@ -114,13 +114,6 @@ func (m Model) applyRepoPickerSelection() Model {
 		m.setStatus(fmt.Sprintf("Project filter: %s", formatRepoList(sortedRepoKeys(selected), 3)))
 	}
 
-	// Apply filter to views
-	if m.filter.activeRecipe != nil {
-		m.applyRecipe(m.filter.activeRecipe)
-	} else {
-		m.applyFilter()
-	}
-
 	m.closeModal()
 	m.focused = focusList
 	return m

@@ -457,10 +457,6 @@ func (m *Model) populateLens(fd *FooterData) {
 		fd.SearchQuery = cf[len("bql:"):]
 	case strings.HasPrefix(cf, "recipe:"):
 		fd.RecipeName = cf[len("recipe:"):]
-	case strings.HasPrefix(cf, "label:"):
-		// Legacy label-in-filter: the label shows via LabelFilterText already,
-		// and membership is otherwise unfiltered by status.
-		fd.StatusFilter = "all"
 	default:
 		fd.StatusFilter = cf
 	}
@@ -597,7 +593,7 @@ func (m *Model) extractHintText() string {
 		filterInfo := ""
 		if m.filter.currentFilter != "all" && m.filter.currentFilter != "" {
 			shown := m.board.TotalCount()
-			total := len(m.data.issues)
+			total := m.filter.scopeCount
 			filterInfo = fmt.Sprintf("[%s:%d/%d] ", m.filter.currentFilter, shown, total)
 		}
 		return fmt.Sprintf("%s1-4:col • o/c/r:filter • l:labels • /:search • ?:help", filterInfo)

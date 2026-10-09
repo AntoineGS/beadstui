@@ -98,7 +98,7 @@ func TestLabelFilterChangeMovesCursorToFirstRow(t *testing.T) {
 func TestRefreshKeepsCursor(t *testing.T) {
 	m := newSizedModel(t, mixedIssues(), 140, 40)
 	m.list.Select(2)
-	m.reapplyActiveFilter() // what a background reload runs
+	m.applyFilter() // what a background reload runs
 	if got := m.list.Index(); got != 2 {
 		t.Fatalf("cursor after refresh = %d, want 2", got)
 	}
@@ -123,9 +123,9 @@ func TestFilterKeySameForRecipeStartupAndApplied(t *testing.T) {
 	// so a later refresh must not jump the cursor.
 	r := &recipe.Recipe{Name: "triage"}
 	m := NewModel(mixedIssues(), r, "", nil, nil)
-	startup := m.filterKey()
+	startup := m.cursorKey()
 	m.filter.currentFilter = "recipe:" + r.Name
-	if got := m.filterKey(); got != startup {
+	if got := m.cursorKey(); got != startup {
 		t.Fatalf("filterKey changed from %q to %q for the same recipe", startup, got)
 	}
 }

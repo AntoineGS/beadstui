@@ -5,8 +5,6 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
-
-	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
 
 // refreshEpicsForCurrentFilter rebuilds the epics tree from the current scope +
@@ -14,30 +12,19 @@ import (
 // refreshBoardAndGraphForCurrentFilter: called on view-switch, on filter/recipe
 // change, on data reload, and on resize (only while ViewEpics is active).
 //
-// Sourcing note (the one place the "projection over filteredIssuesForActiveView"
-// rule is overridden): the progress bars must count closed children in full, but
-// the list's status filter (open/ready) drops closed issues. So we source from
-// the scope + label + wisp-filtered set WITHOUT the status filter, and let
-// m.epicsStatusMode (active/all/completed) decide which epics to list. The
-// EpicsTreeModel.Build pipeline handles the rest. See the epics-tree-redesign
-// design's "status filter override".
+// Sourcing note (the one place the "projection over the visible set" rule is
+// overridden): the progress bars must count closed children in full, but the
+// list's status filter (open/ready) drops closed issues. So we source from the
+// active filter without its primary dimension (`spec.Without(DimPrimary)`,
+// bt-imh), and let m.epicsStatusMode (active/all/completed) decide which epics
+// to list. The EpicsTreeModel.Build pipeline handles the rest. See the
+// epics-tree-redesign design's "status filter override".
 func (m *Model) refreshEpicsForCurrentFilter() {
 	if m.mode != ViewEpics {
 		return
 	}
 
-	issues := m.workspacePrefilter(m.data.issues)
-	scoped := make([]model.Issue, 0, len(issues))
-	for _, issue := range issues {
-		// Skip wisps when hidden (bt-9kdo), mirroring filteredIssuesForActiveView.
-		if !m.showWisps && issue.Ephemeral != nil && *issue.Ephemeral {
-			continue
-		}
-		if m.filter.labelFilter != "" && !matchesLabelFilter(issue, m.filter.labelFilter) {
-			continue
-		}
-		scoped = append(scoped, issue)
-	}
+	scoped := m.applySpec(m.filterSpec().Without(DimPrimary))
 
 	m.epicsTree.Build(scoped, m.epicsStatusMode, time.Now())
 	m.epicsTree.SetTheme(m.theme)

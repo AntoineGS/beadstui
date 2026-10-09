@@ -187,7 +187,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		case "g":
 			// Show graph analysis sub-view (bv-109)
 			if m.labelDrilldownLabel != "" {
-				sg := analysis.ComputeLabelSubgraph(m.data.issues, m.labelDrilldownLabel)
+				sg := analysis.ComputeLabelSubgraph(m.visibleIssues(), m.labelDrilldownLabel)
 				pr := analysis.ComputeLabelPageRank(sg)
 				cp := analysis.ComputeLabelCriticalPath(sg)
 				m.labelGraphAnalysisResult = &LabelGraphAnalysisResult{
@@ -1162,13 +1162,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				m.focused = focusList
 			} else {
 				m.mode = ViewActionable
-				// Build execution plan from the filtered/visible issue set,
-				// not the full cross-project corpus (bt-dcby.3, mirrors
-				// bt-gcuv's recomputePriorityHints pattern).
-				analyzer := analysis.NewAnalyzer(m.filteredIssuesForActiveView())
-				plan := analyzer.GetExecutionPlan()
-				m.actionableView = NewActionableModel(plan, m.theme)
-				m.actionableView.SetSize(m.width, m.height-2)
+				m.refreshActionableView()
 				m.focused = focusActionable
 			}
 			return m, nil
@@ -1280,20 +1274,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.mode = ViewLabelDashboard
 			m.isSplitView = false
 			m.focused = focusLabelDashboard
-			// Compute label health (fast; phase1 metrics only needed) with
-			// caching. Scope the issue enumeration to the active workspace
-			// repo filter (bt-dcby.3) so labels/counts from other projects
-			// don't leak in; keep reusing the global m.data.analysis stats
-			// pointer (cheap ID-keyed lookups) rather than forcing a fresh
-			// blocking Phase 2 recompute here.
-			if !m.labelHealthCached {
-				cfg := analysis.DefaultLabelHealthConfig()
-				m.labelHealthCache = analysis.ComputeAllLabelHealth(m.workspacePrefilter(m.data.issues), cfg, time.Now().UTC(), m.data.analysis)
-				m.labelHealthCached = true
-			}
-			m.labelDashboard.SetData(m.labelHealthCache.Labels)
-			m.labelDashboard.SetSize(m.width, m.height-1)
-			m.setStatus(fmt.Sprintf("Labels: %d total • critical %d • warning %d", m.labelHealthCache.TotalLabels, m.labelHealthCache.CriticalCount, m.labelHealthCache.WarningCount))
+			m.refreshLabelDashboard()
 			return m, nil
 
 		case key.Matches(msg, m.keys.Global.Attention):
@@ -1303,26 +1284,9 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				m.focused = focusList
 				return m, nil
 			}
-			// Attention view: compute attention scores (cached) and render as
-			// text, scoped to the active workspace repo filter (bt-dcby.3)
-			// so labels from other projects don't leak in.
-			scopedForAttention := m.workspacePrefilter(m.data.issues)
-			if !m.attentionCached {
-				cfg := analysis.DefaultLabelHealthConfig()
-				m.attentionCache = analysis.ComputeLabelAttentionScores(scopedForAttention, cfg, time.Now().UTC())
-				m.attentionCached = true
-			}
-			attText, _ := ComputeAttentionView(scopedForAttention, max(40, m.width-4))
 			m.mode = ViewAttention
 			m.focused = focusInsights
-			m.insightsPanel = NewInsightsModel(analysis.Insights{}, m.data.issueMap, m.theme)
-			m.insightsPanel.labelAttention = m.attentionCache.Labels
-			m.insightsPanel.extraText = attText
-			panelHeight := m.height - 2
-			if panelHeight < 3 {
-				panelHeight = 3
-			}
-			m.insightsPanel.SetSize(m.width, panelHeight)
+			m.refreshAttentionView()
 			return m, nil
 
 		case key.Matches(msg, m.keys.Global.FlowMatrix):
@@ -1334,20 +1298,9 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				m.focused = focusList
 				return m, nil
 			}
-			// Scope to the active workspace repo filter (bt-dcby.3) so
-			// cross-label dependencies from other projects don't leak in.
-			scopedForFlow := m.workspacePrefilter(m.data.issues)
-			cfg := analysis.DefaultLabelHealthConfig()
-			flow := analysis.ComputeCrossLabelFlow(scopedForFlow, cfg)
 			m.mode = ViewFlowMatrix
 			m.focused = focusFlowMatrix
-			m.flowMatrix = NewFlowMatrixModel(m.theme)
-			m.flowMatrix.SetData(&flow, scopedForFlow)
-			panelHeight := m.height - 2
-			if panelHeight < 3 {
-				panelHeight = 3
-			}
-			m.flowMatrix.SetSize(m.width, panelHeight)
+			m.refreshFlowMatrix()
 			return m, nil
 
 		case key.Matches(msg, m.keys.Global.Epics):
@@ -1458,11 +1411,6 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				m.SetActiveRepos(map[string]bool{m.currentProjectDB: true})
 				m.setStatus(fmt.Sprintf("Showing project: %s", m.currentProjectDB))
 			}
-			if m.filter.activeRecipe != nil {
-				m.applyRecipe(m.filter.activeRecipe)
-			} else {
-				m.applyFilter()
-			}
 			return m, nil
 
 		case key.Matches(msg, m.keys.Global.ProjectsOrWisps):
@@ -1499,13 +1447,12 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.Global.LabelPicker):
 			// Open label picker for quick filter (bv-126)
-			if len(m.data.issues) == 0 {
+			if len(m.data.issueMap) == 0 {
 				return m, nil
 			}
-			// Labels and counts follow the project scope (bt-obw) but not the
-			// status/BQL/recipe/label filters: counts that shifted with the
-			// label filter would hide the labels the user is choosing between.
-			labelExtraction := analysis.ExtractLabels(m.workspacePrefilter(m.data.issues))
+			// Facet counts (bt-imh): every filter except the label selection,
+			// so counts match the list while other labels stay choosable.
+			labelExtraction := analysis.ExtractLabels(m.applySpec(m.filterSpec().Without(DimLabels)))
 			labelCounts := extractLabelCounts(labelExtraction.Stats)
 			labels := labelExtraction.Labels
 			var activeLabels []string
@@ -2932,32 +2879,16 @@ func (m *Model) openInsightsView() {
 		ins = m.data.snapshot.Insights
 		hasInsights = true
 	} else if m.data.analysis != nil {
-		ins = m.data.analysis.GenerateInsights(len(m.data.issues))
+		ins = m.data.analysis.GenerateInsights(len(m.filter.visible))
 		hasInsights = true
 	}
 	if hasInsights {
-		m.insightsPanel = NewInsightsModel(ins, m.data.issueMap, m.theme)
-		// Include priority triage (bv-91), scoped to the active workspace
-		// repo filter rather than the full cross-project corpus (bt-dcby.3).
-		// Use workspacePrefilter (project scope only, not the full
-		// status/label filter) so TopPicks/Recommendations stay consistent
-		// with the twin computation in handlePhase2Ready, which also feeds
-		// list-row badges that must survive status-filter toggles - see
-		// epics_view.go's refreshEpicsForCurrentFilter for the same
-		// "workspace-scoped, status-filter-independent" precedent.
-		//
-		// This can no longer reuse the global analyzer/stats (bv-runn.12)
-		// since TopPicks/Recommendations are ranked from the analyzer's own
-		// issueMap, not the issues slice passed to ComputeTriageFromAnalyzer
-		// - a filtered issues arg alone wouldn't scope the rankings. Build a
-		// fresh analyzer over the filtered set instead, mirroring bt-gcuv's
-		// recomputePriorityHints and the robot triage --label/--source path
-		// (cmd/bt/robot_triage.go).
-		triage := analysis.ComputeTriageWithOptions(m.workspacePrefilter(m.data.issues), analysis.TriageOptions{WaitForPhase2: true})
-		m.insightsPanel.SetTopPicks(triage.QuickRef.TopPicks)
-		// Set full recommendations with breakdown for priority radar (bv-93)
-		dataHash := fmt.Sprintf("v%s@%s#%d", triage.Meta.Version, triage.Meta.GeneratedAt.Format("15:04:05"), triage.Meta.IssueCount)
-		m.insightsPanel.SetRecommendations(triage.Recommendations, dataHash)
+		m.insightsPanel = NewInsightsModel(m.visibleInsights(ins), m.data.issueMap, m.theme)
+		// Triage over the visible set (bt-imh), shared with the list-row
+		// badges through ensureTriageForVisible.
+		m.ensureTriageForVisible(true)
+		m.insightsPanel.SetTopPicks(m.ac.triage.QuickRef.TopPicks)
+		m.insightsPanel.SetRecommendations(m.ac.triage.Recommendations, triageDataHash(m.ac.triage))
 		panelHeight := m.height - 2
 		if panelHeight < 3 {
 			panelHeight = 3
