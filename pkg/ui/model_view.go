@@ -58,7 +58,7 @@ func (m Model) renderHistoryDoltOnly(width, height int) string {
 		bodyStyle.Render("The history view's git-based correlator is being migrated"),
 		bodyStyle.Render("to read events from Dolt directly (bt-08sh)."),
 		"",
-		hintStyle.Render("Press h or Esc to close"),
+		hintStyle.Render("Press h to close"),
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Center, lines...)
@@ -83,7 +83,7 @@ func (m Model) renderHistoryLoadingScreen() string {
 		"",
 		titleStyle.Render("Loading history..."),
 		"",
-		subStyle.Render("Press h or Esc to cancel"),
+		subStyle.Render("Press h to cancel"),
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Center, lines...)
@@ -107,7 +107,7 @@ func (m Model) renderMemoriesLoadingScreen() string {
 		"",
 		titleStyle.Render("Loading memories..."),
 		"",
-		subStyle.Render("Press u or Esc to cancel"),
+		subStyle.Render("Press u to cancel"),
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Center, lines...)
@@ -1355,9 +1355,7 @@ func (m Model) renderLabelHealthDetail(lh analysis.LabelHealth) string {
 		}
 	}
 
-	sb.WriteString(t.Text.Metadata.Render("Press Esc to close"))
-
-	content := boxStyle.Render(sb.String())
+	content := boxStyle.Render(strings.TrimRight(sb.String(), "\n"))
 
 	return lipgloss.Place(
 		m.width,
@@ -1515,7 +1513,7 @@ func (m Model) renderLabelDrilldown() string {
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString(t.Text.Metadata.Render("Press Esc to close • g for graph analysis"))
+	sb.WriteString(t.Text.Metadata.Render("g for graph analysis"))
 
 	content := boxStyle.Render(sb.String())
 
@@ -1661,7 +1659,7 @@ func (m Model) renderLabelGraphAnalysis() string {
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(t.Text.Metadata.Render("Press Esc/q/g to close"))
+	sb.WriteString(t.Text.Metadata.Render("Press g to close"))
 
 	content := boxStyle.Render(sb.String())
 

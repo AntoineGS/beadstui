@@ -1185,7 +1185,7 @@ func (m *Model) updateViewportContent() {
 	// heading is suppressed with it (replaces the old total>0 gate + per-status
 	// markdown styling: bt-waeh, bt-u05bo).
 	if item.IssueType == model.TypeEpic {
-		if body := buildEpicProgressANSI(item, m.data.issues, -1, m.viewport.Width()); body != "" {
+		if body := buildEpicProgressANSI(item, m.data.issues, m.viewport.Width()); body != "" {
 			addMD("### Epic Progress\n")
 			addANSI(body)
 		}

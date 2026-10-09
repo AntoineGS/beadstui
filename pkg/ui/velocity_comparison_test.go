@@ -9,6 +9,7 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestVelocityTextRole(t *testing.T) {
@@ -25,11 +26,8 @@ func TestVelocityTextRole(t *testing.T) {
 	if !strings.Contains(out, theme.Text.Title.Render("Velocity Comparison")) {
 		t.Error("velocity title ignored role")
 	}
-	if !strings.Contains(out, theme.Text.Selected.Render("> api")) {
-		t.Error("velocity selected row ignored role")
-	}
-	if !strings.Contains(out, theme.Text.Metadata.Render("j/k: navigate | enter: filter by label | esc: back")) {
-		t.Error("velocity hint ignored role")
+	if plain := ansi.Strip(out); strings.Contains(plain, "navigate") || strings.Contains(plain, "esc") {
+		t.Error("velocity view spells out assumed keys")
 	}
 	row := m.data[1]
 	ordinary := fmt.Sprintf("  %-30s %5d %5d %5d %5d %6.1f ", row.Label, row.Weeks[0], row.Weeks[1], row.Weeks[2], row.Weeks[3], row.Avg)
@@ -50,14 +48,17 @@ func TestVelocityPlainSelectedTextRole(t *testing.T) {
 	m.SetSize(120, 30)
 	m.SetData([]model.Issue{{ID: "one", Labels: []string{"api"}, Status: model.StatusOpen}})
 	out := m.View()
-	if !strings.Contains(out, strings.TrimSuffix(theme.Text.Selected.Render("> api"), "\x1b[m")) {
-		t.Error("selected label lost background/false attributes")
+	var selected string
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(ansi.Strip(line), "api") {
+			selected = line
+		}
 	}
-	if !strings.Contains(out, theme.Text.Selected.Foreground(theme.Secondary).Render("─ stable")) {
-		t.Error("trend lost semantic color/selected attributes")
+	if selected != renderSelectedRow(theme, selected, 120) || strings.Contains(selected, ">") {
+		t.Errorf("selected velocity row is not the shared list highlight: %q", selected)
 	}
-	if !strings.Contains(out, theme.Text.Metadata.Render("j/k: navigate | enter: filter by label | esc: back")) {
-		t.Error("plain hint forced attributes")
+	if !popupRowSelected(out, "api", theme) || !popupRowSelected(out, "─ stable", theme) {
+		t.Error("selected row content not inside the highlight")
 	}
 }
 

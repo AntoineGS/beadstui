@@ -458,6 +458,10 @@ func (m TutorialModel) renderStructuredContent(page StructuredTutorialPage, widt
 	return content
 }
 
+// tutorialTOCInnerWidth is the TOC's content width: its outer Width(22)
+// minus the border and one cell of padding on each side.
+const tutorialTOCInnerWidth = 18
+
 // renderTOC renders the table of contents sidebar with focus indication.
 func (m TutorialModel) renderTOC(pages []TutorialPage) string {
 
@@ -471,12 +475,11 @@ func (m TutorialModel) renderTOC(pages []TutorialPage) string {
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(borderColor).
 		Padding(0, 1).
-		Width(22)
+		Width(tutorialTOCInnerWidth + 4)
 
 	headerStyle := m.theme.Text.Heading
 	sectionStyle := m.theme.Text.Heading
 	itemStyle := m.theme.Text.Body
-	selectedStyle := m.theme.Text.Selected
 
 	viewedStyle := lipgloss.NewStyle().
 		Foreground(m.theme.Open)
@@ -498,18 +501,11 @@ func (m TutorialModel) renderTOC(pages []TutorialPage) string {
 			b.WriteString("\n")
 		}
 
-		// Determine style based on cursor position and current page
+		// ▶ marks the current page; the focused TOC's cursor takes the
+		// shared list highlight.
 		prefix := "   "
-		style := itemStyle
-
-		// TOC has focus and cursor is on this item
-		if m.focus == focusTutorialTOC && i == m.tocCursor {
-			prefix = " → "
-			style = selectedStyle
-		} else if i == m.currentPage {
-			// Current page indicator (but not cursor)
+		if i == m.currentPage {
 			prefix = " ▶ "
-			style = selectedStyle
 		}
 
 		// Truncate long titles
@@ -524,7 +520,11 @@ func (m TutorialModel) renderTOC(pages []TutorialPage) string {
 			viewed = viewedStyle.Render(" " + activeGlyphs.Success)
 		}
 
-		b.WriteString(style.Render(prefix+title) + viewed)
+		row := itemStyle.Render(prefix+title) + viewed
+		if m.focus == focusTutorialTOC && i == m.tocCursor {
+			row = renderSelectedRow(m.theme, row, tutorialTOCInnerWidth)
+		}
+		b.WriteString(row)
 		b.WriteString("\n")
 	}
 
@@ -543,20 +543,15 @@ func (m TutorialModel) renderFooter(totalPages int) string {
 	if m.focus == focusTutorialTOC && m.tocVisible {
 		// TOC-focused hints
 		hints = []string{
-			keyStyle.Render("j/k") + descStyle.Render(" select"),
-			keyStyle.Render("Enter") + descStyle.Render(" go to page"),
 			keyStyle.Render("Tab") + descStyle.Render(" back to content"),
 			keyStyle.Render("t") + descStyle.Render(" hide TOC"),
-			keyStyle.Render("q") + descStyle.Render(" close"),
 		}
 	} else {
 		// Content-focused hints
 		hints = []string{
 			keyStyle.Render("←/→/Space") + descStyle.Render(" pages"),
-			keyStyle.Render("j/k") + descStyle.Render(" scroll"),
 			keyStyle.Render("Ctrl+d/u") + descStyle.Render(" half-page"),
 			keyStyle.Render("t") + descStyle.Render(" TOC"),
-			keyStyle.Render("q") + descStyle.Render(" close"),
 		}
 	}
 

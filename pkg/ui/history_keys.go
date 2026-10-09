@@ -221,7 +221,7 @@ func (m Model) handleHistoryKeys(msg tea.KeyMsg) Model {
 		// Toggle file tree panel (bv-190l)
 		m.historyView.ToggleFileTree()
 		if m.historyView.IsFileTreeVisible() {
-			m.setStatus("File tree: j/k navigate, Enter select, Esc close")
+			m.setStatus("File tree")
 		} else {
 			m.setStatus("File tree hidden")
 		}

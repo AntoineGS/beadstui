@@ -102,8 +102,8 @@ func TestFlowTextRole(t *testing.T) {
 	if !strings.Contains(out, theme.Text.Title.PaddingRight(2).Render("DEPENDENCY FLOW")) {
 		t.Error("flow title ignored role")
 	}
-	if !strings.Contains(out, theme.Text.Metadata.Render("Press Enter to see issues")) {
-		t.Error("flow hint ignored role")
+	if plain := ansi.Strip(out); strings.Contains(plain, "Enter") || strings.Contains(plain, "j/k") {
+		t.Error("flow view spells out assumed keys")
 	}
 	if !strings.Contains(out, theme.Text.Body.Render("web (2)")) {
 		t.Error("populated outgoing label ignored body role")
@@ -119,23 +119,41 @@ func TestFlowPlainSelectedTextRole(t *testing.T) {
 	m.SetData(&analysis.CrossLabelFlow{Labels: []string{"api", "web"}, FlowMatrix: [][]int{{0, 2}, {0, 0}}, TotalCrossLabelDeps: 2, BottleneckLabels: []string{"api"}}, nil)
 	m.SetSize(120, 30)
 	out := m.View()
-	if !strings.Contains(out, theme.Text.Selected.Foreground(theme.Blocked).Width(12).Render("api         ")) {
-		t.Error("bottleneck label lost semantic color/selected attributes")
+	if !inSelectedSpan(out, theme, "api", "2") {
+		t.Error("selected label row is not one list highlight")
 	}
 	if !strings.Contains(out, theme.Text.Heading.Render("IMPACT SUMMARY")) {
 		t.Error("flow heading ignored role")
 	}
-	if !strings.Contains(out, "Press Enter to see issues") {
-		t.Error("plain hint forced attributes")
-	}
 	m.SetData(&analysis.CrossLabelFlow{Labels: []string{"api", "web"}, FlowMatrix: [][]int{{0, 2}, {0, 0}}, TotalCrossLabelDeps: 2}, []model.Issue{{ID: "ordinary-id", Title: "ordinary title", Labels: []string{"api"}, Status: model.StatusOpen}})
 	m.OpenDrilldown()
 	out = m.View()
-	for _, text := range []string{"ordinary-id", "ordinary title"} {
-		if !strings.Contains(out, theme.Text.Selected.Render(text)) {
-			t.Errorf("selected drilldown %q lost background/false attributes", text)
+	if !inSelectedSpan(out, theme, "ordinary-id", "ordinary title") {
+		t.Error("selected drilldown row is not one list highlight")
+	}
+	if plain := ansi.Strip(out); strings.Contains(plain, "j/k") || strings.Contains(plain, "Esc") {
+		t.Error("drilldown spells out assumed keys")
+	}
+}
+
+// inSelectedSpan reports whether all texts sit inside one Text.Selected span,
+// the shared list highlight.
+func inSelectedSpan(out string, theme ui.Theme, texts ...string) bool {
+	open := strings.TrimSuffix(theme.Text.Selected.Render("x"), "x\x1b[m")
+	for _, part := range strings.Split(out, open)[1:] {
+		span := part
+		if i := strings.Index(span, "\x1b["); i >= 0 {
+			span = span[:i]
+		}
+		all := true
+		for _, text := range texts {
+			all = all && strings.Contains(span, text)
+		}
+		if all {
+			return true
 		}
 	}
+	return false
 }
 
 // =============================================================================

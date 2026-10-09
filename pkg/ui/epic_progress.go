@@ -13,11 +13,10 @@ import (
 // supplies the detail-pane Epic Progress block. The epic focus card builds
 // its own role-styled rows, sharing epicChildrenSorted and the pill helpers.
 //
-// selectedIdx highlights one child row with a ▸ cursor; pass -1 for the static
-// detail-pane embed. width is the available
-// content width — child titles truncate to whatever remains after the fixed
-// cursor/pill/id segments (0 disables truncation). Returns "" when the epic has
-// no children so callers can skip the section (and its heading) entirely.
+// width is the available content width — child titles truncate to whatever
+// remains after the fixed indent/pill/id segments (0 disables truncation).
+// Returns "" when the epic has no children so callers can skip the section
+// (and its heading) entirely.
 //
 // Pills reuse RenderStatusBadge / RenderPriorityBadge (styles.go). Closed
 // children render role-specific ID and title spans faint so completed work
@@ -27,7 +26,7 @@ import (
 // (Status.IsClosed). The output contains ANSI SGR sequences and MUST be routed
 // through addANSI (renderSection's ANSI track), never addMD — lipgloss cannot
 // survive Glamour's chroma code-fence path (bt-x5xc4).
-func buildEpicProgressANSI(epic model.Issue, allIssues []model.Issue, selectedIdx, width int) string {
+func buildEpicProgressANSI(epic model.Issue, allIssues []model.Issue, width int) string {
 	children := epicChildrenSorted(epic.ID, allIssues)
 	if len(children) == 0 {
 		return ""
@@ -51,27 +50,22 @@ func buildEpicProgressANSI(epic model.Issue, allIssues []model.Issue, selectedId
 		"",
 	}
 
-	for i, child := range children {
+	indent := text.Metadata.Render("  ")
+	for _, child := range children {
 		statusPill := RenderStatusBadge(string(child.Status))
 		prioPill := RenderPriorityBadge(child.Priority)
 
-		idStyle, titleStyle, cursorStyle := text.Metadata, text.Body, text.Metadata
+		idStyle, titleStyle := text.Metadata, text.Body
 		if child.Status.IsClosed() {
 			idStyle, titleStyle = dimIDStyle, dimTitleStyle
 		}
-		cursor := "  "
-		if i == selectedIdx {
-			idStyle, titleStyle, cursorStyle = text.Selected, text.Selected, text.Selected
-			cursor = "▸ "
-		}
-		cursor = cursorStyle.Render(cursor)
 
 		title := child.Title
 		if width > 0 {
 			// Title budget: width minus the fixed leading segments. Pills carry
 			// background SGR but their display width is the label text width, so
 			// lipgloss.Width measures the on-screen cells correctly.
-			fixed := lipgloss.Width(cursor) + lipgloss.Width(statusPill) + 1 +
+			fixed := lipgloss.Width(indent) + lipgloss.Width(statusPill) + 1 +
 				lipgloss.Width(prioPill) + 1 + lipgloss.Width(child.ID) + 3 // " — "
 			budget := width - fixed
 			if budget < 0 {
@@ -88,7 +82,7 @@ func buildEpicProgressANSI(epic model.Issue, allIssues []model.Issue, selectedId
 		}
 
 		gap := titleStyle.Render(" ")
-		lines = append(lines, cursor+statusPill+gap+prioPill+gap+idAndTitle)
+		lines = append(lines, indent+statusPill+gap+prioPill+gap+idAndTitle)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)

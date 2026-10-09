@@ -616,8 +616,8 @@ func (e *EpicsTreeModel) clamp(line string) string {
 // footer renders the key-hint line, compacting for narrow terminals and
 // clamping so it never wraps (the user routinely runs scrunched windows).
 func (e *EpicsTreeModel) footer() string {
-	const full = "j/k nav · →/⏎ expand · ← collapse · z collapse-all · s active/all/completed · v zoom · esc back"
-	const compact = "j/k nav · →/← expand · z all · s mode · v zoom · esc"
+	const full = "→ expand · ← collapse · z collapse-all · s active/all/completed · v zoom"
+	const compact = "→/← expand · z all · s mode · v zoom"
 	hint := full
 	if e.width > 0 && lipgloss.Width(full) > e.width {
 		hint = compact

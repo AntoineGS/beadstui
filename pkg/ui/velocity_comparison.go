@@ -158,7 +158,7 @@ func (m *VelocityComparisonModel) ensureVisible() {
 
 // visibleRowCount returns how many data rows can be displayed
 func (m *VelocityComparisonModel) visibleRowCount() int {
-	// Account for header (2 lines) and footer (1 line)
+	// Account for title + blank and table header + separator (4 lines)
 	available := m.height - 4
 	if available < 1 {
 		return 1
@@ -243,11 +243,7 @@ func (m *VelocityComparisonModel) View() string {
 			row := m.data[i]
 			isSelected := i == m.cursor
 
-			// Row style
 			rowStyle := t.Text.Body
-			if isSelected {
-				rowStyle = t.Text.Selected
-			}
 
 			// Truncate label if needed
 			displayLabel := row.Label
@@ -256,7 +252,7 @@ func (m *VelocityComparisonModel) View() string {
 			}
 
 			// Format trend with color (bt-pxbc: track semantic theme tokens)
-			trendStyle := rowStyle // Trend colors retain meaning, selection retains attributes/background.
+			trendStyle := rowStyle // Trend colors retain meaning on unselected rows.
 			switch row.Trend {
 			case "accelerating":
 				trendStyle = trendStyle.Foreground(t.Success)
@@ -288,15 +284,11 @@ func (m *VelocityComparisonModel) View() string {
 				avgWidth, row.Avg,
 			)
 
-			prefix := "  "
+			line := rowStyle.Render("  "+rowText) + trendStyle.Render(trendText) + rowStyle.Render(" ") + sparkStyle.Render(row.SparklineBar)
 			if isSelected {
-				prefix = "> "
+				line = renderSelectedRow(t, line, m.width)
 			}
-
-			sb.WriteString(rowStyle.Render(prefix + rowText))
-			sb.WriteString(trendStyle.Render(trendText))
-			sb.WriteString(rowStyle.Render(" "))
-			sb.WriteString(sparkStyle.Render(row.SparklineBar))
+			sb.WriteString(line)
 			sb.WriteString("\n")
 		}
 
@@ -309,12 +301,7 @@ func (m *VelocityComparisonModel) View() string {
 		}
 	}
 
-	// Footer hints
-	footerStyle := t.Text.Metadata
-	sb.WriteString("\n")
-	sb.WriteString(footerStyle.Render("j/k: navigate | enter: filter by label | esc: back"))
-
-	return sb.String()
+	return strings.TrimSuffix(sb.String(), "\n")
 }
 
 // DataCount returns the number of labels

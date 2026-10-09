@@ -31,9 +31,13 @@ canonical compositor for modal pop-ups.
 Selected rows use `renderSelectedRow` (in `pkg/ui/panel.go`), the same
 helper the issue list uses: the plain row, full width, under `Text.Selected`.
 No `>` or `▸` cursor. `RenderPopupMenu` already applies it; custom row
-renderers call it directly (bt-wvy).
+renderers call it directly (bt-wvy). Full views follow the same rule
+(bt-6dv): every list highlights its selection whether or not its pane has
+focus, as the issue list does while details has focus. Glyphs that mark
+state rather than the cursor stay (expand/collapse, current page `▶`).
 
-Footers list only keys a user could not guess. Leave out movement (`j/k`,
+Footers and hint lines, in popups and views alike, list only keys a user
+could not guess. Leave out movement (`j/k`,
 arrows, PgUp/PgDn, Home/End), `enter` that selects, applies, opens or
 confirms, and `esc`/`q` that closes, backs out or cancels. Keep everything
 else (`space toggle`, `/ search`, `ctrl+s commit`, `* current`). A popup with

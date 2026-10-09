@@ -220,16 +220,13 @@ func (m *ActionableModel) layout() actionableLayout {
 		l.body = append(l.body, header, lipgloss.NewStyle().Foreground(t.Border).Render(strings.Repeat("·", max(0, m.width-4))))
 		for itemIdx, item := range track.Items {
 			selected := trackIdx == m.selectedTrack && itemIdx == m.selectedItem
-			cursor, connector := "  ", "└─ "
-			if selected {
-				cursor = "▸ "
-			}
+			connector := "└─ "
 			if itemIdx < len(track.Items)-1 {
 				connector = "├─ "
 			}
-			// Priority remains a domain-semantic icon on ordinary rows. On the
-			// selected row strip its local style to preserve a coherent pair.
-			prefix := cursor + connector + GetPriorityIcon(item.Priority) + " " + popupChromeLine(item.ID) + " "
+			// Priority remains a domain-semantic icon on ordinary rows; the
+			// selected row takes the shared list highlight instead.
+			prefix := "  " + connector + GetPriorityIcon(item.Priority) + " " + popupChromeLine(item.ID) + " "
 			prefix = ansi.Truncate(prefix, m.width, "…")
 			suffix := ""
 			if len(item.UnblocksIDs) > 0 {
@@ -239,7 +236,7 @@ func (m *ActionableModel) layout() actionableLayout {
 			text := fit(item.Title, max(0, m.width-ansi.StringWidth(prefix)-ansi.StringWidth(suffix)))
 			if selected {
 				l.selectedStart = len(l.body)
-				l.body = append(l.body, t.Text.Selected.Width(m.width).Render(ansi.Strip(prefix)+text+suffix))
+				l.body = append(l.body, renderSelectedRow(t, prefix+text+suffix, m.width))
 				if len(item.UnblocksIDs) > 0 {
 					l.body = append(l.body, t.Text.Metadata.Render(fit("        ↳ Unblocks: "+strings.Join(item.UnblocksIDs, ", "), m.width)))
 				}

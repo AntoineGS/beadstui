@@ -449,7 +449,7 @@ func (g *GraphModel) renderVisualGraph(id string, issue *model.Issue, width, hei
 	// Navigation hint
 	navStyle := t.Text.Metadata
 	sections = append(sections, "")
-	sections = append(sections, navStyle.Render("j/k: navigate • enter: view details • g: back to list"))
+	sections = append(sections, navStyle.Render("g: back to list"))
 
 	return strings.Join(sections, "\n")
 }

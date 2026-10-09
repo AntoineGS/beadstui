@@ -41,12 +41,15 @@ func TestTutorialFocusedTOCAndEmptyTextRoleCells(t *testing.T) {
 			m.width, m.height = 80, 30
 			m.focus, m.tocCursor, m.currentPage = focusTutorialTOC, 1, 0
 			pages := []TutorialPage{{ID: "first", Title: "First page", Section: "Section"}, {ID: "focused", Title: "Focused page", Section: "Section"}}
-			m.progress["focused"] = true
+			m.progress["first"] = true
 			baseline := m
 			baseline.theme = DefaultTheme()
 			t.Run("focused", func(t *testing.T) {
 				out := m.renderTOC(pages)
-				assertSpan(t, out, " → Focused page", theme.Text.Selected)
+				if !strings.Contains(out, renderSelectedRow(theme, "   Focused page", tutorialTOCInnerWidth)) || strings.Contains(ansi.Strip(out), "→") {
+					t.Fatalf("TOC cursor is not the shared list highlight:\n%q", out)
+				}
+				assertSpan(t, out, " ▶ First page", theme.Text.Body)
 				assertSpan(t, out, activeGlyphs.Success, lipgloss.NewStyle().Foreground(theme.Open))
 				if lipgloss.Width(out) != lipgloss.Width(baseline.renderTOC(pages)) || lipgloss.Height(out) != lipgloss.Height(baseline.renderTOC(pages)) {
 					t.Fatal("TOC role styling changed geometry")
@@ -641,19 +644,15 @@ func TestTutorialViewFooter(t *testing.T) {
 
 	view := m.View()
 
-	// Should contain styled key hints
+	// Only the keys a user could not guess
 	if !strings.Contains(view, "←/→") {
 		t.Error("View should contain page navigation hint")
-	}
-	if !strings.Contains(view, "j/k") {
-		t.Error("View should contain scroll hint")
 	}
 	if !strings.Contains(view, "TOC") {
 		t.Error("View should contain TOC hint")
 	}
-	// Footer shows "q close" not "Esc close"
-	if !strings.Contains(view, "close") {
-		t.Error("View should contain close hint")
+	if plain := ansi.Strip(view); strings.Contains(plain, "j/k") || strings.Contains(plain, "close") {
+		t.Error("View should not spell out scroll or close keys")
 	}
 }
 
@@ -911,9 +910,9 @@ func TestTutorialTOCCursorIndicator(t *testing.T) {
 
 	view := m.View()
 
-	// Should contain cursor indicator
-	if !strings.Contains(view, "→") {
-		t.Error("TOC should show cursor indicator when focused")
+	// The cursor is the shared highlight, not an arrow
+	if strings.Contains(ansi.Strip(view), "→") {
+		t.Error("TOC cursor should be highlighted, not marked with an arrow")
 	}
 
 	// Should contain focus indicator
@@ -940,8 +939,8 @@ func TestTutorialContextSensitiveFooter(t *testing.T) {
 	m.tocVisible = true
 	m.focus = focusTutorialTOC
 	view = m.View()
-	if !strings.Contains(view, "Enter") {
-		t.Error("TOC footer should show Enter hint")
+	if strings.Contains(ansi.Strip(view), "Enter") {
+		t.Error("TOC footer should not spell out Enter")
 	}
 	if !strings.Contains(view, "back to content") {
 		t.Error("TOC footer should show back to content hint")

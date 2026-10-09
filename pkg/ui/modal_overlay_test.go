@@ -138,6 +138,61 @@ func TestPopupFooters_OnlyNonObviousKeys(t *testing.T) {
 	}
 }
 
+// Full views follow the popup footer rule: assumed keys are gone, the keys a
+// user could not guess stay (bt-6dv).
+func TestViewHints_OnlyNonObviousKeys(t *testing.T) {
+	theme := DefaultTheme()
+	m := newSizedModel(t, fieldEditTestIssues(), 120, 40)
+
+	epics := EpicsTreeModel{theme: theme}
+	flow := NewFlowMatrixModel(theme)
+	flow.width = 120
+	history := NewHistoryModel(createTestHistoryReport(), theme)
+	history.SetSize(180, 40)
+	history.searchActive = true
+	board := NewBoardModel(nil, theme)
+
+	labels := m
+	labels.focused = focusLabelDashboard
+	labelBadge, _ := labels.extractFilterBadge()
+	drill := m
+	drill.activeModal, drill.labelDrilldownLabel = ModalLabelDrilldown, "area:tui"
+	drillBadge, _ := drill.extractFilterBadge()
+	attention := m
+	attention.mode = ViewAttention
+	boardSearch := m
+	boardSearch.mode = ViewBoard
+	boardSearch.board.searchMode = true
+
+	for _, tc := range []struct {
+		name string
+		out  string
+		want []string
+	}{
+		{"epics tree", epics.footer(), []string{"→ expand", "← collapse", "z collapse-all", "v zoom"}},
+		{"flow footer", flow.renderFooter(), []string{"Tab: switch panel"}},
+		{"flow drilldown", flow.renderDrilldown(), nil},
+		{"history search", history.renderHeader(), nil},
+		{"history dolt-only", m.renderHistoryDoltOnly(120, 30), []string{"Press h to close"}},
+		{"history loading", m.renderHistoryLoadingScreen(), []string{"Press h to cancel"}},
+		{"memories loading", m.renderMemoriesLoadingScreen(), []string{"Press u to cancel"}},
+		{"board empty detail", board.renderDetailPanel(60, 20), []string{"Select a card"}},
+		{"label dashboard badge", labelBadge, []string{"h detail", "d drilldown"}},
+		{"label drilldown badge", drillBadge, []string{"g graph"}},
+		{"attention hint", attention.extractHintText(), []string{"1-9 filter"}},
+		{"board search hint", boardSearch.extractHintText(), []string{"n/N:match"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assertNoAssumedKeyHints(t, tc.out)
+			for _, want := range tc.want {
+				if !strings.Contains(ansi.Strip(tc.out), want) {
+					t.Errorf("missing %q in %q", want, ansi.Strip(tc.out))
+				}
+			}
+		})
+	}
+}
+
 // Plugin confirm labels are plugin content, not key hints: custom labels stay
 // visible, cancel on the left and confirm on the right; defaults are hidden.
 func TestPluginConfirm_CustomLabelsCancelLeftConfirmRight(t *testing.T) {

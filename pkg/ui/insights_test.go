@@ -43,10 +43,19 @@ func TestInsightsPlainSelectedTextRole(t *testing.T) {
 	m := ui.NewInsightsModel(insights, issues, theme)
 	m.SetSize(320, 50)
 	out := m.View()
-	for _, text := range []string{"Critical Junction", "ordinary support"} {
-		if !strings.Contains(out, theme.Text.Selected.Render(text)) {
-			t.Errorf("selected %q lost background/false attributes", text)
-		}
+	// The selected row is one shared-highlight span holding title and prose.
+	// Every panel highlights its own selection, so check each span.
+	open := strings.TrimSuffix(theme.Text.Selected.Render("x"), "x\x1b[m")
+	var spans []string
+	for _, part := range strings.Split(out, open)[1:] {
+		spans = append(spans, part[:strings.Index(part, "\x1b[")])
+	}
+	found := false
+	for _, span := range spans {
+		found = found || strings.Contains(span, "Critical Junction") && strings.Contains(span, "ordinary support")
+	}
+	if !found {
+		t.Errorf("selected title and prose are not inside one row highlight: %q", spans)
 	}
 	if !strings.Contains(out, theme.Text.Heading.Render("Bottlenecks (3)")) {
 		t.Error("metric heading ignored own role")
