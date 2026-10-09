@@ -102,3 +102,4 @@ _tmp/
 
 # bt-kfkrb perf-tracking artifact (timing log, not version-controlled)
 bt-timing.log
+.worktrees/
