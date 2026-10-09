@@ -195,7 +195,8 @@ means no metadata is sent.
   "beads": [{
     "db": "proj", "id": "proj-a1b", "repo": "/home/u/gits/proj",
     "status": "in_progress", "title": "Add retries", "type": "task", "priority": 2,
-    "assignee": "alex", "metadata": { "example.session": "s-123" }
+    "assignee": "alex", "updated_at": "2026-10-07T13:58:12Z", "blocked": false,
+    "metadata": { "example.session": "s-123" }
   }]
 }
 ```
@@ -203,6 +204,12 @@ means no metadata is sent.
 Always the full set of beads matching `subscribe`. It is sent once the manifest
 is accepted and the issues are loaded, and again whenever the data changes. `revision`
 increases by one each time. Descriptions and comments are never sent.
+
+`blocked` follows bt's ready filter: the bead has status `blocked`, or a
+`blocks` dependency on a loaded bead that is not closed. A blocker bt has not
+loaded, such as one in a database outside the current scope, counts as
+resolved. Blockers are checked across every loaded bead, not only the
+subscribed ones.
 
 ### `state.set` and `state.clear` (plugin to bt, notifications)
 

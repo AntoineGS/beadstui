@@ -207,6 +207,43 @@ func TestHostSyncSkipsUnchangedPayload(t *testing.T) {
 	}
 }
 
+func TestHostSyncSendsBlockedAndUpdatedAt(t *testing.T) {
+	shortTimers(t)
+	th := startHost(t, exampleConfig("echo-bead"))
+	updated := time.Date(2026, 10, 8, 12, 30, 0, 0, time.UTC)
+	blocker := openIssue("example-1")
+	blocked := openIssue("example-2")
+	blocked.UpdatedAt = updated
+	blocked.Dependencies = []*model.Dependency{{IssueID: "example-2", DependsOnID: "example-1", Type: model.DepBlocks}}
+	related := openIssue("example-3")
+	related.Dependencies = []*model.Dependency{{IssueID: "example-3", DependsOnID: "example-1", Type: model.DepRelated}}
+	external := openIssue("example-4")
+	external.Dependencies = []*model.Dependency{{IssueID: "example-4", DependsOnID: "other-9", Type: model.DepBlocks}}
+	status := openIssue("example-5")
+	status.Status = model.StatusBlocked
+
+	th.SyncIssues([]model.Issue{blocker, blocked, related, external, status})
+	zero := time.Time{}.Format(time.RFC3339)
+	th.waitSection(t, &blocked, "blocked=true updated="+updated.Format(time.RFC3339))
+	for _, c := range []struct {
+		issue model.Issue
+		want  string
+	}{
+		{blocker, "blocked=false updated=" + zero},
+		{related, "blocked=false updated=" + zero},
+		{external, "blocked=false updated=" + zero},
+		{status, "blocked=true updated=" + zero},
+	} {
+		if got := th.sectionTexts(&c.issue); !reflect.DeepEqual(got, []string{c.want}) {
+			t.Errorf("%s sections = %v, want [%s]", c.issue.ID, got, c.want)
+		}
+	}
+
+	blocker.Status = model.StatusClosed
+	th.SyncIssues([]model.Issue{blocker, blocked})
+	th.waitSection(t, &blocked, "blocked=false updated="+updated.Format(time.RFC3339))
+}
+
 func TestHostInvoke(t *testing.T) {
 	shortTimers(t)
 	th := startHost(t, exampleConfig("ok"))

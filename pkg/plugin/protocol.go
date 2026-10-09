@@ -107,15 +107,17 @@ type BeadRef struct {
 
 // Bead is one entry of beads.sync.
 type Bead struct {
-	DB       string                     `json:"db"`
-	ID       string                     `json:"id"`
-	Repo     *string                    `json:"repo"`
-	Status   string                     `json:"status"`
-	Title    string                     `json:"title"`
-	Type     string                     `json:"type"`
-	Priority int                        `json:"priority"`
-	Assignee string                     `json:"assignee"`
-	Metadata map[string]json.RawMessage `json:"metadata"`
+	DB        string                     `json:"db"`
+	ID        string                     `json:"id"`
+	Repo      *string                    `json:"repo"`
+	Status    string                     `json:"status"`
+	Title     string                     `json:"title"`
+	Type      string                     `json:"type"`
+	Priority  int                        `json:"priority"`
+	Assignee  string                     `json:"assignee"`
+	UpdatedAt time.Time                  `json:"updated_at"`
+	Blocked   bool                       `json:"blocked"`
+	Metadata  map[string]json.RawMessage `json:"metadata"`
 }
 
 // SyncParams are the params of beads.sync.

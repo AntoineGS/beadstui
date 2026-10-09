@@ -31,7 +31,8 @@ func TestMain(m *testing.M) {
 // first beads.sync, which bt only sends once the manifest is accepted.
 // ignore-eof-until-shutdown keeps running after stdin closes and writes
 // $BT_TEST_PLUGIN_MARKER on shutdown; ignore-shutdown ignores both.
-// exit-after-init exits 300ms after the handshake.
+// exit-after-init exits 300ms after the handshake. echo-bead puts each
+// bead's blocked and updated_at in its section.
 func runTestPlugin(spec string) {
 	has := map[string]bool{}
 	for _, b := range strings.Split(spec, ",") {
@@ -80,10 +81,14 @@ func runTestPlugin(spec string) {
 			}
 			set := StateSetParams{}
 			for _, b := range p.Beads {
+				section := text
+				if has["echo-bead"] {
+					section = fmt.Sprintf("blocked=%v updated=%s", b.Blocked, b.UpdatedAt.UTC().Format(time.RFC3339))
+				}
 				set.Beads = append(set.Beads, BeadState{
 					DB: b.DB, ID: b.ID,
 					Fields:   map[string]FieldState{"state": {Value: "waiting"}},
-					Sections: map[string]string{"agent": text},
+					Sections: map[string]string{"agent": section},
 					Actions:  []string{"dispatch"},
 				})
 			}
