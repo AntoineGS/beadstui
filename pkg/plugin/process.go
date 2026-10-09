@@ -343,6 +343,7 @@ func (s *session) filter(ctx context.Context, issues []syncIssue) (beads []Bead,
 		b := Bead{
 			DB: in.db, ID: in.issue.ID, Status: string(in.issue.Status), Title: in.issue.Title,
 			Type: string(in.issue.IssueType), Priority: in.issue.Priority, Assignee: in.issue.Assignee,
+			UpdatedAt: in.issue.UpdatedAt, Blocked: in.blocked,
 		}
 		for k, v := range in.issue.Metadata {
 			if hasAnyPrefix(k, sub.MetadataPrefixes) {

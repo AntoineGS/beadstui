@@ -149,8 +149,9 @@ type Host struct {
 
 // syncIssue is a bead copied out of the model for beads.sync.
 type syncIssue struct {
-	issue model.Issue
-	db    string
+	issue   model.Issue
+	db      string
+	blocked bool
 }
 
 // NewHost returns a host for opts.Configs; nothing runs until Start.
@@ -266,12 +267,17 @@ func (h *Host) Register(reg *slots.Registry) {
 // SyncIssues copies issues and sends them to the active plugins in the
 // background. A plugin gets beads.sync only when its subscribed set changed.
 func (h *Host) SyncIssues(issues []model.Issue) {
+	statuses := make(map[string]model.Status, len(issues))
+	for i := range issues {
+		statuses[issues[i].ID] = issues[i].Status
+	}
 	latest := make([]syncIssue, len(issues))
 	for i := range issues {
 		src := &issues[i]
 		cp := model.Issue{
 			ID: src.ID, Title: src.Title, Status: src.Status, Priority: src.Priority,
 			IssueType: src.IssueType, Assignee: src.Assignee, SourceRepo: src.SourceRepo,
+			UpdatedAt: src.UpdatedAt,
 		}
 		if src.Metadata != nil {
 			cp.Metadata = make(map[string]json.RawMessage, len(src.Metadata))
@@ -279,7 +285,7 @@ func (h *Host) SyncIssues(issues []model.Issue) {
 				cp.Metadata[k] = append(json.RawMessage(nil), v...)
 			}
 		}
-		latest[i] = syncIssue{issue: cp, db: h.store.db(src)}
+		latest[i] = syncIssue{issue: cp, db: h.store.db(src), blocked: isBlocked(src, statuses)}
 	}
 	h.latestMu.Lock()
 	h.latest = latest
@@ -291,6 +297,24 @@ func (h *Host) SyncIssues(issues []model.Issue) {
 		default:
 		}
 	}
+}
+
+// isBlocked reports whether issue has status blocked or an open blocking
+// dependency on a loaded bead, the rule of bt's ready filter. Blockers that
+// are not loaded count as resolved.
+func isBlocked(issue *model.Issue, statuses map[string]model.Status) bool {
+	if issue.Status == model.StatusBlocked {
+		return true
+	}
+	for _, dep := range issue.Dependencies {
+		if dep == nil || !dep.Type.IsBlocking() {
+			continue
+		}
+		if st, ok := statuses[dep.DependsOnID]; ok && st != model.StatusClosed && st != model.StatusTombstone {
+			return true
+		}
+	}
+	return false
 }
 
 // latestIssues returns the last synced issues and their generation, which

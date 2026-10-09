@@ -6,6 +6,14 @@ For architectural decisions, see `docs/adr/`. For issue tracking, use `bd list`.
 
 ---
 
+## 2026-10-08 - Plugins: beads.sync carries updated_at and blocked
+
+**Plugins had to guess when a bead last changed and shell out to `bd ready` to learn whether it was blocked. `beads.sync` now sends both.**
+
+- **feat: `updated_at` and `blocked` in `beads.sync`.** `blocked` follows the ready filter: status `blocked`, or an open `blocks` dependency on a loaded bead. The protocol stays at version 1. (bt-otb.1)
+
+---
+
 ## 2026-10-07 - Plugins: out-of-process extensions over JSON-RPC
 
 **bt can now run plugins: separate executables, configured in `~/.config/bt/config.yaml`, that add badges, detail sections, BQL fields and actions on beads. They feed the slots registry added earlier the same day.**
