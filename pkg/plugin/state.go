@@ -310,17 +310,23 @@ func (s *store) actions(issue *model.Issue) []Action {
 			if !contains(st.Actions, d.ID) {
 				continue
 			}
-			key := d.Key
-			if k, ok := cfg.Keys[d.ID]; ok {
-				key = k
-			}
-			if key == "none" {
-				key = ""
-			}
-			out = append(out, Action{Plugin: cfg.Name, ID: d.ID, Label: d.Label, Key: key})
+			out = append(out, declaredAction(cfg, d))
 		}
 	})
 	return out
+}
+
+// declaredAction is action d of cfg's plugin with its key after config
+// overrides; "none" becomes "".
+func declaredAction(cfg Config, d ActionDecl) Action {
+	key := d.Key
+	if k, ok := cfg.Keys[d.ID]; ok {
+		key = k
+	}
+	if key == "none" {
+		key = ""
+	}
+	return Action{Plugin: cfg.Name, ID: d.ID, Label: d.Label, Key: key}
 }
 
 func contains(list []string, s string) bool {

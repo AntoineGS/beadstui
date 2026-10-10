@@ -273,6 +273,33 @@ func TestHostKeyOverride(t *testing.T) {
 	}
 }
 
+func TestHostStatusActionsKeptAfterFailure(t *testing.T) {
+	shortTimers(t)
+	cfg := exampleConfig("exit-after-init")
+	cfg.Keys = map[string]string{"dispatch": "X"}
+	th := startHostWith(t, Options{Configs: []Config{cfg}, NoRestart: true})
+	th.waitActive(t)
+	want := []Action{{Plugin: "example", ID: "dispatch", Label: "Dispatch", Key: "X"}}
+	if got := th.status().Actions; !reflect.DeepEqual(got, want) {
+		t.Fatalf("active Actions = %+v, want %+v", got, want)
+	}
+	waitFor(t, 5*time.Second, "plugin failed", func() bool { return th.status().State == "failed" })
+	st := th.status()
+	if st.Restarts != 0 || st.Version != "0.1.0" || !reflect.DeepEqual(st.Actions, want) {
+		t.Errorf("failed status = %+v, want no restarts and the manifest kept", st)
+	}
+}
+
+func TestHostNoRestartFailsAtOnce(t *testing.T) {
+	shortTimers(t)
+	restartBackoff = []time.Duration{time.Minute}
+	th := startHostWith(t, Options{Configs: []Config{exampleConfig("bad-manifest")}, NoRestart: true})
+	waitFor(t, 5*time.Second, "plugin failed", func() bool { return th.status().State == "failed" })
+	if st := th.status(); st.Restarts != 0 || !strings.Contains(st.LastError, "protocol version") {
+		t.Errorf("status = %+v", st)
+	}
+}
+
 func TestHostHangingInitFails(t *testing.T) {
 	shortTimers(t)
 	th := startHost(t, exampleConfig("hang-init"))

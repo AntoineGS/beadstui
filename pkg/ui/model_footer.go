@@ -871,7 +871,7 @@ func (m Model) modalKeyMap() help.KeyMap {
 	case ModalLongformEdit:
 		return m.keys.LongformEdit
 	case ModalPluginPrompt:
-		if m.pluginPrompt != nil && m.pluginPrompt.kind != pluginPromptConfirm {
+		if m.pluginPrompt != nil && (m.pluginPrompt.kind == pluginPromptMenu || m.pluginPrompt.kind == pluginPromptSelect) {
 			return m.keys.PluginSelect
 		}
 	}

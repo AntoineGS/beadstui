@@ -31,11 +31,13 @@ plugins:
 command is ignored, and a duplicate name disables the later entry. `bt plugins`
 reports these errors.
 
-Check the configuration without starting anything:
+Check the configuration and each plugin's status:
 
 ```console
 $ bt plugins
 example  enabled  example plugin  (/usr/local/bin/example)  keys: dispatch=D jump=none
+  state: active  version: 0.1.0
+  key D (dispatch): taken by other/deploy
 $ bt plugins --json
 [
   {
@@ -43,18 +45,38 @@ $ bt plugins --json
     "enabled": true,
     "command": ["example", "plugin"],
     "binary": "/usr/local/bin/example",
-    "keys": { "dispatch": "D", "jump": "none" }
+    "keys": { "dispatch": "D", "jump": "none" },
+    "state": "active",
+    "version": "0.1.0",
+    "restarts": 0,
+    "conflicts": [
+      { "plugin": "example", "action": "dispatch", "key": "D", "reason": "taken by other/deploy" }
+    ]
   }
 ]
 ```
 
-`binary` is `""` when the command is not found on `PATH`, and `keys` is left out
-when there are no overrides.
+The first line of each entry shows the plugin name, `enabled` or `disabled`, the
+command, the binary it resolves to on `PATH` (or `not found`) and the key
+overrides. `binary` is `""` when the command is not found on `PATH`, and `keys`
+is left out when there are no overrides.
 
-Each line shows the plugin name, `enabled` or `disabled`, the command, the binary
-it resolves to on `PATH` (or `not found`) and the key overrides. A configuration
-error is printed and makes the command exit non-zero; the valid entries are still
-listed.
+`bt plugins` then starts every enabled plugin once, in project scope and without
+restarts, waits until each one is active or failed (at most 7 seconds), and shuts
+them down again. It reports the `state` (`disabled`, `active`, `failed`, or
+`starting` if a plugin was still starting at the deadline), the manifest
+`version`, the `last_error` (a start, initialize or manifest error, or the
+plugin's last stderr line) and the key `conflicts` of the declared actions (see
+[Keys and the action menu](#keys-and-the-action-menu)). `restarts` is always 0
+here because a probe never restarts. `--no-start` only reads the configuration
+and leaves out every runtime field.
+
+A configuration error is printed and makes the command exit non-zero; the valid
+entries are still listed.
+
+Inside the TUI, the plugin status popup shows the same information live,
+restarts included: open it from the last row of the `P` action menu, or press `P`
+when the selected bead has no plugin actions.
 
 ## Lifecycle
 
@@ -307,7 +329,8 @@ taken.
 An action also binds its key directly in those views. The key is the `keys`
 override from the config, else the manifest's default; `none` removes the key
 and leaves the action in the menu only. A key bt itself binds in a view, or that
-an earlier plugin in the config claimed, is not bound.
+an earlier plugin in the config claimed, is not bound. `P` itself always opens
+the menu. `bt plugins` and the plugin status popup list these key conflicts.
 
 ## `--popup`
 
@@ -321,7 +344,8 @@ Without the flag, `dismiss` is ignored. Plugins receive the flag as `popup` in
 - A plugin that fails to start, answers `initialize` late, sends an invalid
   manifest or crashes counts as a failure and is restarted as described in
   [Lifecycle](#lifecycle). Once the restarts are used up it is marked failed and
-  bt shows one footer notice; details are in the debug log. The count starts
+  bt shows one footer notice; the plugin status popup (`P`) shows its last error,
+  and more details are in the debug log. The count starts
   over after 60 seconds active, and a missing command fails at once.
 - An action in flight when the plugin goes away is reported as "result unknown".
   bt does not know whether it took effect and never repeats it.

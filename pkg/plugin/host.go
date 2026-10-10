@@ -67,13 +67,19 @@ type Options struct {
 	// background, at most once per database per sync, with any one bead of
 	// that database) or invoking.
 	Repo func(issue *model.Issue) string
+	// NoRestart marks a plugin failed on its first failure instead of
+	// restarting it, for a one-shot probe.
+	NoRestart bool
 }
 
 // Status describes one configured plugin. State is disabled, starting,
-// active or failed.
+// active or failed. Version and Actions come from the last accepted
+// manifest and are kept after the plugin fails; Actions carry their keys
+// after config overrides.
 type Status struct {
 	Name, State, Version, LastError string
 	Restarts                        int
+	Actions                         []Action
 }
 
 // Action is a plugin action offered on a bead. Key is empty when the config

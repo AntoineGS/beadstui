@@ -15,13 +15,15 @@ import (
 )
 
 // pluginPromptKind tells a plugin prompt's answer where to go: menu answers
-// are handled by bt, confirm and select answers go back to the plugin.
+// are handled by bt, confirm and select answers go back to the plugin. The
+// status popup takes no answer.
 type pluginPromptKind int
 
 const (
 	pluginPromptMenu pluginPromptKind = iota
 	pluginPromptConfirm
 	pluginPromptSelect
+	pluginPromptStatus
 )
 
 // pluginPromptOption is one row of a select prompt or the action menu.
@@ -29,9 +31,11 @@ type pluginPromptOption struct {
 	label, description string
 	value              string        // select: the answer sent to the plugin
 	action             plugin.Action // menu: the action to invoke
+	status             bool          // menu: opens the plugin status popup
 }
 
-// pluginPrompt is the open plugin prompt or action menu (ModalPluginPrompt).
+// pluginPrompt is the open plugin prompt, action menu or status popup
+// (ModalPluginPrompt). The status popup uses cursor as its scroll offset.
 type pluginPrompt struct {
 	kind   pluginPromptKind
 	plugin string
@@ -67,16 +71,24 @@ func promptEnded(done <-chan struct{}) bool {
 	return false
 }
 
-// openPluginMenu opens the action menu for the selected bead.
+// openPluginMenu opens the action menu for the selected bead, ending with a
+// row that opens the plugin status popup. Without a bead or actions it opens
+// the status popup directly.
 func (m Model) openPluginMenu() (Model, tea.Cmd) {
 	issue := m.selectedIssue()
-	if issue == nil {
-		m.setNotice("No bead selected")
-		return m, nil
+	var actions []plugin.Action
+	if issue != nil {
+		actions = m.pluginActionsFor(issue)
 	}
-	actions := m.pluginActionsFor(issue)
 	if len(actions) == 0 {
-		m.setNotice("No plugin actions for " + issue.ID)
+		switch {
+		case m.pluginStatuses != nil:
+			m.openPluginStatus()
+		case issue == nil:
+			m.setNotice("No bead selected")
+		default:
+			m.setNotice("No plugin actions for " + issue.ID)
+		}
 		return m, nil
 	}
 	p := &pluginPrompt{kind: pluginPromptMenu, title: "Plugin actions: " + issue.ID, issue: issue}
@@ -86,6 +98,9 @@ func (m Model) openPluginMenu() (Model, tea.Cmd) {
 			desc = a.Key + "  " + a.Plugin
 		}
 		p.options = append(p.options, pluginPromptOption{label: a.Label, description: desc, action: a})
+	}
+	if m.pluginStatuses != nil {
+		p.options = append(p.options, pluginPromptOption{label: pluginStatusTitle + "…", status: true})
 	}
 	m.showPluginPrompt(p)
 	return m, nil
@@ -198,12 +213,25 @@ func (m Model) handlePluginPromptKeys(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if msg.String() == "ctrl+c" {
-		if p.kind == pluginPromptMenu {
+		if p.kind == pluginPromptMenu || p.kind == pluginPromptStatus {
 			m.closePluginPrompt()
 		} else {
 			m.answerPluginPrompt(nil)
 		}
 		return m, tea.Quit
+	}
+
+	if p.kind == pluginPromptStatus {
+		k := m.keys.PluginSelect
+		switch {
+		case key.Matches(msg, k.Up):
+			m.scrollPluginStatus(p, -1)
+		case key.Matches(msg, k.Down):
+			m.scrollPluginStatus(p, 1)
+		case key.Matches(msg, k.Cancel), msg.String() == "q":
+			m.closePluginPrompt()
+		}
+		return m, nil
 	}
 
 	if p.kind == pluginPromptConfirm {
@@ -231,6 +259,10 @@ func (m Model) handlePluginPromptKeys(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		if p.kind == pluginPromptMenu {
 			issue := p.issue
 			m.closePluginPrompt()
+			if opt.status {
+				m.openPluginStatus()
+				return m, nil
+			}
 			return m.invokePluginAction(opt.action, issue)
 		}
 		m.answerPluginPrompt(opt.value)
@@ -250,6 +282,9 @@ func (m Model) renderPluginPrompt() string {
 	p := m.pluginPrompt
 	if p == nil {
 		return ""
+	}
+	if p.kind == pluginPromptStatus {
+		return m.renderPluginStatus(p)
 	}
 	t := m.theme
 	opts := PopupOpts{Title: p.title, Theme: t, Available: &PopupSize{m.width, max(0, m.height-1)}}

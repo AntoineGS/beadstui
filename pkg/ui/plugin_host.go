@@ -69,7 +69,7 @@ func (m Model) handlePluginMsg(msg tea.Msg) (Model, tea.Cmd, bool) {
 		st := msg.Status
 		switch {
 		case st.State == "failed":
-			m.setFailure(fmt.Sprintf("Plugin %s failed: %s", st.Name, pluginText(st.LastError, false)))
+			m.setFailure(fmt.Sprintf("Plugin %s failed: %s (P for details)", st.Name, pluginText(st.LastError, false)))
 		case st.State == "active" && st.Restarts > 0:
 			m.setStatus(fmt.Sprintf("Plugin %s restarted", st.Name))
 		}
