@@ -256,6 +256,10 @@ type FooterData struct {
 	// from full "key desc" pills down to key-only glyphs as width tightens).
 	Hints []FooterHint
 
+	// PluginHints are the selected bead's plugin action keys, drawn before
+	// the static ?/; pair and dropped early under width pressure.
+	PluginHints []FooterHint
+
 	// Total visible items in list
 	TotalItems int
 
@@ -411,6 +415,9 @@ func (m *Model) footerData() FooterData {
 
 	// Key hints
 	fd.Hints = m.extractKeyHints()
+	for _, b := range m.pluginKeyBindings() {
+		fd.PluginHints = append(fd.PluginHints, FooterHint{Key: b.Help().Key, Desc: b.Help().Desc})
+	}
 
 	// Per-view center meaning (Phase 3)
 	fd.CenterOverride = m.footerCenter()
@@ -896,11 +903,16 @@ func (m Model) sidebarHelpGroups() [][]key.Binding {
 	}
 	// View-only (bt-dx7k): the Global map now lives on the ? overlay; ; shows
 	// just the active view's actions. nil view map -> empty (the sidebar renders
-	// an empty-view fallback; see ShortcutsSidebar.View).
+	// an empty-view fallback; see ShortcutsSidebar.View). The selected bead's
+	// plugin actions follow as their own group.
+	var groups [][]key.Binding
 	if km := m.viewSpecificKeyMap(); km != nil {
-		return km.FullHelp()
+		groups = km.FullHelp()
 	}
-	return nil
+	if pb := m.pluginKeyBindings(); len(pb) > 0 {
+		groups = append(groups[:len(groups):len(groups)], pb)
+	}
+	return groups
 }
 
 // ---------------------------------------------------------------------------
@@ -1117,6 +1129,7 @@ func (fd FooterData) Render() string {
 	// skips them unconditionally), so the cascade drops the triad whole.
 	lensLvl := lensFull
 	hintsCompact := false
+	pluginHints := renderPluginHints(fd.PluginHints)
 
 	// Left indent so the footer's leftmost content (the lens scope) sits just
 	// inside where the body's left border wall lands rather than flush under the
@@ -1126,7 +1139,7 @@ func (fd FooterData) Render() string {
 	const footerLeftPad = 1
 
 	rightWidth := func() int {
-		w := lipgloss.Width(renderStaticHints(hintsCompact)) + bellWidth
+		w := lipgloss.Width(pluginHints) + lipgloss.Width(renderStaticHints(hintsCompact)) + bellWidth
 		if alertsSection != "" {
 			w += lipgloss.Width(alertsSection)
 		}
@@ -1141,6 +1154,7 @@ func (fd FooterData) Render() string {
 	reductions := []func(){
 		func() { lensLvl = lensNoPlace }, // 1. label placeholder (lb:-)
 		func() { dropTier(3) },           // 2. daemon / degraded badges
+		func() { pluginHints = "" },      // 2b. plugin action keys
 		func() { // 3. triad drops whole; total survives via countBadge. A
 			// detail/memories center override is the most protected content
 			// and yields only at the cascade's last resort.
@@ -1182,7 +1196,7 @@ func (fd FooterData) Render() string {
 	// columns — the bt-8scek truncation root cause) has moved to a floating
 	// bubble overlay (bt-kuvzj, toast_bubble.go). The footer no longer
 	// renders notification content at all; it keeps only the bell.
-	rightZone := hintsSection
+	rightZone := pluginHints + hintsSection
 
 	// Split spare columns around the total so it is centered in the terminal,
 	// not just in the gap between the side zones. Clamp its position when either

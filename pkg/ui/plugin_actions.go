@@ -175,6 +175,34 @@ func (m Model) tryPluginActionKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
+// pluginKeyBindings lists, as help bindings, the plugin actions on the
+// selected bead whose key tryPluginActionKey would invoke: keyed (not "none"),
+// not bound by bt in the current view, and first for their key. It is empty
+// while a modal is open or outside the plugin views.
+func (m Model) pluginKeyBindings() []key.Binding {
+	if m.pluginActions == nil || m.activeModal != ModalNone {
+		return nil
+	}
+	view := m.pluginView()
+	if view == "" {
+		return nil
+	}
+	issue := m.selectedIssue()
+	if issue == nil {
+		return nil
+	}
+	var out []key.Binding
+	seen := map[string]bool{}
+	for _, a := range m.pluginActionsFor(issue) {
+		if a.Key == "" || a.Key == pluginMenuKey || seen[a.Key] || btBindsKeyIn(m.keys, view, a.Key) {
+			continue
+		}
+		seen[a.Key] = true
+		out = append(out, key.NewBinding(key.WithKeys(a.Key), key.WithHelp(pluginText(a.Key, false), a.Label)))
+	}
+	return out
+}
+
 // invokePluginAction marks issue pending and runs a off the UI goroutine. A
 // bead with a pending write or action is refused.
 func (m Model) invokePluginAction(a plugin.Action, issue *model.Issue) (Model, tea.Cmd) {

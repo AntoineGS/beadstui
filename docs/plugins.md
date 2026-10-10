@@ -332,6 +332,9 @@ and leaves the action in the menu only. A key bt itself binds in a view, or that
 an earlier plugin in the config claimed, is not bound. `P` itself always opens
 the menu. `bt plugins` and the plugin status popup list these key conflicts.
 
+The footer and the `;` shortcuts sidebar list the bound action keys the selected
+bead offers. The footer drops them first when the terminal is narrow.
+
 ## `--popup`
 
 `bt --popup` is meant for a terminal popup that should close when the job is

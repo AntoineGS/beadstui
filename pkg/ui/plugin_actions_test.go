@@ -161,6 +161,90 @@ func TestPluginActionKeyLosesToBtBinding(t *testing.T) {
 	}
 }
 
+// perBeadActions offers each bead its own actions.
+type perBeadActions map[string][]plugin.Action
+
+func (p perBeadActions) Actions(issue *model.Issue) []plugin.Action { return p[issue.ID] }
+
+func (p perBeadActions) Invoke(context.Context, plugin.Action, *model.Issue, string) plugin.ActionResult {
+	return plugin.ActionResult{}
+}
+
+func sidebarKeys(m Model) map[string]string {
+	out := map[string]string{}
+	for _, g := range m.sidebarHelpGroups() {
+		for _, b := range g {
+			out[b.Help().Key] = b.Help().Desc
+		}
+	}
+	return out
+}
+
+func TestPluginActionKeysInFooterAndSidebar(t *testing.T) {
+	m := newSizedModel(t, pluginTestIssues(), 160, 40)
+	jump := plugin.Action{Plugin: "tsk", ID: "jump", Label: "Jump", Key: "J"}
+	unkeyed := plugin.Action{Plugin: "tsk", ID: "stop", Label: "Stop"}
+	shadowed := plugin.Action{Plugin: "tsk", ID: "down", Label: "Down", Key: "j"}
+	m.pluginActions = perBeadActions{"proj-1": {dispatchAction, jump, unkeyed, shadowed}}
+	if selectedID(m) != "proj-1" {
+		t.Fatalf("selected = %q, want proj-1", selectedID(m))
+	}
+
+	fd := m.footerData()
+	want := []FooterHint{{Key: "D", Desc: "Dispatch"}, {Key: "J", Desc: "Jump"}}
+	if len(fd.PluginHints) != len(want) || fd.PluginHints[0] != want[0] || fd.PluginHints[1] != want[1] {
+		t.Fatalf("footer plugin hints = %+v, want %+v", fd.PluginHints, want)
+	}
+	if out := ansi.Strip(fd.Render()); !strings.Contains(out, "D Dispatch") || !strings.Contains(out, "J Jump") {
+		t.Fatalf("footer missing plugin keys:\n%s", out)
+	}
+	keys := sidebarKeys(m)
+	if keys["D"] != "Dispatch" || keys["J"] != "Jump" {
+		t.Fatalf("sidebar keys = %v, want D Dispatch and J Jump", keys)
+	}
+	if keys["j"] == "Down" {
+		t.Fatal("sidebar lists a plugin key bt binds")
+	}
+
+	m, _ = sendMsg(m, keyRune('j'))
+	if selectedID(m) != "proj-2" {
+		t.Fatalf("selected = %q, want proj-2", selectedID(m))
+	}
+	fd = m.footerData()
+	if len(fd.PluginHints) != 0 || strings.Contains(ansi.Strip(fd.Render()), "Dispatch") {
+		t.Fatalf("footer shows plugin keys for a bead without actions: %+v", fd.PluginHints)
+	}
+	if keys := sidebarKeys(m); keys["D"] != "" || keys["J"] != "" {
+		t.Fatalf("sidebar shows plugin keys for a bead without actions: %v", keys)
+	}
+
+	m, _ = sendMsg(m, keyRune('k'))
+	m, _ = sendMsg(m, keyRune(':'))
+	if fd := m.footerData(); len(fd.PluginHints) != 0 {
+		t.Fatalf("footer shows plugin keys under a modal: %+v", fd.PluginHints)
+	}
+}
+
+func TestPluginHintsDropUnderWidthPressure(t *testing.T) {
+	fd := FooterData{ScopeLabel: "proj", TotalItems: 2,
+		PluginHints: []FooterHint{{Key: "D", Desc: "Dispatch"}, {Key: "J", Desc: "Jump"}}}
+	for width := 30; width <= 160; width++ {
+		fd.Width = width
+		out := fd.Render()
+		if w := lipgloss.Width(out); w > width {
+			t.Fatalf("width %d: footer is %d cells", width, w)
+		}
+		plain := ansi.Strip(out)
+		if strings.Contains(plain, "Dispatch") && !strings.Contains(plain, "? help") && !strings.Contains(plain, "? ;") {
+			t.Fatalf("width %d: plugin hints kept while ?/; dropped:\n%s", width, plain)
+		}
+	}
+	fd.Width = 160
+	if !strings.Contains(ansi.Strip(fd.Render()), "D Dispatch") {
+		t.Fatal("wide footer dropped the plugin hints")
+	}
+}
+
 func TestPluginActionMenuInvokes(t *testing.T) {
 	fake := &fakePluginActions{actions: []plugin.Action{dispatchAction, stopAction}}
 	m := newPluginActionModel(t, fake)
