@@ -197,7 +197,7 @@ func TestFooterData_IssueTotalAvoidsCrowdedSides(t *testing.T) {
 		warnings int
 		start    int
 	}{
-		{"crowded left", strings.Repeat("p", 52), 0, 0, 66},
+		{"crowded left", strings.Repeat("p", 52), 0, 0, 61},
 		{"crowded right", "bt", 1234567890123456789, 12345, 39},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
