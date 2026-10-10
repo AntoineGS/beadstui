@@ -43,7 +43,7 @@ func TestBoardHeadersUseSemanticIcons(t *testing.T) {
 				b := BoardModel{swimLaneMode: tc.mode}
 				_, got := b.getColumnHeaders()
 				if !reflect.DeepEqual(got, tc.want) {
-					t.Errorf("mode %d icons = %q, want %q", tc.mode, got, tc.want)
+					t.Errorf("mode %s icons = %q, want %q", tc.mode, got, tc.want)
 				}
 			}
 		})

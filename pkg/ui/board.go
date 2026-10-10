@@ -17,18 +17,20 @@ import (
 
 // BoardModel represents the Kanban board view with adaptive columns
 type BoardModel struct {
-	columns      [4][]model.Issue
-	activeColIdx []int  // Indices of non-empty columns (for navigation)
-	focusedCol   int    // Index into activeColIdx
-	selectedRow  [4]int // Store selection for each column
+	columns      [][]model.Issue // One slice per lane of the active mode
+	activeColIdx []int           // Indices of non-empty columns (for navigation)
+	focusedCol   int             // Index into activeColIdx
+	selectedRow  []int           // Store selection for each column
 	theme        Theme
 	slots        *slots.Registry // row badge providers; nil draws none
 	pending      pendingRows     // beads drawn with the pending spinner
 
 	// Swimlane grouping mode (bv-wjs0)
 	swimLaneMode SwimLaneMode
-	allIssues    []model.Issue // Store all issues for re-grouping on mode change
-	boardState   *BoardState   // Optional precomputed columns for all swimlane modes (bv-guxz)
+	modes        []BoardMode                  // Modes cycled by 's'; nil uses builtinBoardModes
+	cursors      map[SwimLaneMode]boardCursor // Cursor of each mode not currently shown
+	allIssues    []model.Issue                // Store all issues for re-grouping on mode change
+	boardState   *BoardState                  // Optional precomputed columns for all swimlane modes (bv-guxz)
 
 	// Reverse dependency index: maps issue ID -> slice of issue IDs it blocks (bv-1daf)
 	blocksIndex map[string][]string
@@ -65,7 +67,7 @@ type BoardModel struct {
 
 // searchMatch holds info about a matching card (bv-yg39)
 type searchMatch struct {
-	col int // Column index (0-3)
+	col int // Column index
 	row int // Row index within column
 }
 
@@ -77,17 +79,113 @@ const (
 	ColClosed     = 3
 )
 
-// SwimLaneMode determines how cards are grouped into columns (bv-wjs0)
-type SwimLaneMode int
+// SwimLaneMode identifies how cards are grouped into columns (bv-wjs0).
+// It is the key of a BoardMode.
+type SwimLaneMode string
 
 const (
-	SwimByStatus   SwimLaneMode = iota // Default: Open | In Progress | Blocked | Closed
-	SwimByPriority                     // P0 Critical | P1 High | P2 Medium | P3+ Other
-	SwimByType                         // Bug | Feature | Task | Epic
+	SwimByStatus   SwimLaneMode = "status"   // Default: Open | In Progress | Blocked | Closed
+	SwimByPriority SwimLaneMode = "priority" // P0 Critical | P1 High | P2 Medium | P3+ Other
+	SwimByType     SwimLaneMode = "type"     // Bug | Feature | Task | Epic
 )
 
-// SwimLaneModeCount is the total number of swimlane modes for cycling
-const SwimLaneModeCount = 3
+// BoardLane is one column of a board mode. Icon and Color are called at
+// render time so they follow the active glyph tier and theme.
+type BoardLane struct {
+	Title string
+	Icon  func() string
+	Color func(Theme) color.Color
+}
+
+// BoardMode groups issues into a variable number of lanes.
+type BoardMode struct {
+	Key   SwimLaneMode
+	Name  string
+	Lanes []BoardLane
+	// Lane returns the index into Lanes for an issue; false leaves the
+	// issue off the board in this mode.
+	Lane func(model.Issue) (int, bool)
+	// ShowEmpty shows empty lanes when the empty-column override is auto.
+	ShowEmpty bool
+}
+
+// boardCursor is a mode's saved focus and per-lane selection. Scrolling
+// follows the selection, so this also restores each lane's scroll.
+type boardCursor struct {
+	lane        int // Lane index (not an index into activeColIdx)
+	selectedRow []int
+}
+
+// builtinBoardModes are the modes every board cycles through, in order.
+var builtinBoardModes = []BoardMode{
+	{
+		Key:  SwimByStatus,
+		Name: "Status",
+		Lanes: []BoardLane{
+			{"OPEN", func() string { return GetStatusIcon("open") }, func(t Theme) color.Color { return t.Open }},
+			{"IN PROGRESS", func() string { return GetStatusIcon("in_progress") }, func(t Theme) color.Color { return t.InProgress }},
+			{"BLOCKED", func() string { return GetStatusIcon("blocked") }, func(t Theme) color.Color { return t.Blocked }},
+			{"CLOSED", func() string { return GetStatusIcon("closed") }, func(t Theme) color.Color { return t.Closed }},
+		},
+		Lane: func(issue model.Issue) (int, bool) {
+			switch {
+			case isClosedLikeStatus(issue.Status):
+				return ColClosed, true
+			case issue.Status == model.StatusInProgress:
+				return ColInProgress, true
+			case issue.Status == model.StatusBlocked:
+				return ColBlocked, true
+			default:
+				return ColOpen, true
+			}
+		},
+		ShowEmpty: true,
+	},
+	{
+		Key:  SwimByPriority,
+		Name: "Priority",
+		Lanes: []BoardLane{
+			{"P0 CRITICAL", func() string { return GetPriorityIcon(0) }, func(Theme) color.Color { return ColorPrioCritical }},
+			{"P1 HIGH", func() string { return GetPriorityIcon(1) }, func(Theme) color.Color { return ColorPrioHigh }},
+			{"P2 MEDIUM", func() string { return GetPriorityIcon(2) }, func(Theme) color.Color { return ColorPrioMedium }},
+			{"P3+ OTHER", func() string { return GetPriorityIcon(3) }, func(Theme) color.Color { return ColorSecondary }},
+		},
+		Lane: func(issue model.Issue) (int, bool) {
+			switch {
+			case issue.Priority == 0:
+				return 0, true
+			case issue.Priority == 1:
+				return 1, true
+			case issue.Priority == 2:
+				return 2, true
+			default:
+				return 3, true
+			}
+		},
+	},
+	{
+		Key:  SwimByType,
+		Name: "Type",
+		Lanes: []BoardLane{
+			{"BUG", func() string { return GetTypeIcon("bug") }, func(Theme) color.Color { return ColorTypeBug }},
+			{"FEATURE", func() string { return GetTypeIcon("feature") }, func(Theme) color.Color { return ColorTypeFeature }},
+			{"TASK", func() string { return GetTypeIcon("task") }, func(Theme) color.Color { return ColorTypeTask }},
+			{"EPIC", func() string { return GetTypeIcon("epic") }, func(Theme) color.Color { return ColorTypeEpic }},
+		},
+		Lane: func(issue model.Issue) (int, bool) {
+			switch issue.IssueType {
+			case model.TypeBug:
+				return 0, true
+			case model.TypeFeature:
+				return 1, true
+			case model.TypeEpic:
+				return 3, true
+			default:
+				return 2, true // Task, and the default for other types
+			}
+		},
+	},
+}
 
 // ColumnStats holds computed statistics for a board column (bv-nl8a)
 type ColumnStats struct {
@@ -188,14 +286,16 @@ func (b *BoardModel) updateActiveColumns() {
 	showEmpty := b.shouldShowEmptyColumns()
 
 	b.activeColIdx = nil
-	for i := 0; i < 4; i++ {
+	for i := range b.columns {
 		if len(b.columns[i]) > 0 || showEmpty {
 			b.activeColIdx = append(b.activeColIdx, i)
 		}
 	}
 	// If all columns are empty (and we're hiding empty), include all columns anyway
 	if len(b.activeColIdx) == 0 {
-		b.activeColIdx = []int{ColOpen, ColInProgress, ColBlocked, ColClosed}
+		for i := range b.columns {
+			b.activeColIdx = append(b.activeColIdx, i)
+		}
 	}
 	// Ensure focused column is within valid range
 	if b.focusedCol >= len(b.activeColIdx) {
@@ -213,7 +313,7 @@ func (b *BoardModel) shouldShowEmptyColumns() bool {
 		return *b.showEmptyColumns
 	}
 	// Auto behavior: Status mode shows all, others hide empty
-	return b.swimLaneMode == SwimByStatus
+	return b.mode().ShowEmpty
 }
 
 // ToggleEmptyColumns cycles through empty column visibility modes (bv-tf6j)
@@ -245,7 +345,7 @@ func (b *BoardModel) GetEmptyColumnVisibilityMode() string {
 // HiddenColumnCount returns the number of empty columns currently hidden (bv-tf6j)
 func (b *BoardModel) HiddenColumnCount() int {
 	hidden := 0
-	for i := 0; i < 4; i++ {
+	for i := range b.columns {
 		if len(b.columns[i]) == 0 {
 			// Check if this column is in activeColIdx
 			found := false
@@ -278,100 +378,120 @@ func buildBlocksIndex(issues []model.Issue) map[string][]string {
 	return index
 }
 
-// groupIssuesByMode distributes issues into 4 columns based on swimlane mode (bv-wjs0)
-func groupIssuesByMode(issues []model.Issue, mode SwimLaneMode) [4][]model.Issue {
-	var cols [4][]model.Issue
+// groupIssues distributes issues into the lanes of a mode (bv-wjs0).
+// The result always has one slice per lane.
+func groupIssues(issues []model.Issue, mode BoardMode) [][]model.Issue {
+	cols := make([][]model.Issue, len(mode.Lanes))
 
 	for _, issue := range issues {
-		var colIdx int
-		switch mode {
-		case SwimByStatus:
-			// Default: Open | In Progress | Blocked | Closed
-			switch {
-			case isClosedLikeStatus(issue.Status):
-				colIdx = 3
-			case issue.Status == model.StatusOpen:
-				colIdx = 0
-			case issue.Status == model.StatusInProgress:
-				colIdx = 1
-			case issue.Status == model.StatusBlocked:
-				colIdx = 2
-			default:
-				colIdx = 0
-			}
-		case SwimByPriority:
-			// P0 Critical | P1 High | P2 Medium | P3+ Other
-			switch {
-			case issue.Priority == 0:
-				colIdx = 0 // Critical
-			case issue.Priority == 1:
-				colIdx = 1 // High
-			case issue.Priority == 2:
-				colIdx = 2 // Medium
-			default:
-				colIdx = 3 // P3+ Other
-			}
-		case SwimByType:
-			// Bug | Feature | Task | Epic
-			switch issue.IssueType {
-			case model.TypeBug:
-				colIdx = 0
-			case model.TypeFeature:
-				colIdx = 1
-			case model.TypeTask:
-				colIdx = 2
-			case model.TypeEpic:
-				colIdx = 3
-			default:
-				colIdx = 2 // Default to Task
-			}
+		colIdx, ok := mode.Lane(issue)
+		if !ok || colIdx < 0 || colIdx >= len(cols) {
+			continue
 		}
 		cols[colIdx] = append(cols[colIdx], issue)
 	}
 
-	// Sort each column
-	for i := 0; i < 4; i++ {
+	for i := range cols {
 		sortIssuesByPriorityAndDate(cols[i])
 	}
 
 	return cols
 }
 
+// modeList returns the modes this board cycles through.
+func (b *BoardModel) modeList() []BoardMode {
+	if len(b.modes) == 0 {
+		return builtinBoardModes
+	}
+	return b.modes
+}
+
+// mode returns the active mode, or the first mode if the key is unknown.
+func (b *BoardModel) mode() BoardMode {
+	modes := b.modeList()
+	for _, m := range modes {
+		if m.Key == b.swimLaneMode {
+			return m
+		}
+	}
+	return modes[0]
+}
+
 // GetSwimLaneModeName returns the display name for the current swimlane mode (bv-wjs0)
 func (b *BoardModel) GetSwimLaneModeName() string {
-	switch b.swimLaneMode {
-	case SwimByStatus:
-		return "Status"
-	case SwimByPriority:
-		return "Priority"
-	case SwimByType:
-		return "Type"
-	default:
-		return "Status"
-	}
+	return b.mode().Name
 }
 
 // GetSwimLaneMode returns the current swimlane mode (bv-wjs0)
 func (b *BoardModel) GetSwimLaneMode() SwimLaneMode {
-	return b.swimLaneMode
+	return b.mode().Key
 }
 
 // CycleSwimLaneMode cycles to the next swimlane mode and regroups issues (bv-wjs0)
 func (b *BoardModel) CycleSwimLaneMode() {
-	b.swimLaneMode = SwimLaneMode((int(b.swimLaneMode) + 1) % SwimLaneModeCount)
-	b.regroupIssues()
+	modes := b.modeList()
+	cur := b.mode().Key
+	next := 0
+	for i, m := range modes {
+		if m.Key == cur {
+			next = (i + 1) % len(modes)
+			break
+		}
+	}
+	b.SetSwimLaneMode(modes[next].Key)
 }
 
-// regroupIssues rebuilds columns based on current swimlane mode (bv-wjs0)
-func (b *BoardModel) regroupIssues() {
-	if b.boardState != nil {
-		b.columns = b.boardState.ColumnsForMode(b.swimLaneMode)
-	} else {
-		b.columns = groupIssuesByMode(b.allIssues, b.swimLaneMode)
+// SetSwimLaneMode switches to the given mode, saving the current mode's
+// cursor and restoring the one last used in the target mode. Unknown
+// modes are ignored.
+func (b *BoardModel) SetSwimLaneMode(mode SwimLaneMode) {
+	cur := b.mode().Key
+	if mode == cur {
+		return
+	}
+	known := false
+	for _, m := range b.modeList() {
+		if m.Key == mode {
+			known = true
+			break
+		}
+	}
+	if !known {
+		return
 	}
 
-	// Reset selection to avoid out-of-bounds
-	for i := 0; i < 4; i++ {
+	if b.cursors == nil {
+		b.cursors = make(map[SwimLaneMode]boardCursor)
+	}
+	b.cursors[cur] = boardCursor{lane: b.actualFocusedCol(), selectedRow: b.selectedRow}
+	saved := b.cursors[mode]
+	delete(b.cursors, mode)
+
+	b.swimLaneMode = mode
+	b.selectedRow = saved.selectedRow
+	b.regroupIssues()
+	b.JumpToColumn(saved.lane)
+}
+
+// groupColumns returns the active mode's lanes, from the snapshot cache
+// when it holds them (bv-guxz).
+func (b *BoardModel) groupColumns() [][]model.Issue {
+	mode := b.mode()
+	if cols, ok := b.boardState.ColumnsForMode(mode.Key); ok && len(cols) == len(mode.Lanes) {
+		return cols
+	}
+	return groupIssues(b.allIssues, mode)
+}
+
+// clampSelection sizes selectedRow to the lanes and keeps each selection
+// in bounds.
+func (b *BoardModel) clampSelection() {
+	if len(b.selectedRow) != len(b.columns) {
+		rows := make([]int, len(b.columns))
+		copy(rows, b.selectedRow)
+		b.selectedRow = rows
+	}
+	for i := range b.columns {
 		if b.selectedRow[i] >= len(b.columns[i]) {
 			if len(b.columns[i]) > 0 {
 				b.selectedRow[i] = len(b.columns[i]) - 1
@@ -380,7 +500,12 @@ func (b *BoardModel) regroupIssues() {
 			}
 		}
 	}
+}
 
+// regroupIssues rebuilds columns based on current swimlane mode (bv-wjs0)
+func (b *BoardModel) regroupIssues() {
+	b.columns = b.groupColumns()
+	b.clampSelection()
 	b.updateActiveColumns()
 	b.CancelSearch()    // Clear stale search matches
 	b.lastDetailID = "" // Force detail panel refresh
@@ -388,17 +513,14 @@ func (b *BoardModel) regroupIssues() {
 
 // getColumnHeaders returns the column header titles based on swimlane mode (bv-wjs0)
 func (b *BoardModel) getColumnHeaders() ([]string, []string) {
-	switch b.swimLaneMode {
-	case SwimByPriority:
-		return []string{"P0 CRITICAL", "P1 HIGH", "P2 MEDIUM", "P3+ OTHER"},
-			[]string{GetPriorityIcon(0), GetPriorityIcon(1), GetPriorityIcon(2), GetPriorityIcon(3)}
-	case SwimByType:
-		return []string{"BUG", "FEATURE", "TASK", "EPIC"},
-			[]string{GetTypeIcon("bug"), GetTypeIcon("feature"), GetTypeIcon("task"), GetTypeIcon("epic")}
-	default: // SwimByStatus
-		return []string{"OPEN", "IN PROGRESS", "BLOCKED", "CLOSED"},
-			[]string{GetStatusIcon("open"), GetStatusIcon("in_progress"), GetStatusIcon("blocked"), GetStatusIcon("closed")}
+	lanes := b.mode().Lanes
+	titles := make([]string, len(lanes))
+	icons := make([]string, len(lanes))
+	for i, lane := range lanes {
+		titles[i] = lane.Title
+		icons[i] = lane.Icon()
 	}
+	return titles, icons
 }
 
 // SetSlots sets the registry whose badges cards show.
@@ -411,9 +533,6 @@ func (b *BoardModel) SetPending(ids map[string]bool, frame string) {
 
 // NewBoardModel creates a new Kanban board from the given issues
 func NewBoardModel(issues []model.Issue, theme Theme) BoardModel {
-	// Group issues by default mode (status) - bv-wjs0
-	cols := groupIssuesByMode(issues, SwimByStatus)
-
 	// Initialize markdown renderer for detail panel (bv-r6kh)
 	glamourStyle := "dark"
 	if !isDarkBackground {
@@ -432,7 +551,6 @@ func NewBoardModel(issues []model.Issue, theme Theme) BoardModel {
 	}
 
 	b := BoardModel{
-		columns:      cols,
 		focusedCol:   0,
 		theme:        theme,
 		swimLaneMode: SwimByStatus, // Default mode (bv-wjs0)
@@ -442,6 +560,8 @@ func NewBoardModel(issues []model.Issue, theme Theme) BoardModel {
 		detailVP:     viewport.New(viewport.WithWidth(40), viewport.WithHeight(20)),
 		mdRenderer:   mdRenderer,
 	}
+	b.columns = b.groupColumns() // Group by default mode (status) - bv-wjs0
+	b.clampSelection()
 	b.updateActiveColumns()
 	return b
 }
@@ -453,7 +573,7 @@ func (b *BoardModel) SetIssues(issues []model.Issue) {
 	b.boardState = nil
 
 	// Group by current swimlane mode (bv-wjs0)
-	b.columns = groupIssuesByMode(issues, b.swimLaneMode)
+	b.columns = b.groupColumns()
 
 	b.blocksIndex = buildBlocksIndex(issues) // Rebuild reverse dependency index (bv-1daf)
 
@@ -470,15 +590,7 @@ func (b *BoardModel) SetIssues(issues []model.Issue) {
 	b.lastDetailID = ""
 
 	// Sanitize selection to prevent out-of-bounds
-	for i := 0; i < 4; i++ {
-		if b.selectedRow[i] >= len(b.columns[i]) {
-			if len(b.columns[i]) > 0 {
-				b.selectedRow[i] = len(b.columns[i]) - 1
-			} else {
-				b.selectedRow[i] = 0
-			}
-		}
-	}
+	b.clampSelection()
 
 	b.updateActiveColumns()
 }
@@ -494,11 +606,7 @@ func (b *BoardModel) SetSnapshot(s *DataSnapshot) {
 	b.allIssues = s.Issues
 	b.boardState = s.BoardState
 
-	if b.boardState != nil {
-		b.columns = b.boardState.ColumnsForMode(b.swimLaneMode)
-	} else {
-		b.columns = groupIssuesByMode(s.Issues, b.swimLaneMode)
-	}
+	b.columns = b.groupColumns()
 
 	// Prefer snapshot-precomputed reverse-dependency index when available.
 	if s.GraphLayout != nil && s.GraphLayout.Dependents != nil {
@@ -517,20 +625,12 @@ func (b *BoardModel) SetSnapshot(s *DataSnapshot) {
 	b.lastDetailID = ""
 
 	// Sanitize selection to prevent out-of-bounds
-	for i := 0; i < 4; i++ {
-		if b.selectedRow[i] >= len(b.columns[i]) {
-			if len(b.columns[i]) > 0 {
-				b.selectedRow[i] = len(b.columns[i]) - 1
-			} else {
-				b.selectedRow[i] = 0
-			}
-		}
-	}
+	b.clampSelection()
 
 	b.updateActiveColumns()
 }
 
-// actualFocusedCol returns the actual column index (0-3) being focused
+// actualFocusedCol returns the actual column index being focused
 func (b *BoardModel) actualFocusedCol() int {
 	if len(b.activeColIdx) == 0 {
 		return 0
@@ -538,10 +638,20 @@ func (b *BoardModel) actualFocusedCol() int {
 	return b.activeColIdx[b.focusedCol]
 }
 
+// focusedLane returns the focused column index, or false when the board
+// has no lanes to index (e.g. an unbuilt board).
+func (b *BoardModel) focusedLane() (int, bool) {
+	col := b.actualFocusedCol()
+	return col, col < len(b.columns) && col < len(b.selectedRow)
+}
+
 // Navigation methods
 func (b *BoardModel) MoveDown() {
 	b.CollapseExpanded() // Auto-collapse on navigation (bv-i3ii)
-	col := b.actualFocusedCol()
+	col, ok := b.focusedLane()
+	if !ok {
+		return
+	}
 	count := len(b.columns[col])
 	if count == 0 {
 		return
@@ -553,8 +663,8 @@ func (b *BoardModel) MoveDown() {
 
 func (b *BoardModel) MoveUp() {
 	b.CollapseExpanded() // Auto-collapse on navigation (bv-i3ii)
-	col := b.actualFocusedCol()
-	if b.selectedRow[col] > 0 {
+	col, ok := b.focusedLane()
+	if ok && b.selectedRow[col] > 0 {
 		b.selectedRow[col]--
 	}
 }
@@ -574,12 +684,16 @@ func (b *BoardModel) MoveLeft() {
 }
 
 func (b *BoardModel) MoveToTop() {
-	col := b.actualFocusedCol()
-	b.selectedRow[col] = 0
+	if col, ok := b.focusedLane(); ok {
+		b.selectedRow[col] = 0
+	}
 }
 
 func (b *BoardModel) MoveToBottom() {
-	col := b.actualFocusedCol()
+	col, ok := b.focusedLane()
+	if !ok {
+		return
+	}
 	count := len(b.columns[col])
 	if count > 0 {
 		b.selectedRow[col] = count - 1
@@ -587,7 +701,10 @@ func (b *BoardModel) MoveToBottom() {
 }
 
 func (b *BoardModel) PageDown(visibleRows int) {
-	col := b.actualFocusedCol()
+	col, ok := b.focusedLane()
+	if !ok {
+		return
+	}
 	count := len(b.columns[col])
 	if count == 0 {
 		return
@@ -600,7 +717,10 @@ func (b *BoardModel) PageDown(visibleRows int) {
 }
 
 func (b *BoardModel) PageUp(visibleRows int) {
-	col := b.actualFocusedCol()
+	col, ok := b.focusedLane()
+	if !ok {
+		return
+	}
 	newRow := b.selectedRow[col] - visibleRows/2
 	if newRow < 0 {
 		newRow = 0
@@ -612,9 +732,9 @@ func (b *BoardModel) PageUp(visibleRows int) {
 // Enhanced Navigation (bv-yg39)
 // ═══════════════════════════════════════════════════════════════════════════
 
-// JumpToColumn jumps directly to a specific column (1-4 maps to 0-3)
+// JumpToColumn jumps directly to a specific column (keys 1-4 map to 0-3)
 func (b *BoardModel) JumpToColumn(colIdx int) {
-	if colIdx < 0 || colIdx > 3 {
+	if colIdx < 0 || colIdx >= len(b.columns) {
 		return
 	}
 	for i, activeCol := range b.activeColIdx {
@@ -833,7 +953,10 @@ func (b *BoardModel) DetailScrollUp(lines int) {
 
 // SelectedIssue returns the currently selected issue, or nil if none
 func (b *BoardModel) SelectedIssue() *model.Issue {
-	col := b.actualFocusedCol()
+	col, ok := b.focusedLane()
+	if !ok {
+		return nil
+	}
 	cols := b.columns[col]
 	row := b.selectedRow[col]
 	if len(cols) > 0 && row < len(cols) {
@@ -850,7 +973,7 @@ func (b *BoardModel) SelectIssueByID(id string) bool {
 	}
 
 	// Search all columns; if found, set both focused column and selected row.
-	for col := 0; col < 4; col++ {
+	for col := range b.columns {
 		for row := range b.columns[col] {
 			if b.columns[col][row].ID != id {
 				continue
@@ -873,7 +996,7 @@ func (b *BoardModel) SelectIssueByID(id string) bool {
 
 // ColumnCount returns the number of issues in a column
 func (b *BoardModel) ColumnCount(col int) int {
-	if col >= 0 && col < 4 {
+	if col >= 0 && col < len(b.columns) {
 		return len(b.columns[col])
 	}
 	return 0
@@ -882,7 +1005,7 @@ func (b *BoardModel) ColumnCount(col int) int {
 // TotalCount returns the total number of issues across all columns
 func (b *BoardModel) TotalCount() int {
 	total := 0
-	for i := 0; i < 4; i++ {
+	for i := range b.columns {
 		total += len(b.columns[i])
 	}
 	return total
@@ -1076,25 +1199,11 @@ func (b BoardModel) View(width, height int) string {
 	// Get dynamic column headers based on swimlane mode (bv-wjs0)
 	columnTitles, columnEmoji := b.getColumnHeaders()
 
-	// Column colors - use appropriate colors based on mode
-	var columnColors []color.Color
-	switch b.swimLaneMode {
-	case SwimByPriority:
-		columnColors = []color.Color{
-			ColorPrioCritical, // P0
-			ColorPrioHigh,     // P1
-			ColorPrioMedium,   // P2
-			ColorSecondary,    // P3+
-		}
-	case SwimByType:
-		columnColors = []color.Color{
-			ColorTypeBug,     // Bug
-			ColorTypeFeature, // Feature
-			ColorTypeTask,    // Task
-			ColorTypeEpic,    // Epic
-		}
-	default: // SwimByStatus
-		columnColors = []color.Color{t.Open, t.InProgress, t.Blocked, t.Closed}
+	// Column colors come from the mode's lanes
+	mode := b.mode()
+	columnColors := make([]color.Color, len(mode.Lanes))
+	for i, lane := range mode.Lanes {
+		columnColors[i] = lane.Color(t)
 	}
 
 	var renderedCols []string
@@ -1154,7 +1263,7 @@ func (b BoardModel) View(width, height int) string {
 				indicators = append(indicators, fmt.Sprintf("%d%s", stats.P1Count, GetPriorityIcon(1)))
 			}
 			// Show blocked count in In Progress column (colIdx == ColInProgress when in status mode)
-			if b.swimLaneMode == SwimByStatus && colIdx == ColInProgress && stats.BlockedCount > 0 {
+			if mode.Key == SwimByStatus && colIdx == ColInProgress && stats.BlockedCount > 0 {
 				indicators = append(indicators, fmt.Sprintf("%s%d", activeGlyphs.Warning, stats.BlockedCount))
 			}
 			// Show oldest age with color indicator

@@ -233,24 +233,19 @@ type GraphLayout struct {
 
 // BoardState contains precomputed Kanban columns for each swimlane mode.
 // This lets the UI swap board data in O(1) when the full dataset is shown.
+// Columns are keyed by mode; each entry has one slice per lane of that mode.
 type BoardState struct {
-	ByStatus   [4][]model.Issue
-	ByPriority [4][]model.Issue
-	ByType     [4][]model.Issue
+	Columns map[SwimLaneMode][][]model.Issue
 }
 
-func (s *BoardState) ColumnsForMode(mode SwimLaneMode) [4][]model.Issue {
+// ColumnsForMode returns the cached columns for a mode, or false when the
+// mode was not precomputed.
+func (s *BoardState) ColumnsForMode(mode SwimLaneMode) ([][]model.Issue, bool) {
 	if s == nil {
-		return [4][]model.Issue{}
+		return nil, false
 	}
-	switch mode {
-	case SwimByPriority:
-		return s.ByPriority
-	case SwimByType:
-		return s.ByType
-	default:
-		return s.ByStatus
-	}
+	cols, ok := s.Columns[mode]
+	return cols, ok
 }
 
 func (l *GraphLayout) UpdatePhase2Ranks(stats *analysis.GraphStats) {
@@ -847,11 +842,11 @@ func buildBoardState(issues []model.Issue) *BoardState {
 	if len(issues) == 0 {
 		return nil
 	}
-	return &BoardState{
-		ByStatus:   groupIssuesByMode(issues, SwimByStatus),
-		ByPriority: groupIssuesByMode(issues, SwimByPriority),
-		ByType:     groupIssuesByMode(issues, SwimByType),
+	cols := make(map[SwimLaneMode][][]model.Issue, len(builtinBoardModes))
+	for _, mode := range builtinBoardModes {
+		cols[mode.Key] = groupIssues(issues, mode)
 	}
+	return &BoardState{Columns: cols}
 }
 
 func orderIssueIDsByRank(ids []string, ranks map[string]int) []string {

@@ -384,7 +384,15 @@ func TestSnapshotBuilder_BoardState(t *testing.T) {
 		t.Fatal("expected BoardState to be computed")
 	}
 
-	cols := snapshot.BoardState.ByStatus
+	cols, ok := snapshot.BoardState.ColumnsForMode(SwimByStatus)
+	if !ok || len(cols) != 4 {
+		t.Fatalf("expected 4 cached status lanes, got %d (ok=%v)", len(cols), ok)
+	}
+	for _, mode := range []SwimLaneMode{SwimByPriority, SwimByType} {
+		if _, ok := snapshot.BoardState.ColumnsForMode(mode); !ok {
+			t.Errorf("expected cached lanes for mode %s", mode)
+		}
+	}
 	if got := len(cols[ColOpen]); got != 1 {
 		t.Fatalf("expected 1 open issue, got %d", got)
 	}
