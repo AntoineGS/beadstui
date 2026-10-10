@@ -189,6 +189,7 @@ type TreeModel struct {
 	height         int                       // Available height
 	viewportOffset int                       // Index of first visible node (bv-r4ng)
 	slots          *slots.Registry           // row badge providers; nil draws none
+	pending        pendingRows               // beads drawn with the pending spinner
 
 	// Build state
 	built    bool   // Has tree been built?
@@ -289,6 +290,11 @@ func (t *TreeModel) SetSize(width, height int) {
 
 // SetSlots sets the registry whose badges tree rows show.
 func (t *TreeModel) SetSlots(r *slots.Registry) { t.slots = r }
+
+// SetPending sets the beads drawn with the pending spinner and its frame.
+func (t *TreeModel) SetPending(ids map[string]bool, frame string) {
+	t.pending = pendingRows{ids: ids, frame: frame}
+}
 
 // Build constructs the tree from issues using parent-child dependencies.
 // Implementation for bv-j3ck.
@@ -618,7 +624,7 @@ func (t *TreeModel) renderNode(node *IssueTreeNode, isSelected bool) string {
 	}
 
 	// Slot badges, before the ID
-	if strip, w := renderBadgeStrip(t.slots.Badges(issue), maxTitleLen-minTitleWidthWithBadges-1, time.Now()); w > 0 {
+	if strip, w := renderBadgeStrip(t.pending.badges(t.slots, issue), maxTitleLen-minTitleWidthWithBadges-1, time.Now()); w > 0 {
 		sb.WriteString(strip)
 		sb.WriteString(gap)
 		maxTitleLen -= w + 1

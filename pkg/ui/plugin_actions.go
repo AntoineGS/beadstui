@@ -187,9 +187,6 @@ func (m Model) invokePluginAction(a plugin.Action, issue *model.Issue) (Model, t
 	m.pendingWrites[id] = pendingWrite{Kind: writePluginAction, Field: a.Label, StartedAt: started}
 	m.updateListDelegate()
 	view := m.pluginView()
-	if view != "list" {
-		m.setNotice(fmt.Sprintf("%s %s…", a.Label, id))
-	}
 
 	src := m.pluginActions
 	issueCopy := *issue

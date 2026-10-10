@@ -8,6 +8,7 @@ import (
 
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
@@ -282,7 +283,7 @@ func TestPluginActionStaleResultKeepsNewerPending(t *testing.T) {
 	}
 }
 
-func TestPluginActionInBoardShowsNotice(t *testing.T) {
+func TestPluginActionInBoardShowsSpinner(t *testing.T) {
 	fake := &fakePluginActions{actions: []plugin.Action{dispatchAction}}
 	m := newPluginActionModel(t, fake)
 	m.mode = ViewBoard
@@ -294,12 +295,86 @@ func TestPluginActionInBoardShowsNotice(t *testing.T) {
 	}
 
 	m, cmd := sendMsg(m, keyRune('D'))
-	if want := "Dispatch " + iss.ID + "…"; m.statusMsg != want {
-		t.Fatalf("status = %q, want %q", m.statusMsg, want)
+	if m.statusMsg != "" {
+		t.Fatalf("status = %q, want no notice", m.statusMsg)
 	}
-	actionResults(cmd)
+	frame := claimSpinnerFrame(m.writeSpinnerIdx)
+	if card := m.board.renderCard(*iss, 40, true, 0, 0); !strings.Contains(card, frame) {
+		t.Fatalf("pending card missing spinner %q:\n%s", frame, card)
+	}
+	results := actionResults(cmd)
 	if len(fake.calls) != 1 || fake.calls[0].view != "board" {
 		t.Fatalf("invocations = %+v, want one from the board", fake.calls)
+	}
+	m, _ = sendMsg(m, results[0])
+	if card := m.board.renderCard(*iss, 40, true, 0, 0); strings.Contains(card, frame) {
+		t.Fatalf("card keeps spinner after the result:\n%s", card)
+	}
+}
+
+func TestPendingSpinnerInTreeAndEpics(t *testing.T) {
+	issue := slotTestIssue()
+	ids := map[string]bool{issue.ID: true}
+	frame := claimSpinnerFrame(3)
+
+	tr := NewTreeModel(DefaultTheme())
+	tr.SetSize(120, 20)
+	tr.SetPending(ids, frame)
+	if out := tr.renderNode(&IssueTreeNode{Issue: &issue}, false); !strings.Contains(out, frame) {
+		t.Fatalf("pending tree node missing spinner: %q", out)
+	}
+	tr.SetPending(nil, frame)
+	if out := tr.renderNode(&IssueTreeNode{Issue: &issue}, false); strings.Contains(out, frame) {
+		t.Fatalf("settled tree node keeps spinner: %q", out)
+	}
+
+	var e EpicsTreeModel
+	e.SetTheme(DefaultTheme())
+	e.SetSize(100, 20)
+	e.SetPending(ids, frame)
+	row := epicTreeRow{kind: rowChild, issue: &issue, lastKid: []bool{false, true}}
+	if out := e.renderChildRow(row, false); !strings.Contains(out, frame) {
+		t.Fatalf("pending epics child row missing spinner: %q", out)
+	}
+}
+
+func TestPendingSpinnerKeepsRowWidths(t *testing.T) {
+	issue := slotTestIssue()
+	ids := map[string]bool{issue.ID: true}
+	frame := claimSpinnerFrame(0)
+	for width := 16; width <= 60; width++ {
+		plain := NewBoardModel([]model.Issue{issue}, DefaultTheme())
+		pending := NewBoardModel([]model.Issue{issue}, DefaultTheme())
+		pending.SetPending(ids, frame)
+		want := plain.renderCard(issue, width, false, 0, 0)
+		got := pending.renderCard(issue, width, false, 0, 0)
+		if strings.Count(got, "\n") != strings.Count(want, "\n") || lipgloss.Width(got) != lipgloss.Width(want) {
+			t.Errorf("card width %d: pending %dx%d, plain %dx%d", width,
+				lipgloss.Width(got), strings.Count(got, "\n")+1, lipgloss.Width(want), strings.Count(want, "\n")+1)
+		}
+	}
+	// A title longer than any row, so the spinner can only take title cells.
+	issue.Title = strings.Repeat("long title ", 20)
+	for _, width := range []int{40, 80, 120} {
+		plain := NewTreeModel(DefaultTheme())
+		plain.SetSize(width, 20)
+		pending := NewTreeModel(DefaultTheme())
+		pending.SetSize(width, 20)
+		pending.SetPending(ids, frame)
+		node := &IssueTreeNode{Issue: &issue}
+		if got, want := lipgloss.Width(pending.renderNode(node, false)), lipgloss.Width(plain.renderNode(node, false)); got != want {
+			t.Errorf("tree width %d: pending row %d cells, plain %d", width, got, want)
+		}
+	}
+	for _, width := range []int{40, 100} {
+		var e EpicsTreeModel
+		e.SetTheme(DefaultTheme())
+		e.SetSize(width, 20)
+		e.SetPending(ids, frame)
+		row := epicTreeRow{kind: rowChild, issue: &issue, lastKid: []bool{false, true}}
+		if w := lipgloss.Width(e.renderChildRow(row, false)); w > width {
+			t.Errorf("epics child row width %d exceeds %d", w, width)
+		}
 	}
 }
 

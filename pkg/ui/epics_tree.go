@@ -38,6 +38,8 @@ type EpicsTreeModel struct {
 	height int
 	theme  Theme
 	slots  *slots.Registry // row badge providers for child rows; nil draws none
+	// pending marks child beads drawn with the pending spinner.
+	pending pendingRows
 
 	// idColW is the epic-ID column width (max epic ID width, capped) computed
 	// per render so bars/pct/counts align into clean vertical columns.
@@ -421,6 +423,11 @@ func (e *EpicsTreeModel) SetTheme(t Theme) { e.theme = t }
 // SetSlots sets the registry whose badges child rows show.
 func (e *EpicsTreeModel) SetSlots(r *slots.Registry) { e.slots = r }
 
+// SetPending sets the child beads drawn with the pending spinner and its frame.
+func (e *EpicsTreeModel) SetPending(ids map[string]bool, frame string) {
+	e.pending = pendingRows{ids: ids, frame: frame}
+}
+
 // SetContext sets the scope/mode labels shown in the header line.
 func (e *EpicsTreeModel) SetContext(scope, mode string) {
 	e.scopeLabel = scope
@@ -795,7 +802,7 @@ func (e *EpicsTreeModel) renderChildRow(r epicTreeRow, selected bool) string {
 
 	id := r.issue.ID
 	fixed := prefixW + lipgloss.Width(glyph) + 1 + lipgloss.Width(id) + 3 // " — "
-	strip, stripW := renderBadgeStrip(e.slots.Badges(r.issue), e.width-fixed-minTitleWidthWithBadges-1, time.Now())
+	strip, stripW := renderBadgeStrip(e.pending.badges(e.slots, r.issue), e.width-fixed-minTitleWidthWithBadges-1, time.Now())
 	if stripW > 0 {
 		fixed += stripW + 1
 	}

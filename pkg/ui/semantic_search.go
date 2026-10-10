@@ -738,6 +738,19 @@ func (m *Model) updateSemanticIDs(items []list.Item) {
 
 func (m *Model) updateListDelegate() {
 	m.list.SetDelegate(m.issueListDelegate())
+	m.syncPendingRows()
+}
+
+// syncPendingRows hands the pending beads and spinner frame to the board,
+// tree and epics views, re-rendering the cached epics text when it shows.
+func (m *Model) syncPendingRows() {
+	ids, frame := m.pendingWriteIDs(), claimSpinnerFrame(m.writeSpinnerIdx)
+	m.board.SetPending(ids, frame)
+	m.tree.SetPending(ids, frame)
+	m.epicsTree.SetPending(ids, frame)
+	if m.mode == ViewEpics {
+		m.epicsViewText = m.epicsTree.View()
+	}
 }
 
 func (m Model) issueListDelegate() IssueDelegate {

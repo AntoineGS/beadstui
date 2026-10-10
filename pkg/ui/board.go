@@ -23,6 +23,7 @@ type BoardModel struct {
 	selectedRow  [4]int // Store selection for each column
 	theme        Theme
 	slots        *slots.Registry // row badge providers; nil draws none
+	pending      pendingRows     // beads drawn with the pending spinner
 
 	// Swimlane grouping mode (bv-wjs0)
 	swimLaneMode SwimLaneMode
@@ -402,6 +403,11 @@ func (b *BoardModel) getColumnHeaders() ([]string, []string) {
 
 // SetSlots sets the registry whose badges cards show.
 func (b *BoardModel) SetSlots(r *slots.Registry) { b.slots = r }
+
+// SetPending sets the beads drawn with the pending spinner and its frame.
+func (b *BoardModel) SetPending(ids map[string]bool, frame string) {
+	b.pending = pendingRows{ids: ids, frame: frame}
+}
 
 // NewBoardModel creates a new Kanban board from the given issues
 func NewBoardModel(issues []model.Issue, theme Theme) BoardModel {
@@ -1440,7 +1446,7 @@ func (b BoardModel) renderCard(issue model.Issue, width int, selected bool, colI
 	line1 := strings.Join([]string{iconStyled, prioStyled, idStyled, ageStyled}, gap)
 
 	// Slot badges sit between the ID and the age, in whatever the card has left.
-	if strip, w := renderBadgeStrip(b.slots.Badges(&issue), width-cardStyle.GetHorizontalFrameSize()-lipgloss.Width(line1)-1, time.Now()); w > 0 {
+	if strip, w := renderBadgeStrip(b.pending.badges(b.slots, &issue), width-cardStyle.GetHorizontalFrameSize()-lipgloss.Width(line1)-1, time.Now()); w > 0 {
 		line1 = strings.Join([]string{iconStyled, prioStyled, idStyled, strip, ageStyled}, gap)
 	}
 

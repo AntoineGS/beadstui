@@ -8,6 +8,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/ui/slots"
 )
 
@@ -18,6 +19,27 @@ const maxBadgeStripWidth = 20
 // minTitleWidthWithBadges is the title width renderers protect before giving
 // any cells to badges: on narrow terminals badges go first.
 const minTitleWidthWithBadges = 20
+
+// pendingRows marks beads with a pending write or plugin action. Board, tree
+// and epics rows lead their badge strip with the spinner frame, so it takes
+// badge cells rather than widening the row.
+type pendingRows struct {
+	ids   map[string]bool
+	frame string
+}
+
+// badges returns issue's slot badges, led by the spinner when issue is pending.
+func (p pendingRows) badges(reg *slots.Registry, issue *model.Issue) []slots.Badge {
+	b := reg.Badges(issue)
+	if issue == nil || !p.ids[issue.ID] {
+		return b
+	}
+	frame := p.frame
+	if frame == "" {
+		frame = claimSpinnerFrame(0)
+	}
+	return append([]slots.Badge{{Text: frame, Tone: slots.ToneWarn}}, b...)
+}
 
 // badgeStyle maps a badge's tone to theme colours, unless the badge brings
 // its own style.

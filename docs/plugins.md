@@ -280,8 +280,8 @@ before it is drawn, so control sequences cannot reach the terminal.
 
 An error result shows its `message` as an error toast.
 
-While the call runs, a list row shows bt's pending spinner; in the board, tree
-and epics views bt shows a notice instead. The spinner stops on the result, on
+While the call runs, the bead's row in the list, board, tree and epics views
+shows bt's pending spinner. The spinner stops on the result, on
 the next state change for that bead, or after 65 seconds, whichever comes first.
 A timeout (60s) or a plugin crash is reported as "result unknown" and the action
 is never retried or replayed. Only one action per bead runs at a time: until the
