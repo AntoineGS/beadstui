@@ -446,6 +446,16 @@ func TestMemoriesLoadCmd_DogfoodLiveProject(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(repoRoot, ".beads")); err != nil {
 		t.Skip("no .beads/ found at the repo root; not running inside a live bt checkout")
 	}
+	// A checkout whose beads database holds no memories (a fresh clone, a
+	// fork) cannot prove the wiring either. Only skip on a clean empty
+	// answer: if bd itself fails, run on so the failure surfaces.
+	probe := exec.Command("bd", "memories", "--json")
+	probe.Dir = repoRoot
+	if out, err := probe.Output(); err == nil {
+		if mems, err := source.ParseMemoriesJSON(out, source.Origin{}); err == nil && len(mems) == 0 {
+			t.Skip("live project has no bd memories; nothing to dogfood")
+		}
+	}
 
 	msg := LoadMemoriesCmd(repoRoot)()
 	loaded, ok := msg.(MemoriesLoadedMsg)
