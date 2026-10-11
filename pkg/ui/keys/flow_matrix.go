@@ -16,13 +16,13 @@ import "charm.land/bubbles/v2/key"
 // and the test requires matching Help.Key strings across views that share a
 // field name. See history.go ExitHistory/ExitFileTree for the same pattern.
 type FlowMatrixKeys struct {
-	Up          key.Binding
-	Down        key.Binding
-	JumpTop     key.Binding
-	JumpBottom  key.Binding
-	TogglePanel key.Binding
-	Enter       key.Binding
-	Close       key.Binding
+	Up          key.Binding `action:"nav.up"`
+	Down        key.Binding `action:"nav.down"`
+	JumpTop     key.Binding `action:"nav.top"`
+	JumpBottom  key.Binding `action:"nav.bottom"`
+	TogglePanel key.Binding `action:"flow.toggle_panel"`
+	Enter       key.Binding `action:"flow.enter"`
+	Close       key.Binding `action:"flow.close"`
 }
 
 // NewFlowMatrixKeys returns the default flow-matrix keymap.

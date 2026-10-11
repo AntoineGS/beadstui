@@ -19,50 +19,50 @@ import "charm.land/bubbles/v2/key"
 // second; help text shows arrow first ("←/h", not "h/←").
 type BoardNormalKeys struct {
 	// Column nav
-	Left  key.Binding
-	Right key.Binding
+	Left  key.Binding `action:"board.left"`
+	Right key.Binding `action:"board.right"`
 
 	// Item nav
-	Down     key.Binding
-	Up       key.Binding
-	PageDown key.Binding
-	PageUp   key.Binding
+	Down     key.Binding `action:"nav.down"`
+	Up       key.Binding `action:"nav.up"`
+	PageDown key.Binding `action:"nav.page_down"`
+	PageUp   key.Binding `action:"nav.page_up"`
 
 	// Jump nav
-	JumpTop    key.Binding
-	JumpBottom key.Binding
-	JumpFirst  key.Binding // H: jump to first column
-	JumpLast   key.Binding // L: jump to last column
+	JumpTop    key.Binding `action:"nav.top"`
+	JumpBottom key.Binding `action:"nav.bottom"`
+	JumpFirst  key.Binding `action:"board.jump_first"` // H: jump to first column
+	JumpLast   key.Binding `action:"board.jump_last"`  // L: jump to last column
 
 	// Digit column jumps (1-4) and dollar-to-last ($)
 	// These are grouped together as positional jumps.
-	JumpCol1   key.Binding
-	JumpCol2   key.Binding
-	JumpCol3   key.Binding
-	JumpCol4   key.Binding
-	JumpColEnd key.Binding
+	JumpCol1   key.Binding `action:"board.jump_col1"`
+	JumpCol2   key.Binding `action:"board.jump_col2"`
+	JumpCol3   key.Binding `action:"board.jump_col3"`
+	JumpCol4   key.Binding `action:"board.jump_col4"`
+	JumpColEnd key.Binding `action:"board.jump_col_end"`
 
 	// Vim gg combo (first g — handler sets IsWaitingForG; second g fires JumpTop)
-	GotoTop key.Binding // g: start gg combo (IsWaitingForG conditional)
+	GotoTop key.Binding `action:"board.goto_top"` // g: start gg combo (IsWaitingForG conditional)
 
 	// Search
-	Search    key.Binding // /: enter search mode
-	NextMatch key.Binding // n: next match (starts Disabled)
-	PrevMatch key.Binding // N: prev match (starts Disabled)
+	Search    key.Binding `action:"board.search"`     // /: enter search mode
+	NextMatch key.Binding `action:"board.next_match"` // n: next match (starts Disabled)
+	PrevMatch key.Binding `action:"board.prev_match"` // N: prev match (starts Disabled)
 
 	// Actions
-	ToggleExpand key.Binding // d: inline card expand/collapse
-	ToggleEmpty  key.Binding // z: cycle empty-column visibility (bt-oiaj.5 wave migration - was e; e is now the global field-edit binding, see docs/plans/2026-07-07-bt-edits-wave-oiaj13-5-6.md)
-	CycleSwim    key.Binding // s: cycle swimlane mode
-	CopyID       key.Binding // y: copy selected issue ID
+	ToggleExpand key.Binding `action:"board.toggle_expand"` // d: inline card expand/collapse
+	ToggleEmpty  key.Binding `action:"board.toggle_empty"`  // z: cycle empty-column visibility (bt-oiaj.5 wave migration - was e; e is now the global field-edit binding, see docs/plans/2026-07-07-bt-edits-wave-oiaj13-5-6.md)
+	CycleSwim    key.Binding `action:"board.cycle_swim"`    // s: cycle swimlane mode
+	CopyID       key.Binding `action:"board.copy_id"`       // y: copy selected issue ID
 
 	// Detail panel
-	DetailToggle key.Binding // tab: show/hide detail panel
-	DetailDown   key.Binding // ctrl+j: scroll detail panel down
-	DetailUp     key.Binding // ctrl+k: scroll detail panel up
+	DetailToggle key.Binding `action:"board.detail_toggle"` // tab: show/hide detail panel
+	DetailDown   key.Binding `action:"board.detail_down"`   // ctrl+j: scroll detail panel down
+	DetailUp     key.Binding `action:"board.detail_up"`     // ctrl+k: scroll detail panel up
 
 	// Open full detail view
-	Enter key.Binding // enter: open in list detail view
+	Enter key.Binding `action:"board.enter"` // enter: open in list detail view
 }
 
 // NewBoardNormalKeys returns the default board (non-search-mode) keymap.
@@ -221,11 +221,11 @@ func (k BoardNormalKeys) FullHelp() [][]key.Binding {
 // (AppendSearchChar). Only the explicit control keys below are
 // declared as bindings.
 type BoardSearchKeys struct {
-	Cancel    key.Binding // esc: cancel search, clear results
-	Finish    key.Binding // enter: finish search, keep results for n/N nav
-	Backspace key.Binding // backspace: delete last search char
-	NextMatch key.Binding // n: next match
-	PrevMatch key.Binding // N: prev match
+	Cancel    key.Binding `action:"board_search.cancel"`     // esc: cancel search, clear results
+	Finish    key.Binding `action:"board_search.finish"`     // enter: finish search, keep results for n/N nav
+	Backspace key.Binding `action:"board_search.backspace"`  // backspace: delete last search char
+	NextMatch key.Binding `action:"board_search.next_match"` // n: next match
+	PrevMatch key.Binding `action:"board_search.prev_match"` // N: prev match
 }
 
 // NewBoardSearchKeys returns the default board search-mode keymap.

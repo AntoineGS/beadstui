@@ -20,31 +20,31 @@ import "charm.land/bubbles/v2/key"
 // (pkg/ui/longform_edit.go) instead of the enum-picker/textinput sub-modals.
 type FieldSelectKeys struct {
 	// Nav
-	Up   key.Binding
-	Down key.Binding
-	Open key.Binding // enter: edit the field under the cursor
+	Up   key.Binding `action:"nav.up"`
+	Down key.Binding `action:"nav.down"`
+	Open key.Binding `action:"field_select.open"` // enter: edit the field under the cursor
 
 	// Accelerators
-	Status   key.Binding
-	Priority key.Binding
-	Title    key.Binding
-	Assignee key.Binding
+	Status   key.Binding `action:"field_select.status"`
+	Priority key.Binding `action:"field_select.priority"`
+	Title    key.Binding `action:"field_select.title"`
+	Assignee key.Binding `action:"field_select.assignee"`
 
 	// Long-form accelerators (bt-oiaj.6, Slice C) - open the textarea modal
 	// (pkg/ui/longform_edit.go) rather than an enum picker or textinput.
-	Description key.Binding
-	Design      key.Binding
-	Comment     key.Binding
-	Notes       key.Binding
-	Acceptance  key.Binding // uppercase A - lowercase a is Assignee
+	Description key.Binding `action:"field_select.description"`
+	Design      key.Binding `action:"field_select.design"`
+	Comment     key.Binding `action:"field_select.comment"`
+	Notes       key.Binding `action:"field_select.notes"`
+	Acceptance  key.Binding `action:"field_select.acceptance"` // uppercase A - lowercase a is Assignee
 
 	// Lifecycle (bt-5wq): the hub lists only the one that applies - Close on
 	// a bead that isn't closed, Reopen on a closed one.
-	Close  key.Binding
-	Reopen key.Binding
+	Close  key.Binding `action:"field_select.close"`
+	Reopen key.Binding `action:"field_select.reopen"`
 
 	// Exit
-	Cancel key.Binding
+	Cancel key.Binding `action:"field_select.cancel"`
 }
 
 // NewFieldSelectKeys returns the default field-select modal keymap.
@@ -140,10 +140,10 @@ func (k FieldSelectKeys) FullHelp() [][]key.Binding {
 // directly - resolved fork #5: the picker's Enter IS the commit, no second
 // confirm (unlike claim, which keeps its k9s-style confirm).
 type FieldPickerKeys struct {
-	Up     key.Binding
-	Down   key.Binding
-	Apply  key.Binding
-	Cancel key.Binding
+	Up     key.Binding `action:"nav.up"`
+	Down   key.Binding `action:"nav.down"`
+	Apply  key.Binding `action:"field_picker.apply"`
+	Cancel key.Binding `action:"field_picker.cancel"`
 }
 
 // NewFieldPickerKeys returns the default enum-picker keymap.
@@ -186,8 +186,8 @@ func (k FieldPickerKeys) FullHelp() [][]key.Binding {
 // component owns them via the default branch in handleFieldInputKeys, same
 // convention as BQLQueryKeys / TimeTravelInputKeys.
 type FieldInputKeys struct {
-	Apply  key.Binding
-	Cancel key.Binding
+	Apply  key.Binding `action:"field_input.apply"`
+	Cancel key.Binding `action:"field_input.cancel"`
 }
 
 // NewFieldInputKeys returns the default textinput sub-modal keymap.
@@ -235,20 +235,20 @@ type LongformEditKeys struct {
 	// Commit submits the buffer (ctrl+s, not enter - enter is the textarea's
 	// own insert-newline binding, so multiline editing needs a key Enter
 	// doesn't already own; tkhq Q5 ratified this as part of the hybrid model).
-	Commit key.Binding
+	Commit key.Binding `action:"longform.commit"`
 
 	// Escalate hands the current buffer to $EDITOR/$VISUAL via tea.ExecProcess
 	// (tkhq Q5). ctrl+e, not a letter, so every character stays typeable
 	// (bt-y07). It intercepts before the textarea, shadowing the textarea's
 	// emacs line-end binding; End still moves to the end of the line.
-	Escalate key.Binding
+	Escalate key.Binding `action:"longform.escalate"`
 
 	// Cancel is dirty-guard gated (handleLongformEscape, longform_edit.go):
 	// on a clean buffer it steps back to the field-select hub immediately,
 	// matching FieldPickerKeys/FieldInputKeys; on a dirty buffer the first
 	// press arms a 3s discard window (tkhq #3 Variant A) and the second
 	// press within it discards and steps back.
-	Cancel key.Binding
+	Cancel key.Binding `action:"longform.cancel"`
 }
 
 // NewLongformEditKeys returns the default textarea-modal keymap.

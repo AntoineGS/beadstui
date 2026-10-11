@@ -13,40 +13,40 @@ import "charm.land/bubbles/v2/key"
 // via m.historyView.IsSearchActive() and m.historyView.FileTreeHasFocus().
 type HistoryNormalKeys struct {
 	// Nav
-	Up   key.Binding
-	Down key.Binding
+	Up   key.Binding `action:"nav.up"`
+	Down key.Binding `action:"nav.down"`
 
 	// Cross-panel commit nav
-	NextRelated key.Binding
-	PrevRelated key.Binding
+	NextRelated key.Binding `action:"history.next_related"`
+	PrevRelated key.Binding `action:"history.prev_related"`
 
 	// Detail scroll (bt-npnh)
-	ScrollDown key.Binding
-	ScrollUp   key.Binding
+	ScrollDown key.Binding `action:"history.scroll_down"`
+	ScrollUp   key.Binding `action:"history.scroll_up"`
 
 	// Focus
-	FocusCycle key.Binding
+	FocusCycle key.Binding `action:"history.focus_cycle"`
 
 	// Mode
-	ToggleMode key.Binding
+	ToggleMode key.Binding `action:"history.toggle_mode"`
 
 	// Search
-	Search key.Binding
+	Search key.Binding `action:"history.search"`
 
 	// File tree
-	ToggleFileTree key.Binding
+	ToggleFileTree key.Binding `action:"history.toggle_file_tree"`
 
 	// Actions
-	CopySHA       key.Binding
-	OpenInBrowser key.Binding
-	JumpToBead    key.Binding
-	JumpToGraph   key.Binding
-	CycleConf     key.Binding
+	CopySHA       key.Binding `action:"history.copy_sha"`
+	OpenInBrowser key.Binding `action:"history.open_in_browser"`
+	JumpToBead    key.Binding `action:"history.jump_to_bead"`
+	JumpToGraph   key.Binding `action:"history.jump_to_graph"`
+	CycleConf     key.Binding `action:"history.cycle_conf"`
 
 	// Exit (field name ExitHistory, not Back, to avoid the universal-nav
 	// consistency test: history uses "h/esc" while Tree.Back uses "E/esc"
 	// and the test enforces that shared field names carry identical Help.Key)
-	ExitHistory key.Binding
+	ExitHistory key.Binding `action:"history.exit_history"`
 }
 
 // NewHistoryNormalKeys returns the default history-normal keymap.
@@ -152,8 +152,8 @@ func (k HistoryNormalKeys) FullHelp() [][]key.Binding {
 // preventing letter-key leakage to mode toggles (bt-mc4y).
 type HistorySearchKeys struct {
 	// Apply / cancel search
-	Confirm key.Binding
-	Cancel  key.Binding
+	Confirm key.Binding `action:"history_search.confirm"`
+	Cancel  key.Binding `action:"history_search.cancel"`
 }
 
 // NewHistorySearchKeys returns the default history search-mode keymap.
@@ -192,18 +192,18 @@ func (k HistorySearchKeys) FullHelp() [][]key.Binding {
 // for letters like 'h' that would otherwise exit history.
 type HistoryFileTreeKeys struct {
 	// Nav
-	Up   key.Binding
-	Down key.Binding
+	Up   key.Binding `action:"nav.up"`
+	Down key.Binding `action:"nav.down"`
 
 	// Expand / select / collapse
-	ExpandOrSelect key.Binding
-	Collapse       key.Binding
+	ExpandOrSelect key.Binding `action:"history_tree.expand_or_select"`
+	Collapse       key.Binding `action:"history_tree.collapse"`
 
 	// Focus / exit (field name ExitFileTree, not Back, to avoid the
 	// universal-nav consistency test: tree focus uses plain "esc" while
 	// Tree.Back uses "E/esc" and the test requires matching Help.Key strings)
-	FocusBack    key.Binding
-	ExitFileTree key.Binding
+	FocusBack    key.Binding `action:"history_tree.focus_back"`
+	ExitFileTree key.Binding `action:"history_tree.exit_file_tree"`
 }
 
 // NewHistoryFileTreeKeys returns the default history file-tree-focus keymap.

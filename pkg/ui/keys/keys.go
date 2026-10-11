@@ -89,7 +89,7 @@ type AppKeys struct {
 
 // NewAppKeys returns the default keymap for every view. Wire into NewModel.
 func NewAppKeys() AppKeys {
-	return AppKeys{
+	a := AppKeys{
 		Global:     NewGlobalKeys(),
 		Tree:       NewTreeKeys(),
 		ListNormal: NewListNormalKeys(),
@@ -134,4 +134,6 @@ func NewAppKeys() AppKeys {
 
 		Confirm: NewConfirmKeys(),
 	}
+	stampTokens(&a)
+	return a
 }

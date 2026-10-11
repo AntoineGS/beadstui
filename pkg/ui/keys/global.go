@@ -15,49 +15,49 @@ import "charm.land/bubbles/v2/key"
 // Column layout (FullHelp): Help & Chrome / Views / Workspace / Actions.
 type GlobalKeys struct {
 	// Help & Chrome
-	Help              key.Binding // ? / f1
-	Sidebar           key.Binding // ; / f2
-	SidebarScrollDown key.Binding // ctrl+j (gated on showShortcutsSidebar)
-	SidebarScrollUp   key.Binding // ctrl+k (gated on showShortcutsSidebar)
-	Tutorial          key.Binding // `
-	Quit              key.Binding // ctrl+c
-	Back              key.Binding // q (cascade)
-	Cancel            key.Binding // esc (cascade)
+	Help              key.Binding `action:"app.help"`         // ? / f1
+	Sidebar           key.Binding `action:"app.sidebar"`      // ; / f2
+	SidebarScrollDown key.Binding `action:"app.sidebar_down"` // ctrl+j (gated on showShortcutsSidebar)
+	SidebarScrollUp   key.Binding `action:"app.sidebar_up"`   // ctrl+k (gated on showShortcutsSidebar)
+	Tutorial          key.Binding `action:"app.tutorial"`     // `
+	Quit              key.Binding `action:"app.force_quit"`   // ctrl+c
+	Back              key.Binding `action:"app.quit"`         // q (cascade)
+	Cancel            key.Binding `action:"app.cancel"`       // esc (cascade)
 
 	// Views
-	Board          key.Binding // b
-	Graph          key.Binding // g
-	Insights       key.Binding // i
-	History        key.Binding // h
-	Actionable     key.Binding // a
-	FlowMatrix     key.Binding // f
-	Tree           key.Binding // T
-	LabelDashboard key.Binding // [ / f3
-	Attention      key.Binding // ] / f4
-	Epics          key.Binding // E
-	Memories       key.Binding // u / f6 (bt-2ea7t.4 - "m" collides with the
+	Board          key.Binding `action:"view.board"`      // b
+	Graph          key.Binding `action:"view.graph"`      // g
+	Insights       key.Binding `action:"view.insights"`   // i
+	History        key.Binding `action:"view.history"`    // h
+	Actionable     key.Binding `action:"view.actionable"` // a
+	FlowMatrix     key.Binding `action:"view.flow"`       // f
+	Tree           key.Binding `action:"view.tree"`       // T
+	LabelDashboard key.Binding `action:"view.labels"`     // [ / f3
+	Attention      key.Binding `action:"view.attention"`  // ] / f4
+	Epics          key.Binding `action:"view.epics"`      // E
+	Memories       key.Binding `action:"view.memories"`   // u / f6 (bt-2ea7t.4 - "m" collides with the
 	// focusList claim shortcut and the focusInsights heatmap toggle, both of
 	// which the Global switch would shadow; "u" was verified free across
 	// every keys/*.go binding and every literal msg.String() comparison in
 	// pkg/ui, see bt-2ea7t.4 close notes)
 
 	// Workspace
-	ProjectsOrWisps  key.Binding // w
-	WorkspaceHomeAll key.Binding // W
-	WispToggle       key.Binding // ctrl+w (wisp visibility; `w` is claimed by the project picker in workspace/global mode, see bt-8jds)
-	HybridPreset     key.Binding // H (gated on focusList + hybrid mode)
+	ProjectsOrWisps  key.Binding `action:"project.picker"`       // w
+	WorkspaceHomeAll key.Binding `action:"project.home_all"`     // W
+	WispToggle       key.Binding `action:"project.wisps"`        // ctrl+w (wisp visibility; `w` is claimed by the project picker in workspace/global mode, see bt-8jds)
+	HybridPreset     key.Binding `action:"search.hybrid_preset"` // H (gated on focusList + hybrid mode)
 
 	// Actions
-	Refresh       key.Binding // ctrl+r / f5
-	SearchMode    key.Binding // ctrl+s
-	BQL           key.Binding // :
-	Recipes       key.Binding // '
-	Alerts        key.Binding // !
-	Notifications key.Binding // 1 (gated on not ViewAttention)
-	SearchBounce  key.Binding // / (gated on split + non-list focus)
-	PriorityHints key.Binding // p
-	Export        key.Binding // x
-	LabelPicker   key.Binding // l
+	Refresh       key.Binding `action:"app.refresh"`           // ctrl+r / f5
+	SearchMode    key.Binding `action:"search.cycle_mode"`     // ctrl+s
+	BQL           key.Binding `action:"app.bql"`               // :
+	Recipes       key.Binding `action:"filter.recipes"`        // '
+	Alerts        key.Binding `action:"notify.alerts"`         // !
+	Notifications key.Binding `action:"notify.notifications"`  // 1 (gated on not ViewAttention)
+	SearchBounce  key.Binding `action:"app.search"`            // / (gated on split + non-list focus)
+	PriorityHints key.Binding `action:"notify.priority_hints"` // p
+	Export        key.Binding `action:"bead.export"`           // x
+	LabelPicker   key.Binding `action:"filter.labels"`         // l
 }
 
 // NewGlobalKeys returns the default global keymap.
