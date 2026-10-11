@@ -1290,6 +1290,9 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 	// Left/Right move between panes (bt-tg0), so they no longer page.
 	l.KeyMap.PrevPage.SetKeys("h", "pgup", "b", "u")
 	l.KeyMap.NextPage.SetKeys("l", "pgdown", "f", "d")
+	// Action tokens (bt-i4k) move the bubbles-owned cursor like the keys do.
+	l.KeyMap.CursorUp.SetKeys(append(l.KeyMap.CursorUp.Keys(), keys.Token("nav.up"))...)
+	l.KeyMap.CursorDown.SetKeys(append(l.KeyMap.CursorDown.Keys(), keys.Token("nav.down"))...)
 	// The Bubbles list ships a "Filter: " prompt; bt's affordance is a search
 	// bar (/) local to the Issues pane — so the
 	// prompt text matches the user's mental model (bt-imcn).

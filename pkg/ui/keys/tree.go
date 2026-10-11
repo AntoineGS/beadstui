@@ -11,19 +11,19 @@ import "charm.land/bubbles/v2/key"
 // arrows-primary, vim-keys-as-alternate. WithKeys lists arrow first, vim
 // second; help text shows arrow first ("↑/k", not "k/↑").
 type TreeKeys struct {
-	Up          key.Binding
-	Down        key.Binding
-	Collapse    key.Binding
-	Expand      key.Binding
-	Toggle      key.Binding
-	JumpTop     key.Binding
-	JumpBottom  key.Binding
-	ExpandAll   key.Binding
-	CollapseAll key.Binding
-	PageDown    key.Binding
-	PageUp      key.Binding
-	SyncDetail  key.Binding
-	Back        key.Binding
+	Up          key.Binding `action:"nav.up"`
+	Down        key.Binding `action:"nav.down"`
+	Collapse    key.Binding `action:"tree.collapse"`
+	Expand      key.Binding `action:"tree.expand"`
+	Toggle      key.Binding `action:"tree.toggle"`
+	JumpTop     key.Binding `action:"nav.top"`
+	JumpBottom  key.Binding `action:"nav.bottom"`
+	ExpandAll   key.Binding `action:"tree.expand_all"`
+	CollapseAll key.Binding `action:"tree.collapse_all"`
+	PageDown    key.Binding `action:"nav.page_down"`
+	PageUp      key.Binding `action:"nav.page_up"`
+	SyncDetail  key.Binding `action:"tree.sync_detail"`
+	Back        key.Binding `action:"tree.back"`
 }
 
 // NewTreeKeys returns the default tree keymap.

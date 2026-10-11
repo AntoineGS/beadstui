@@ -17,19 +17,19 @@ import "charm.land/bubbles/v2/key"
 // epics overview exit is plain "esc" only.
 type EpicsKeys struct {
 	// Navigation
-	Up   key.Binding
-	Down key.Binding
+	Up   key.Binding `action:"nav.up"`
+	Down key.Binding `action:"nav.down"`
 
 	// Tree
-	Expand      key.Binding // expand epic/lane (and focus subtree)
-	Collapse    key.Binding // collapse epic/lane (or jump to parent)
-	CollapseAll key.Binding // collapse every epic back to the lane overview
+	Expand      key.Binding `action:"epics.expand"`       // expand epic/lane (and focus subtree)
+	Collapse    key.Binding `action:"epics.collapse"`     // collapse epic/lane (or jump to parent)
+	CollapseAll key.Binding `action:"epics.collapse_all"` // collapse every epic back to the lane overview
 
 	// Actions
-	Open        key.Binding // enter: expand epic/header, or drill into a child
-	CycleStatus key.Binding
-	Card        key.Binding // open the single-epic focus card (zoom)
-	Exit        key.Binding
+	Open        key.Binding `action:"epics.open"` // enter: expand epic/header, or drill into a child
+	CycleStatus key.Binding `action:"epics.cycle_status"`
+	Card        key.Binding `action:"epics.card"` // open the single-epic focus card (zoom)
+	Exit        key.Binding `action:"epics.exit"`
 }
 
 // NewEpicsKeys returns the default epics-tree keymap.

@@ -23,12 +23,12 @@ import "charm.land/bubbles/v2/key"
 // second; help text shows arrow first ("↑/k", not "k/↑").
 type ListNormalKeys struct {
 	// Move
-	Up         key.Binding
-	Down       key.Binding
-	JumpTop    key.Binding
-	JumpBottom key.Binding
-	PageDown   key.Binding
-	PageUp     key.Binding
+	Up         key.Binding `action:"nav.up"`
+	Down       key.Binding `action:"nav.down"`
+	JumpTop    key.Binding `action:"nav.top"`
+	JumpBottom key.Binding `action:"nav.bottom"`
+	PageDown   key.Binding `action:"nav.page_down"`
+	PageUp     key.Binding `action:"nav.page_up"`
 
 	// Filter (recipe-style filters that aren't the bubbles fuzzy filter — those
 	// are entered via / and live in ListSearchKeys' state).
@@ -38,9 +38,9 @@ type ListNormalKeys struct {
 	// The pre-.2 handleListKeys had a dead `case "a"` for FilterAll that
 	// was never reachable; .2 dropped it. Reset-to-all stays reachable by
 	// pressing the active filter key again (o/c/r toggle to "all").
-	FilterOpen   key.Binding
-	FilterClosed key.Binding
-	FilterReady  key.Binding
+	FilterOpen   key.Binding `action:"filter.open"`
+	FilterClosed key.Binding `action:"filter.closed"`
+	FilterReady  key.Binding `action:"filter.ready"`
 
 	// CycleStatusFilter cycles the status membership filter through the full
 	// set the lens exposes (all -> open -> in_progress -> blocked -> closed ->
@@ -49,56 +49,56 @@ type ListNormalKeys struct {
 	// the derived "ready" filter stays reachable on r and the bt-xron toggle-off
 	// bug is untouched. '#' is uniformly free across every key map (verified) and
 	// is the keybindings audit's Best-tier pick for a new list shortcut.
-	CycleStatusFilter key.Binding
+	CycleStatusFilter key.Binding `action:"filter.cycle_status"`
 
 	// Detail & pane
-	Enter            key.Binding
-	EpicCard         key.Binding
-	SplitFocusToggle key.Binding
+	Enter            key.Binding `action:"list.open"`
+	EpicCard         key.Binding `action:"bead.epic_card"`
+	SplitFocusToggle key.Binding `action:"list.focus_toggle"`
 	// PaneRight / PaneLeft move between the list and the details, like
 	// lazygit's panels (bt-tg0). The bubbles list no longer pages on them.
-	PaneRight key.Binding
-	PaneLeft  key.Binding
+	PaneRight key.Binding `action:"window.focus_right"`
+	PaneLeft  key.Binding `action:"window.focus_left"`
 	// DetailPageUp / DetailPageDown page the details from either pane, like
 	// lazygit's , and . keys.
-	DetailPageUp     key.Binding
-	DetailPageDown   key.Binding
-	SplitShrinkLeft  key.Binding
-	SplitShrinkRight key.Binding
+	DetailPageUp     key.Binding `action:"list.detail_page_up"`
+	DetailPageDown   key.Binding `action:"list.detail_page_down"`
+	SplitShrinkLeft  key.Binding `action:"window.shrink"`
+	SplitShrinkRight key.Binding `action:"window.grow"`
 
 	// Pane fullscreen (bt-530vn): btop-style per-pane maximize toggle,
 	// reachable at any terminal width - distinct from the width-driven
 	// single-pane auto-collapse (bt-9a3wv). Pressing the same key again (or
 	// Esc/q) restores the prior layout; the dispatcher cascade lives in
 	// model_update_input.go, not here.
-	PaneFullscreenIssues  key.Binding
-	PaneFullscreenDetails key.Binding
+	PaneFullscreenIssues  key.Binding `action:"window.fullscreen_list"`
+	PaneFullscreenDetails key.Binding `action:"window.fullscreen_details"`
 
 	// Field edit (bt-oiaj.5). 'e' opens the field-select modal; it moved off
 	// EpicCard (bt-oiaj.13 wave key migration - see
 	// docs/plans/2026-07-07-bt-edits-wave-oiaj13-5-6.md) so 'e' is free for
 	// the ratified edit binding (tkhq #1: "e reserved globally for edit").
-	FieldEdit key.Binding
+	FieldEdit key.Binding `action:"bead.edit"`
 
 	// Sort / triage
-	CycleSort        key.Binding
-	CycleSortReverse key.Binding
-	RecipeTriage     key.Binding
+	CycleSort        key.Binding `action:"sort.cycle"`
+	CycleSortReverse key.Binding `action:"sort.cycle_reverse"`
+	RecipeTriage     key.Binding `action:"sort.triage"`
 
 	// Time travel
-	TimeTravelInput key.Binding
+	TimeTravelInput key.Binding `action:"app.time_travel"`
 
 	// Actions
-	CopyID       key.Binding
-	CopyIssue    key.Binding
-	OpenInEditor key.Binding
-	CassSession  key.Binding
-	SelfUpdate   key.Binding
+	CopyID       key.Binding `action:"bead.copy_id"`
+	CopyIssue    key.Binding `action:"bead.copy_issue"`
+	OpenInEditor key.Binding `action:"bead.open_editor"`
+	CassSession  key.Binding `action:"bead.cass"`
+	SelfUpdate   key.Binding `action:"app.self_update"`
 
 	// Write verbs (bt-oiaj.10). Claim is the first bt write to ship: it shells
 	// out `bd update <id> --claim` behind a confirm. 'm' = "claim it for me"
 	// (the only free letter in "claim"; c/l/a/i are all taken).
-	Claim key.Binding
+	Claim key.Binding `action:"bead.claim"`
 }
 
 // NewListNormalKeys returns the default list (non-filter-mode) keymap.
@@ -282,10 +282,10 @@ func (k ListNormalKeys) FullHelp() [][]key.Binding {
 // consistency test (same Help.Key strings). Apply / Cancel use field names
 // outside the universal list so they don't trigger comparison.
 type ListSearchKeys struct {
-	Up     key.Binding
-	Down   key.Binding
-	Apply  key.Binding
-	Cancel key.Binding
+	Up     key.Binding `action:"nav.up"`
+	Down   key.Binding `action:"nav.down"`
+	Apply  key.Binding `action:"list_search.apply"`
+	Cancel key.Binding `action:"list_search.cancel"`
 }
 
 // NewListSearchKeys returns the help-only filter-mode keymap.

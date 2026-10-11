@@ -16,25 +16,25 @@ import "charm.land/bubbles/v2/key"
 // insights exit is plain "esc" only.
 type InsightsKeys struct {
 	// Panel navigation
-	PrevPanel key.Binding
-	NextPanel key.Binding
+	PrevPanel key.Binding `action:"insights.prev_panel"`
+	NextPanel key.Binding `action:"insights.next_panel"`
 
 	// Item navigation
-	Up   key.Binding
-	Down key.Binding
+	Up   key.Binding `action:"nav.up"`
+	Down key.Binding `action:"nav.down"`
 
 	// Detail scroll
-	ScrollDetailDown key.Binding
-	ScrollDetailUp   key.Binding
+	ScrollDetailDown key.Binding `action:"insights.scroll_detail_down"`
+	ScrollDetailUp   key.Binding `action:"insights.scroll_detail_up"`
 
 	// Toggles
-	Explanations key.Binding // X: toggle explanations (bt-oiaj.5 wave migration - was e; e is now the global field-edit binding, see docs/plans/2026-07-07-bt-edits-wave-oiaj13-5-6.md)
-	Calculation  key.Binding
-	Heatmap      key.Binding
+	Explanations key.Binding `action:"insights.explanations"` // X: toggle explanations (bt-oiaj.5 wave migration - was e; e is now the global field-edit binding, see docs/plans/2026-07-07-bt-edits-wave-oiaj13-5-6.md)
+	Calculation  key.Binding `action:"insights.calculation"`
+	Heatmap      key.Binding `action:"insights.heatmap"`
 
 	// Actions
-	JumpToIssue key.Binding
-	Exit        key.Binding
+	JumpToIssue key.Binding `action:"insights.jump_to_issue"`
+	Exit        key.Binding `action:"insights.exit"`
 }
 
 // NewInsightsKeys returns the default insights panel keymap.

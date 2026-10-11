@@ -14,16 +14,16 @@ import "charm.land/bubbles/v2/key"
 // universal-nav consistency test (same Help.Key strings).
 type GraphKeys struct {
 	// Navigate
-	Up        key.Binding
-	Down      key.Binding
-	MoveLeft  key.Binding
-	MoveRight key.Binding
-	PageDown  key.Binding
-	PageUp    key.Binding
+	Up        key.Binding `action:"nav.up"`
+	Down      key.Binding `action:"nav.down"`
+	MoveLeft  key.Binding `action:"graph.move_left"`
+	MoveRight key.Binding `action:"graph.move_right"`
+	PageDown  key.Binding `action:"nav.page_down"`
+	PageUp    key.Binding `action:"nav.page_up"`
 
 	// Actions
-	JumpToIssue key.Binding
-	SwarmToggle key.Binding
+	JumpToIssue key.Binding `action:"graph.jump_to_issue"`
+	SwarmToggle key.Binding `action:"graph.swarm_toggle"`
 }
 
 // NewGraphKeys returns the default graph keymap.

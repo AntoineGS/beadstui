@@ -14,12 +14,12 @@ import "charm.land/bubbles/v2/key"
 // consistency check, mirroring EpicsKeys: the card closes on plain "esc".
 type EpicCardKeys struct {
 	// Navigation (over the epic's children)
-	Up   key.Binding
-	Down key.Binding
+	Up   key.Binding `action:"nav.up"`
+	Down key.Binding `action:"nav.down"`
 
 	// Actions
-	Open key.Binding // drill into the selected child
-	Exit key.Binding // close the card
+	Open key.Binding `action:"epic_card.open"` // drill into the selected child
+	Exit key.Binding `action:"epic_card.exit"` // close the card
 }
 
 // NewEpicCardKeys returns the default focus-card keymap.

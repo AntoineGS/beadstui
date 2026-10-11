@@ -6,8 +6,8 @@ import "charm.land/bubbles/v2/key"
 // plugin confirm). Uppercase variants keep caps lock harmless; help text only
 // names the lowercase keys. Any other key leaves the dialog open.
 type ConfirmKeys struct {
-	Confirm key.Binding
-	Cancel  key.Binding
+	Confirm key.Binding `action:"confirm.confirm"`
+	Cancel  key.Binding `action:"confirm.cancel"`
 }
 
 // NewConfirmKeys returns the default confirm dialog keymap.
@@ -47,21 +47,21 @@ func (k ConfirmKeys) FullHelp() [][]key.Binding {
 // per the universal-nav consistency test (TestUniversalNav_ConsistentAcrossViews).
 type LabelPickerNavKeys struct {
 	// Nav
-	Up       key.Binding
-	Down     key.Binding
-	PageUp   key.Binding
-	PageDown key.Binding
+	Up       key.Binding `action:"nav.up"`
+	Down     key.Binding `action:"nav.down"`
+	PageUp   key.Binding `action:"nav.page_up"`
+	PageDown key.Binding `action:"nav.page_down"`
 
 	// Mode
-	FocusSearch key.Binding
+	FocusSearch key.Binding `action:"label_picker.focus_search"`
 
 	// Selection
-	Toggle key.Binding
-	Apply  key.Binding
+	Toggle key.Binding `action:"label_picker.toggle"`
+	Apply  key.Binding `action:"label_picker.apply"`
 
 	// Exit (Close is the toggle key `l`; Cancel is esc)
-	Close  key.Binding
-	Cancel key.Binding
+	Close  key.Binding `action:"label_picker.close"`
+	Cancel key.Binding `action:"label_picker.cancel"`
 }
 
 // NewLabelPickerNavKeys returns the default label picker nav-mode keymap.
@@ -136,12 +136,12 @@ func (k LabelPickerNavKeys) FullHelp() [][]key.Binding {
 type LabelPickerSearchKeys struct {
 	// Result navigation (field names distinct from Up/Down to avoid
 	// universal-nav consistency test)
-	ResultUp   key.Binding
-	ResultDown key.Binding
+	ResultUp   key.Binding `action:"label_picker_search.result_up"`
+	ResultDown key.Binding `action:"label_picker_search.result_down"`
 
 	// Resolve
-	Apply      key.Binding
-	BlurSearch key.Binding
+	Apply      key.Binding `action:"label_picker_search.apply"`
+	BlurSearch key.Binding `action:"label_picker_search.blur_search"`
 }
 
 // NewLabelPickerSearchKeys returns the default label picker search-mode keymap.
@@ -188,15 +188,15 @@ func (k LabelPickerSearchKeys) FullHelp() [][]key.Binding {
 // Cancel is esc.
 type RecipePickerKeys struct {
 	// Nav
-	Up   key.Binding
-	Down key.Binding
+	Up   key.Binding `action:"nav.up"`
+	Down key.Binding `action:"nav.down"`
 
 	// Apply
-	Apply key.Binding
+	Apply key.Binding `action:"recipe_picker.apply"`
 
 	// Exit (Close is the toggle key; Cancel is esc)
-	Close  key.Binding
-	Cancel key.Binding
+	Close  key.Binding `action:"recipe_picker.close"`
+	Cancel key.Binding `action:"recipe_picker.cancel"`
 }
 
 // NewRecipePickerKeys returns the default recipe picker keymap.
@@ -238,16 +238,16 @@ func (k RecipePickerKeys) ShortHelp() []key.Binding {
 // was rendering when the screen opened.
 type SettingsKeys struct {
 	// Nav between settings
-	Up   key.Binding
-	Down key.Binding
+	Up   key.Binding `action:"nav.up"`
+	Down key.Binding `action:"nav.down"`
 
 	// Change the selected setting's value
-	Prev key.Binding
-	Next key.Binding
+	Prev key.Binding `action:"settings.prev"`
+	Next key.Binding `action:"settings.next"`
 
 	// Exit
-	Keep   key.Binding
-	Cancel key.Binding
+	Keep   key.Binding `action:"settings.keep"`
+	Cancel key.Binding `action:"settings.cancel"`
 }
 
 // NewSettingsKeys returns the default settings screen keymap.
@@ -305,12 +305,12 @@ func (k RecipePickerKeys) FullHelp() [][]key.Binding {
 type BQLQueryKeys struct {
 	// History navigation (field names distinct from Up/Down to avoid
 	// universal-nav consistency test)
-	HistoryPrev key.Binding
-	HistoryNext key.Binding
+	HistoryPrev key.Binding `action:"bql.history_prev"`
+	HistoryNext key.Binding `action:"bql.history_next"`
 
 	// Apply / cancel
-	Apply  key.Binding
-	Cancel key.Binding
+	Apply  key.Binding `action:"bql.apply"`
+	Cancel key.Binding `action:"bql.cancel"`
 }
 
 // NewBQLQueryKeys returns the default BQL query modal keymap.
@@ -353,8 +353,8 @@ func (k BQLQueryKeys) FullHelp() [][]key.Binding {
 // default branch. handleTimeTravelInputKeys dispatches against these via
 // key.Matches.
 type TimeTravelInputKeys struct {
-	Submit key.Binding
-	Cancel key.Binding
+	Submit key.Binding `action:"time_travel.submit"`
+	Cancel key.Binding `action:"time_travel.cancel"`
 }
 
 // NewTimeTravelInputKeys returns the default time-travel input keymap.
@@ -398,24 +398,24 @@ func (k TimeTravelInputKeys) FullHelp() [][]key.Binding {
 // Close covers the additional exit keys q and w alongside Cancel (esc).
 type RepoPickerNavKeys struct {
 	// Nav
-	Up       key.Binding
-	Down     key.Binding
-	PageUp   key.Binding
-	PageDown key.Binding
+	Up       key.Binding `action:"nav.up"`
+	Down     key.Binding `action:"nav.down"`
+	PageUp   key.Binding `action:"nav.page_up"`
+	PageDown key.Binding `action:"nav.page_down"`
 
 	// Mode
-	FocusSearch key.Binding
+	FocusSearch key.Binding `action:"repo_picker.focus_search"`
 
 	// Selection
-	Toggle    key.Binding
-	ToggleAll key.Binding
+	Toggle    key.Binding `action:"repo_picker.toggle"`
+	ToggleAll key.Binding `action:"repo_picker.toggle_all"`
 
 	// Apply
-	Apply key.Binding
+	Apply key.Binding `action:"repo_picker.apply"`
 
 	// Exit (Close is q/w; Cancel is esc)
-	Close  key.Binding
-	Cancel key.Binding
+	Close  key.Binding `action:"repo_picker.close"`
+	Cancel key.Binding `action:"repo_picker.cancel"`
 }
 
 // NewRepoPickerNavKeys returns the default repo picker nav-mode keymap.
@@ -492,12 +492,12 @@ func (k RepoPickerNavKeys) FullHelp() [][]key.Binding {
 type RepoPickerSearchKeys struct {
 	// Result navigation (field names distinct from Up/Down to avoid
 	// universal-nav consistency test)
-	ResultUp   key.Binding
-	ResultDown key.Binding
+	ResultUp   key.Binding `action:"repo_picker_search.result_up"`
+	ResultDown key.Binding `action:"repo_picker_search.result_down"`
 
 	// Resolve
-	Apply      key.Binding
-	BlurSearch key.Binding
+	Apply      key.Binding `action:"repo_picker_search.apply"`
+	BlurSearch key.Binding `action:"repo_picker_search.blur_search"`
 }
 
 // NewRepoPickerSearchKeys returns the default repo picker search-mode keymap.

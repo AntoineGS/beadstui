@@ -10,10 +10,10 @@ import "charm.land/bubbles/v2/key"
 // universal-nav consistency test. Cancel (not Esc) avoids that check, like
 // the other pickers.
 type PluginSelectKeys struct {
-	Up     key.Binding
-	Down   key.Binding
-	Apply  key.Binding
-	Cancel key.Binding
+	Up     key.Binding `action:"nav.up"`
+	Down   key.Binding `action:"nav.down"`
+	Apply  key.Binding `action:"plugin_select.apply"`
+	Cancel key.Binding `action:"plugin_select.cancel"`
 }
 
 // NewPluginSelectKeys returns the default plugin select keymap.

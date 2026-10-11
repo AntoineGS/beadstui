@@ -11,11 +11,11 @@ import "charm.land/bubbles/v2/key"
 // second; help text shows arrow first ("↑/k", not "k/↑").
 type ActionableKeys struct {
 	// Navigate
-	Up   key.Binding
-	Down key.Binding
+	Up   key.Binding `action:"nav.up"`
+	Down key.Binding `action:"nav.down"`
 
 	// Select
-	Enter key.Binding
+	Enter key.Binding `action:"actionable.enter"`
 }
 
 // NewActionableKeys returns the default actionable-view keymap.
