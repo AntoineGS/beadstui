@@ -57,7 +57,24 @@ func allMaps() map[string]help.KeyMap {
 		// Plugin prompt Map
 		"PluginSelect": NewPluginSelectKeys(),
 
-		"Confirm": NewConfirmKeys(),
+		"Confirm":  NewConfirmKeys(),
+		"Settings": NewSettingsKeys(),
+
+		// Raw-string handlers moved into the registry (bt-i4k.2)
+		"Alerts":         NewAlertsKeys(),
+		"Notifications":  NewNotificationsKeys(),
+		"LabelDashboard": NewLabelDashboardKeys(),
+		"LabelHealth":    NewLabelHealthKeys(),
+		"LabelDrilldown": NewLabelDrilldownKeys(),
+		"LabelGraph":     NewLabelGraphKeys(),
+		"Attention":      NewAttentionKeys(),
+		"MemoriesNormal": NewMemoriesNormalKeys(),
+		"MemoriesSearch": NewMemoriesSearchKeys(),
+		"Help":           NewHelpKeys(),
+		"Cass":           NewCassKeys(),
+		"AgentPrompt":    NewAgentPromptKeys(),
+		"Tutorial":       NewTutorialKeys(),
+		"Update":         NewUpdateKeys(),
 	}
 }
 

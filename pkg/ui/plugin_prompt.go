@@ -212,7 +212,7 @@ func (m Model) handlePluginPromptKeys(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		m.closeModal()
 		return m, nil
 	}
-	if msg.String() == "ctrl+c" {
+	if key.Matches(msg, m.keys.Global.Quit) {
 		if p.kind == pluginPromptMenu || p.kind == pluginPromptStatus {
 			m.closePluginPrompt()
 		} else {
@@ -228,7 +228,7 @@ func (m Model) handlePluginPromptKeys(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.scrollPluginStatus(p, -1)
 		case key.Matches(msg, k.Down):
 			m.scrollPluginStatus(p, 1)
-		case key.Matches(msg, k.Cancel), msg.String() == "q":
+		case key.Matches(msg, k.Cancel, k.Close):
 			m.closePluginPrompt()
 		}
 		return m, nil

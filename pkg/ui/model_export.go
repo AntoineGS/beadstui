@@ -225,6 +225,7 @@ func (m *Model) showCassSessionModal() {
 
 	// Create and show the modal
 	m.cassModal = NewCassSessionModal(issue.ID, result, m.theme)
+	m.cassModal.keys = m.keys.Cass
 	m.cassModal.SetSize(max(0, m.width), max(0, m.height-1))
 	m.openModal(ModalCassSession)
 	m.focused = focusCassModal
@@ -240,6 +241,7 @@ func (m *Model) showSelfUpdateModal() {
 
 	// Create and show the modal
 	m.updateModal = NewUpdateModal(m.updateTag, m.updateURL, m.theme)
+	m.updateModal.keys = m.keys.Update
 	m.updateModal.SetSize(max(0, m.width), max(0, m.height-1))
 	m.openModal(ModalUpdate)
 	m.focused = focusUpdateModal

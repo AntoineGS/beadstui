@@ -283,6 +283,7 @@ func (m *Model) refreshFlowMatrix() {
 	cfg := analysis.DefaultLabelHealthConfig()
 	flow := analysis.ComputeCrossLabelFlow(m.filter.visible, cfg)
 	m.flowMatrix = NewFlowMatrixModel(m.theme)
+	m.flowMatrix.keys = m.keys.FlowMatrix
 	m.flowMatrix.SetData(&flow, m.filter.visible)
 	m.flowMatrix.SetSize(m.width, max(3, m.height-2))
 }

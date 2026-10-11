@@ -1644,6 +1644,8 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 		// Write-routing table (bt-scc35)
 		routeTable: routeTable,
 	}
+	m.labelDashboard.keys = m.keys.LabelDashboard
+	m.tutorialModel.keys = m.keys.Tutorial
 	m.applyFilter()
 	m.filter.appliedKey = m.cursorKey()
 	m.refreshThemeConsumers()

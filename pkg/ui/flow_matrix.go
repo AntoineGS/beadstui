@@ -6,16 +6,19 @@ import (
 	"sort"
 	"strings"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 )
 
 // FlowMatrixModel renders an interactive dependency flow dashboard
 // showing how labels block each other with visual impact indicators
 type FlowMatrixModel struct {
+	keys         keys.FlowMatrixKeys
 	flow         *analysis.CrossLabelFlow
 	issues       []model.Issue
 	labelStats   []labelFlowStats
@@ -50,6 +53,7 @@ type labelFlowStats struct {
 // NewFlowMatrixModel creates a new flow matrix dashboard
 func NewFlowMatrixModel(theme Theme) FlowMatrixModel {
 	return FlowMatrixModel{
+		keys:       keys.NewFlowMatrixKeys(),
 		theme:      theme,
 		focusPanel: 0,
 	}
@@ -159,30 +163,29 @@ func (m *FlowMatrixModel) Update(msg tea.KeyMsg) tea.Cmd {
 		return m.updateDrilldown(msg)
 	}
 
-	key := msg.String()
-
-	switch key {
-	case "j", "down":
+	k := m.keys
+	switch {
+	case key.Matches(msg, k.Down):
 		m.moveCursor(1)
-	case "k", "up":
+	case key.Matches(msg, k.Up):
 		m.moveCursor(-1)
-	case "g", "home":
+	case key.Matches(msg, k.JumpTop):
 		m.cursor = 0
 		m.scrollOffset = 0
-	case "G", "end":
+	case key.Matches(msg, k.JumpBottom):
 		if len(m.labelStats) > 0 {
 			m.cursor = len(m.labelStats) - 1
 			m.ensureVisible()
 		}
-	case "tab":
+	case key.Matches(msg, k.TogglePanel):
 		m.focusPanel = (m.focusPanel + 1) % 2
-	case "enter":
+	case key.Matches(msg, k.Enter):
 		if m.cursor < len(m.labelStats) {
 			m.openDrilldown()
 		}
-	case "ctrl+d":
+	case key.Matches(msg, k.PageDown):
 		m.moveCursor(m.visibleRows() / 2)
-	case "ctrl+u":
+	case key.Matches(msg, k.PageUp):
 		m.moveCursor(-m.visibleRows() / 2)
 	}
 
@@ -190,16 +193,16 @@ func (m *FlowMatrixModel) Update(msg tea.KeyMsg) tea.Cmd {
 }
 
 func (m *FlowMatrixModel) updateDrilldown(msg tea.KeyMsg) tea.Cmd {
-	key := msg.String()
-	switch key {
-	case "esc", "q":
+	k := m.keys
+	switch {
+	case key.Matches(msg, k.Close):
 		m.showDrilldown = false
-	case "j", "down":
+	case key.Matches(msg, k.Down):
 		if m.drilldownCursor < len(m.drilldownIssues)-1 {
 			m.drilldownCursor++
 			m.ensureDrilldownVisible()
 		}
-	case "k", "up":
+	case key.Matches(msg, k.Up):
 		if m.drilldownCursor > 0 {
 			m.drilldownCursor--
 			m.ensureDrilldownVisible()

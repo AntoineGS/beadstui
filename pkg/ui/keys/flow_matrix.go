@@ -20,6 +20,8 @@ type FlowMatrixKeys struct {
 	Down        key.Binding `action:"nav.down"`
 	JumpTop     key.Binding `action:"nav.top"`
 	JumpBottom  key.Binding `action:"nav.bottom"`
+	PageDown    key.Binding `action:"nav.page_down"`
+	PageUp      key.Binding `action:"nav.page_up"`
 	TogglePanel key.Binding `action:"flow.toggle_panel"`
 	Enter       key.Binding `action:"flow.enter"`
 	Close       key.Binding `action:"flow.close"`
@@ -43,6 +45,14 @@ func NewFlowMatrixKeys() FlowMatrixKeys {
 		JumpBottom: key.NewBinding(
 			key.WithKeys("end", "G"),
 			key.WithHelp("end/G", "jump to bottom"),
+		),
+		PageDown: key.NewBinding(
+			key.WithKeys("ctrl+d"),
+			key.WithHelp("⌃d", "half page down"),
+		),
+		PageUp: key.NewBinding(
+			key.WithKeys("ctrl+u"),
+			key.WithHelp("⌃u", "half page up"),
 		),
 		TogglePanel: key.NewBinding(
 			key.WithKeys("tab"),
@@ -69,7 +79,7 @@ func (k FlowMatrixKeys) ShortHelp() []key.Binding {
 // Columns: Move, Act, Exit.
 func (k FlowMatrixKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.JumpTop, k.JumpBottom},
+		{k.Up, k.Down, k.JumpTop, k.JumpBottom, k.PageDown, k.PageUp},
 		{k.Enter, k.TogglePanel},
 		{k.Close},
 	}

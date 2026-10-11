@@ -85,6 +85,23 @@ type AppKeys struct {
 
 	// Confirm backs every yes/no confirm dialog.
 	Confirm ConfirmKeys
+
+	// Maps for handlers that compared msg.String() directly before bt-i4k.2.
+	// Alerts and Notifications are the two tabs of the shared alerts modal.
+	Alerts         AlertsKeys
+	Notifications  NotificationsKeys
+	LabelDashboard LabelDashboardKeys
+	LabelHealth    LabelHealthKeys
+	LabelDrilldown LabelDrilldownKeys
+	LabelGraph     LabelGraphKeys
+	Attention      AttentionKeys
+	MemoriesNormal MemoriesNormalKeys
+	MemoriesSearch MemoriesSearchKeys
+	Help           HelpKeys
+	Cass           CassKeys
+	AgentPrompt    AgentPromptKeys
+	Tutorial       TutorialKeys
+	Update         UpdateKeys
 }
 
 // NewAppKeys returns the default keymap for every view. Wire into NewModel.
@@ -133,6 +150,21 @@ func NewAppKeys() AppKeys {
 		PluginSelect: NewPluginSelectKeys(),
 
 		Confirm: NewConfirmKeys(),
+
+		Alerts:         NewAlertsKeys(),
+		Notifications:  NewNotificationsKeys(),
+		LabelDashboard: NewLabelDashboardKeys(),
+		LabelHealth:    NewLabelHealthKeys(),
+		LabelDrilldown: NewLabelDrilldownKeys(),
+		LabelGraph:     NewLabelGraphKeys(),
+		Attention:      NewAttentionKeys(),
+		MemoriesNormal: NewMemoriesNormalKeys(),
+		MemoriesSearch: NewMemoriesSearchKeys(),
+		Help:           NewHelpKeys(),
+		Cass:           NewCassKeys(),
+		AgentPrompt:    NewAgentPromptKeys(),
+		Tutorial:       NewTutorialKeys(),
+		Update:         NewUpdateKeys(),
 	}
 	stampTokens(&a)
 	return a

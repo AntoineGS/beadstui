@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -11,16 +12,14 @@ import (
 // with global hotkeys are typed instead of switching views) and the
 // bottom focus-specific dispatch switch (once search is inactive).
 //
-// Direct msg.String() matching rather than a dedicated keys.MemoriesKeys /
-// help.KeyMap pair (mirrors LabelDashboardModel, not HistoryModel) - the
-// view has a small, stable key surface. The L1 footer and ; sidebar fall
-// back to the Global map for this view, same as LabelDashboard/Attention.
+// Dispatches via m.keys.MemoriesSearch while search is active (every other
+// key is typed into the search input) and m.keys.MemoriesNormal otherwise.
 func (m Model) handleMemoriesKeys(msg tea.KeyMsg) Model {
 	if m.memories.IsSearchActive() {
-		switch msg.String() {
-		case "esc":
+		switch {
+		case key.Matches(msg, m.keys.MemoriesSearch.Cancel):
 			m.memories.CancelSearch()
-		case "enter":
+		case key.Matches(msg, m.keys.MemoriesSearch.Confirm):
 			m.memories.ConfirmSearch()
 		default:
 			m.memories.UpdateSearchInput(msg)
@@ -28,26 +27,27 @@ func (m Model) handleMemoriesKeys(msg tea.KeyMsg) Model {
 		return m
 	}
 
-	switch msg.String() {
-	case "/":
+	k := m.keys.MemoriesNormal
+	switch {
+	case key.Matches(msg, k.Search):
 		m.memories.StartSearch()
-	case "j", "down":
+	case key.Matches(msg, k.Down):
 		if m.memories.detailFocused && m.memories.isSplitWidth() {
 			m.memories.ScrollDetailDown()
 		} else {
 			m.memories.MoveDown()
 		}
-	case "k", "up":
+	case key.Matches(msg, k.Up):
 		if m.memories.detailFocused && m.memories.isSplitWidth() {
 			m.memories.ScrollDetailUp()
 		} else {
 			m.memories.MoveUp()
 		}
-	case "tab":
+	case key.Matches(msg, k.FocusToggle):
 		m.memories.ToggleDetailFocus()
-	case "enter":
+	case key.Matches(msg, k.Open):
 		m.memories.FocusDetail()
-	case "backspace":
+	case key.Matches(msg, k.BackToList):
 		// Single-pane detail -> back to master (split mode already has both
 		// panes visible; tab handles focus there).
 		if !m.memories.isSplitWidth() {

@@ -3,10 +3,12 @@ package ui
 import (
 	"strings"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/seanmartinsmith/beadstui/pkg/agents"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 )
 
 // AgentPromptResult represents the user's choice on the AGENTS.md prompt.
@@ -21,6 +23,7 @@ const (
 
 // AgentPromptModal is a modal dialog for the AGENTS.md prompt.
 type AgentPromptModal struct {
+	keys      keys.AgentPromptKeys
 	selection int    // 0=yes, 1=no, 2=never
 	filePath  string // Which file we're offering to modify
 	fileType  string // AGENTS.md or CLAUDE.md
@@ -34,6 +37,7 @@ type AgentPromptModal struct {
 // NewAgentPromptModal creates a new AGENTS.md prompt modal.
 func NewAgentPromptModal(filePath, fileType string, theme Theme) AgentPromptModal {
 	return AgentPromptModal{
+		keys:      keys.NewAgentPromptKeys(),
 		selection: 0, // Default to "Yes"
 		filePath:  filePath,
 		fileType:  fileType,
@@ -48,18 +52,18 @@ func NewAgentPromptModal(filePath, fileType string, theme Theme) AgentPromptModa
 func (m AgentPromptModal) Update(msg tea.Msg) (AgentPromptModal, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "up", "k", "shift+tab":
+		switch {
+		case key.Matches(msg, m.keys.Prev):
 			m.selection--
 			if m.selection < 0 {
 				m.selection = 2
 			}
-		case "down", "j", "tab":
+		case key.Matches(msg, m.keys.Next):
 			m.selection++
 			if m.selection > 2 {
 				m.selection = 0
 			}
-		case "enter", "space":
+		case key.Matches(msg, m.keys.Select):
 			switch m.selection {
 			case 0:
 				m.result = AgentPromptAccept
@@ -68,13 +72,13 @@ func (m AgentPromptModal) Update(msg tea.Msg) (AgentPromptModal, tea.Cmd) {
 			case 2:
 				m.result = AgentPromptNeverAsk
 			}
-		case "y", "Y":
+		case key.Matches(msg, m.keys.Yes):
 			m.result = AgentPromptAccept
-		case "n", "N":
+		case key.Matches(msg, m.keys.No):
 			m.result = AgentPromptDecline
-		case "d", "D":
+		case key.Matches(msg, m.keys.Never):
 			m.result = AgentPromptNeverAsk
-		case "esc", "q":
+		case key.Matches(msg, m.keys.Dismiss):
 			m.result = AgentPromptDecline
 		}
 	}

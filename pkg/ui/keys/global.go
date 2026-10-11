@@ -58,6 +58,8 @@ type GlobalKeys struct {
 	PriorityHints key.Binding `action:"notify.priority_hints"` // p
 	Export        key.Binding `action:"bead.export"`           // x
 	LabelPicker   key.Binding `action:"filter.labels"`         // l
+	PluginMenu    key.Binding `action:"plugin.menu"`           // P (gated on a plugin view with plugin actions)
+	DebugDims     key.Binding `action:"window.debug_dims"`     // ctrl+p (out of ShortHelp: a diagnostic aid)
 }
 
 // NewGlobalKeys returns the default global keymap.
@@ -202,6 +204,14 @@ func NewGlobalKeys() GlobalKeys {
 			key.WithKeys("l"),
 			key.WithHelp("l", "label picker"),
 		),
+		PluginMenu: key.NewBinding(
+			key.WithKeys("P"),
+			key.WithHelp("P", "plugin actions"),
+		),
+		DebugDims: key.NewBinding(
+			key.WithKeys("ctrl+p"),
+			key.WithHelp("⌃p", "dimension chip"),
+		),
 	}
 }
 
@@ -226,6 +236,6 @@ func (k GlobalKeys) FullHelp() [][]key.Binding {
 		// Workspace
 		{k.ProjectsOrWisps, k.WorkspaceHomeAll, k.WispToggle, k.HybridPreset},
 		// Actions
-		{k.Refresh, k.SearchMode, k.BQL, k.Recipes, k.Alerts, k.Notifications, k.SearchBounce, k.PriorityHints, k.Export, k.LabelPicker},
+		{k.Refresh, k.SearchMode, k.BQL, k.Recipes, k.Alerts, k.Notifications, k.SearchBounce, k.PriorityHints, k.Export, k.LabelPicker, k.PluginMenu, k.DebugDims},
 	}
 }

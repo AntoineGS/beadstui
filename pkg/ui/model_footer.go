@@ -841,6 +841,15 @@ func (m Model) viewSpecificKeyMap() help.KeyMap {
 		}
 	case ViewEpics:
 		return m.keys.Epics
+	case ViewLabelDashboard:
+		return m.keys.LabelDashboard
+	case ViewAttention:
+		return m.keys.Attention
+	case ViewMemories:
+		if m.memories.IsSearchActive() {
+			return m.keys.MemoriesSearch
+		}
+		return m.keys.MemoriesNormal
 	}
 	return nil
 }
@@ -881,9 +890,30 @@ func (m Model) modalKeyMap() help.KeyMap {
 		if m.pluginPrompt != nil && (m.pluginPrompt.kind == pluginPromptMenu || m.pluginPrompt.kind == pluginPromptSelect) {
 			return m.keys.PluginSelect
 		}
+	case ModalHelp:
+		return m.keys.Help
+	case ModalAlerts:
+		if m.activeTab == TabNotifications {
+			return m.keys.Notifications
+		}
+		return m.keys.Alerts
+	case ModalLabelHealthDetail:
+		return m.keys.LabelHealth
+	case ModalLabelDrilldown:
+		return m.keys.LabelDrilldown
+	case ModalLabelGraphAnalysis:
+		return m.keys.LabelGraph
+	case ModalCassSession:
+		return m.keys.Cass
+	case ModalAgentPrompt:
+		return m.keys.AgentPrompt
+	case ModalTutorial:
+		return m.keys.Tutorial
+	case ModalUpdate:
+		return m.keys.Update
 	}
-	// Other modals (help, alerts, tutorial, quit-confirm, agent prompt, …)
-	// carry their own internal footers; the L1 slot stays empty for them.
+	// Other modals (quit-confirm, claim-confirm, settings, …) carry their own
+	// internal footers; the L1 slot stays empty for them.
 	return nil
 }
 

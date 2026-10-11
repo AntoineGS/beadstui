@@ -98,8 +98,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 
 		// Check for dismiss keys
-		switch msg.String() {
-		case "V", "esc", "enter", "q":
+		if key.Matches(msg, m.keys.Cass.Close) {
 			m.closeModal()
 			m.focused = focusList
 			return m, tea.Batch(cmds...)
@@ -126,13 +125,12 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 	// Close label health detail modal if open
 	if m.activeModal == ModalLabelHealthDetail {
-		s := msg.String()
-		if s == "esc" || s == "q" || s == "enter" || s == "h" {
+		if key.Matches(msg, m.keys.LabelHealth.Close) {
 			m.closeModal()
 			m.labelHealthDetail = nil
 			return m, nil
 		}
-		if s == "d" && m.labelHealthDetail != nil {
+		if key.Matches(msg, m.keys.LabelHealth.Drilldown) && m.labelHealthDetail != nil {
 			// open drilldown from detail modal
 			m.labelDrilldownLabel = m.labelHealthDetail.Label
 			m.labelDrilldownIssues = m.filterIssuesByLabel(m.labelDrilldownLabel)
@@ -143,9 +141,9 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 	// Handle label drilldown modal if open
 	if m.activeModal == ModalLabelDrilldown {
-		s := msg.String()
-		switch s {
-		case "enter":
+		k := m.keys.LabelDrilldown
+		switch {
+		case key.Matches(msg, k.Apply):
 			// Apply label filter to main list and close drilldown
 			if m.labelDrilldownLabel != "" {
 				m.filter.labelFilter = m.labelDrilldownLabel
@@ -156,7 +154,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.labelDrilldownLabel = ""
 			m.labelDrilldownIssues = nil
 			return m, nil
-		case "g":
+		case key.Matches(msg, k.Graph):
 			// Show graph analysis sub-view (bv-109)
 			if m.labelDrilldownLabel != "" {
 				sg := analysis.ComputeLabelSubgraph(m.visibleIssues(), m.labelDrilldownLabel)
@@ -171,7 +169,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				m.openModal(ModalLabelGraphAnalysis)
 			}
 			return m, nil
-		case "esc", "q", "d":
+		case key.Matches(msg, k.Close):
 			m.closeModal()
 			m.labelDrilldownLabel = ""
 			m.labelDrilldownIssues = nil
@@ -181,9 +179,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 	// Handle label graph analysis sub-view (bv-109)
 	if m.activeModal == ModalLabelGraphAnalysis {
-		s := msg.String()
-		switch s {
-		case "esc", "q", "g":
+		if key.Matches(msg, m.keys.LabelGraph.Close) {
 			m.closeModal()
 			m.labelGraphAnalysisResult = nil
 			return m, nil
@@ -192,14 +188,15 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 	// Handle attention view quick jumps (bv-117)
 	if m.mode == ViewAttention {
-		s := msg.String()
 		switch {
-		case s == "esc" || s == "q" || s == "d":
+		case key.Matches(msg, m.keys.Attention.Close):
 			m.mode = ViewList
 			m.focused = focusList
 			m.insightsPanel.extraText = ""
 			return m, nil
-		case len(s) == 1 && s[0] >= '1' && s[0] <= '9':
+		case key.Matches(msg, m.keys.Attention.PickLabel):
+			// The digit is the label rank, read from the key text.
+			s := msg.String()
 			if len(m.attentionCache.Labels) == 0 {
 				return m, nil
 			}
@@ -219,8 +216,9 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		// Tab switching + close-on-same-key at the top of the modal block
 		// (bt-46p6.10). Runs before per-tab dispatch so these keys behave
 		// consistently regardless of which tab has focus.
-		switch msg.String() {
-		case "tab":
+		ak := m.keys.Alerts
+		switch {
+		case key.Matches(msg, ak.TabSwitch):
 			if m.activeTab == TabAlerts {
 				m.activeTab = TabNotifications
 				m.markNotificationsSeen()
@@ -229,7 +227,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			}
 			m.syncModalCursorToSelection()
 			return m, nil
-		case "!":
+		case key.Matches(msg, ak.ShowAlerts):
 			if m.activeTab == TabAlerts {
 				m.resetAlertFilters()
 				m.closeModal()
@@ -238,7 +236,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				m.syncModalCursorToSelection()
 			}
 			return m, nil
-		case "1":
+		case key.Matches(msg, ak.ShowNotifications):
 			if m.activeTab == TabNotifications {
 				m.closeModal()
 			} else {
@@ -256,30 +254,32 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 
 		activeAlerts := m.visibleAlerts()
-		s := msg.String()
-		switch s {
-		case "j", "down":
+		switch {
+		case key.Matches(msg, ak.Down):
 			if m.alertsCursor < len(activeAlerts)-1 {
 				m.alertsCursor++
 			}
 			return m, nil
-		case "k", "up":
+		case key.Matches(msg, ak.Up):
 			if m.alertsCursor > 0 {
 				m.alertsCursor--
 			}
 			return m, nil
-		case "l":
-			m.alertsCursor, _ = modalPageKeyCursor("right", m.alertsCursor, len(activeAlerts), m.alertsPageSize())
-			return m, nil
-		case "h":
-			m.alertsCursor, _ = modalPageKeyCursor("left", m.alertsCursor, len(activeAlerts), m.alertsPageSize())
-			return m, nil
-		case "right", "left", "pgdown", "pgup", "home", "end", "g", "G":
+		case key.Matches(msg, ak.PageRight, ak.PageDown):
 			// Page keys land at the top of the target page (bt-p4p8.1);
 			// home/end (g/G) jump to the first/last alert.
-			m.alertsCursor, _ = modalPageKeyCursor(s, m.alertsCursor, len(activeAlerts), m.alertsPageSize())
+			m.alertsCursor, _ = modalPageKeyCursor("pgdown", m.alertsCursor, len(activeAlerts), m.alertsPageSize())
 			return m, nil
-		case "enter":
+		case key.Matches(msg, ak.PageLeft, ak.PageUp):
+			m.alertsCursor, _ = modalPageKeyCursor("pgup", m.alertsCursor, len(activeAlerts), m.alertsPageSize())
+			return m, nil
+		case key.Matches(msg, ak.JumpTop):
+			m.alertsCursor, _ = modalPageKeyCursor("home", m.alertsCursor, len(activeAlerts), m.alertsPageSize())
+			return m, nil
+		case key.Matches(msg, ak.JumpBottom):
+			m.alertsCursor, _ = modalPageKeyCursor("end", m.alertsCursor, len(activeAlerts), m.alertsPageSize())
+			return m, nil
+		case key.Matches(msg, ak.Open):
 			// Jump to the issue referenced by the selected alert and focus
 			// the detail pane (bt-46p6.10 dogfood).
 			if m.alertsCursor < len(activeAlerts) {
@@ -304,7 +304,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			}
 			m.closeModal()
 			return m, nil
-		case "c":
+		case key.Matches(msg, ak.Dismiss):
 			// Clear the selected alert
 			if m.alertsCursor < len(activeAlerts) {
 				key := alertKey(activeAlerts[m.alertsCursor])
@@ -322,7 +322,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				}
 			}
 			return m, nil
-		case "C":
+		case key.Matches(msg, ak.DismissAll):
 			// Clear all visible alerts
 			for _, a := range activeAlerts {
 				m.dismissedAlerts[alertKey(a)] = true
@@ -331,7 +331,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.alertsCursor = 0
 			m.closeModal()
 			return m, nil
-		case "s":
+		case key.Matches(msg, ak.Severity):
 			// Cycle severity filter: all → critical → warning → info → all
 			switch m.alertFilterSeverity {
 			case "":
@@ -346,7 +346,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 			m.alertsCursor = 0
 			return m, nil
-		case "t":
+		case key.Matches(msg, ak.Type):
 			// Cycle type filter through active types
 			types := m.alertActiveTypes()
 			if len(types) == 0 {
@@ -371,7 +371,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 			m.alertsCursor = 0
 			return m, nil
-		case "p":
+		case key.Matches(msg, ak.Project):
 			// Cycle project filter through active projects
 			projects := m.alertActiveProjects()
 			if len(projects) == 0 {
@@ -396,7 +396,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 			m.alertsCursor = 0
 			return m, nil
-		case "S":
+		case key.Matches(msg, ak.SeverityReverse):
 			// Cycle severity filter BACKWARDS: all → info → warning → critical → all
 			switch m.alertFilterSeverity {
 			case "":
@@ -410,7 +410,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			}
 			m.alertsCursor = 0
 			return m, nil
-		case "T":
+		case key.Matches(msg, ak.TypeReverse):
 			// Cycle type filter BACKWARDS through active types
 			types := m.alertActiveTypes()
 			if len(types) == 0 {
@@ -434,7 +434,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			}
 			m.alertsCursor = 0
 			return m, nil
-		case "P":
+		case key.Matches(msg, ak.ProjectReverse):
 			// Cycle project filter BACKWARDS through active projects
 			projects := m.alertActiveProjects()
 			if len(projects) == 0 {
@@ -458,17 +458,17 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			}
 			m.alertsCursor = 0
 			return m, nil
-		case "o":
+		case key.Matches(msg, ak.Sort):
 			// Cycle sort: default → oldest → newest → default
 			m.alertSortOrder = (m.alertSortOrder + 1) % 3
 			m.alertsCursor = 0
 			return m, nil
-		case "O":
+		case key.Matches(msg, ak.SortReverse):
 			// Cycle sort BACKWARDS: default → newest → oldest → default
 			m.alertSortOrder = (m.alertSortOrder + 2) % 3
 			m.alertsCursor = 0
 			return m, nil
-		case "a":
+		case key.Matches(msg, ak.Class):
 			// Cycle class filter: all → anomaly → advisory → all (traceable
 			// badge, bt-2nepr). "anomaly" shows exactly the footer badge's items.
 			switch m.alertFilterClass {
@@ -481,7 +481,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			}
 			m.alertsCursor = 0
 			return m, nil
-		case "A":
+		case key.Matches(msg, ak.ClassReverse):
 			// Cycle class filter BACKWARDS: all → advisory → anomaly → all
 			switch m.alertFilterClass {
 			case "":
@@ -493,12 +493,12 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			}
 			m.alertsCursor = 0
 			return m, nil
-		case "r", "R":
+		case key.Matches(msg, ak.Reset):
 			// Reset all filters
 			m.resetAlertFilters()
 			m.alertsCursor = 0
 			return m, nil
-		case "esc", "q":
+		case key.Matches(msg, ak.Close):
 			m.resetAlertFilters()
 			m.closeModal()
 			return m, nil
@@ -508,7 +508,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 	// Handle repo picker overlay (workspace mode) before global keys (esc/q/etc.)
 	if m.activeModal == ModalRepoPicker {
-		if msg.String() == "ctrl+c" {
+		if key.Matches(msg, m.keys.Global.Quit) {
 			return m, tea.Quit
 		}
 		m = m.handleRepoPickerKeys(msg)
@@ -517,7 +517,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 	// Handle BQL query modal before global keys
 	if m.activeModal == ModalBQLQuery {
-		if msg.String() == "ctrl+c" {
+		if key.Matches(msg, m.keys.Global.Quit) {
 			return m, tea.Quit
 		}
 		m, cmd = m.handleBQLQueryKeys(msg)
@@ -528,7 +528,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// Without this early return, typed characters get intercepted by global handlers
 	// (e.g., 'g' opens graph, 'i' opens insights) triggering expensive operations.
 	if m.activeModal == ModalLabelPicker {
-		if msg.String() == "ctrl+c" {
+		if key.Matches(msg, m.keys.Global.Quit) {
 			return m, tea.Quit
 		}
 		m = m.handleLabelPickerKeys(msg)
@@ -537,7 +537,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 	// Handle recipe picker overlay before global keys (esc/q/etc.)
 	if m.activeModal == ModalRecipePicker {
-		if msg.String() == "ctrl+c" {
+		if key.Matches(msg, m.keys.Global.Quit) {
 			return m, tea.Quit
 		}
 		m = m.handleRecipePickerKeys(msg)
@@ -548,7 +548,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// the open key: while the screen is up, esc lands here and cancels, so the
 	// global "back / cancel" binding never sees it.
 	if m.activeModal == ModalSettings {
-		if msg.String() == "ctrl+c" {
+		if key.Matches(msg, m.keys.Global.Quit) {
 			return m, tea.Quit
 		}
 		m = m.handleSettingsModalKeys(msg)
@@ -556,7 +556,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	}
 
 	if m.activeModal == ModalSettingsMenu {
-		if msg.String() == "ctrl+c" {
+		if key.Matches(msg, m.keys.Global.Quit) {
 			return m, tea.Quit
 		}
 		m = m.handleSettingsMenuKeys(msg)
@@ -566,7 +566,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// Handle quit confirmation first
 	if m.activeModal == ModalQuitConfirm {
 		switch {
-		case msg.String() == "ctrl+c", key.Matches(msg, m.keys.Confirm.Confirm):
+		case key.Matches(msg, m.keys.Global.Quit, m.keys.Confirm.Confirm):
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Confirm.Cancel):
 			m.closeModal()
@@ -579,7 +579,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// free-text input anywhere in the path (cp1252 safety).
 	if m.activeModal == ModalClaimConfirm {
 		switch {
-		case msg.String() == "ctrl+c":
+		case key.Matches(msg, m.keys.Global.Quit):
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Confirm.Confirm):
 			return m.confirmClaim()
@@ -599,19 +599,19 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// later placement lets digit/letter keys inside these modals get
 	// swallowed by global bindings first.
 	if m.activeModal == ModalFieldSelect {
-		if msg.String() == "ctrl+c" {
+		if key.Matches(msg, m.keys.Global.Quit) {
 			return m, tea.Quit
 		}
 		return m.handleFieldSelectKeys(msg)
 	}
 	if m.activeModal == ModalFieldPicker {
-		if msg.String() == "ctrl+c" {
+		if key.Matches(msg, m.keys.Global.Quit) {
 			return m, tea.Quit
 		}
 		return m.handleFieldPickerKeys(msg)
 	}
 	if m.activeModal == ModalFieldInput {
-		if msg.String() == "ctrl+c" {
+		if key.Matches(msg, m.keys.Global.Quit) {
 			return m, tea.Quit
 		}
 		return m.handleFieldInputKeys(msg)
@@ -624,7 +624,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// - everything else goes to handleLongformEditKeys, which owns Esc's
 	// dirty-guard state machine plus forwarding typed keys into the textarea.
 	if m.activeModal == ModalLongformEdit {
-		if msg.String() == "ctrl+c" {
+		if key.Matches(msg, m.keys.Global.Quit) {
 			return m, tea.Quit
 		}
 		return m.handleLongformEditKeys(msg)
@@ -698,7 +698,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// dimension-sensitive bugs can be reported with exact terminal cell
 	// counts. Bypasses the keymap so it stays out of `?` help and is
 	// effectively hidden from users who don't know to press it.
-	if msg.String() == "ctrl+p" && m.list.FilterState() != list.Filtering {
+	if key.Matches(msg, m.keys.Global.DebugDims) && m.list.FilterState() != list.Filtering {
 		m.showDebugDims = !m.showDebugDims
 		return m, nil
 	}
@@ -868,6 +868,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.closeModal()
 			m.focused = focusList
 			m.tutorialModel = NewTutorialModel(m.theme) // Reset for next time
+			m.tutorialModel.keys = m.keys.Tutorial
 		}
 		return m, tutorialCmd
 	}
@@ -875,7 +876,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// Handle time-travel input first (before global keys intercept letters)
 	// But allow ctrl+c to always quit
 	if m.focused == focusTimeTravelInput {
-		if msg.String() == "ctrl+c" {
+		if key.Matches(msg, m.keys.Global.Quit) {
 			return m, tea.Quit
 		}
 		m = m.handleTimeTravelInputKeys(msg)
@@ -895,19 +896,19 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if m.activeModal == ModalNone {
 		switch {
 		case m.mode == ViewHistory && (m.historyView.IsSearchActive() || m.historyView.FileTreeHasFocus()):
-			if msg.String() == "ctrl+c" {
+			if key.Matches(msg, m.keys.Global.Quit) {
 				return m, tea.Quit
 			}
 			m = m.handleHistoryKeys(msg)
 			return m, nil
 		case m.mode == ViewBoard && m.board.IsSearchMode():
-			if msg.String() == "ctrl+c" {
+			if key.Matches(msg, m.keys.Global.Quit) {
 				return m, tea.Quit
 			}
 			m = m.handleBoardKeys(msg)
 			return m, nil
 		case m.mode == ViewMemories && m.memories.IsSearchActive():
-			if msg.String() == "ctrl+c" {
+			if key.Matches(msg, m.keys.Global.Quit) {
 				return m, tea.Quit
 			}
 			m = m.handleMemoriesKeys(msg)
@@ -1450,8 +1451,13 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 		}
 
-		// Plugin action keys and the action menu, for keys the view's own
-		// handler does not bind.
+		if key.Matches(msg, m.keys.Global.PluginMenu) &&
+			m.pluginActions != nil && m.activeModal == ModalNone && m.pluginView() != "" {
+			m2, cmd := m.openPluginMenu()
+			return m2, cmd
+		}
+
+		// Plugin action keys, for keys the view's own handler does not bind.
 		if m2, cmd, ok := m.tryPluginActionKey(msg); ok {
 			return m2, cmd
 		}
@@ -1483,7 +1489,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 		case focusLabelDashboard:
 			// Exit label dashboard
-			if msg.String() == "esc" || msg.String() == "q" || msg.String() == "[" {
+			if key.Matches(msg, m.keys.LabelDashboard.Close) {
 				m.isSplitView = true
 				m.focused = focusList
 				return m, nil
@@ -1497,7 +1503,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				return m, cmd
 			}
 			// Open detail modal on 'h'
-			if msg.String() == "h" && len(m.labelDashboard.labels) > 0 {
+			if key.Matches(msg, m.keys.LabelDashboard.Health) && len(m.labelDashboard.labels) > 0 {
 				idx := m.labelDashboard.cursor
 				if idx >= 0 && idx < len(m.labelDashboard.labels) {
 					lh := m.labelDashboard.labels[idx]
@@ -1509,7 +1515,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				}
 			}
 			// Open drilldown overlay on 'd'
-			if msg.String() == "d" && len(m.labelDashboard.labels) > 0 {
+			if key.Matches(msg, m.keys.LabelDashboard.Drilldown) && len(m.labelDashboard.labels) > 0 {
 				idx := m.labelDashboard.cursor
 				if idx >= 0 && idx < len(m.labelDashboard.labels) {
 					lh := m.labelDashboard.labels[idx]
@@ -1549,7 +1555,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			// (bt-jwo3 follow-up). Without this the keystroke goes to viewport
 			// scroll, leaving users stuck navigating a single bead's body when
 			// they meant to start a new query.
-			if msg.String() == "/" {
+			if key.Matches(msg, m.keys.Global.SearchBounce) {
 				m.focused = focusList
 				m.list.SetFilterState(list.Filtering)
 				return m, nil
@@ -2297,29 +2303,39 @@ func (m Model) handleResizeSettled(msg resizeSettledMsg) Model {
 // before this handler is reached, so they're absent here.
 func (m Model) handleNotificationsKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	activeNotifs := m.visibleNotifications()
-	switch msg.String() {
-	case "j", "down":
+	nk := m.keys.Notifications
+	switch {
+	case key.Matches(msg, nk.Down):
 		if m.notificationsCursor < len(activeNotifs)-1 {
 			m.notificationsCursor++
 		}
 		return m, nil
-	case "k", "up":
+	case key.Matches(msg, nk.Up):
 		if m.notificationsCursor > 0 {
 			m.notificationsCursor--
 		}
 		return m, nil
-	case "right", "left", "pgdown", "pgup", "home", "end", "g", "G":
+	case key.Matches(msg, nk.PageDown):
 		// Page keys (bt-p4p8.1): page size is the visible-row budget, landing
 		// at the top of the target page; home/end (g/G) jump to the ends.
-		m.notificationsCursor, _ = modalPageKeyCursor(msg.String(), m.notificationsCursor, len(activeNotifs), m.notifPageSize())
+		m.notificationsCursor, _ = modalPageKeyCursor("pgdown", m.notificationsCursor, len(activeNotifs), m.notifPageSize())
 		return m, nil
-	case "enter":
+	case key.Matches(msg, nk.PageUp):
+		m.notificationsCursor, _ = modalPageKeyCursor("pgup", m.notificationsCursor, len(activeNotifs), m.notifPageSize())
+		return m, nil
+	case key.Matches(msg, nk.JumpTop):
+		m.notificationsCursor, _ = modalPageKeyCursor("home", m.notificationsCursor, len(activeNotifs), m.notifPageSize())
+		return m, nil
+	case key.Matches(msg, nk.JumpBottom):
+		m.notificationsCursor, _ = modalPageKeyCursor("end", m.notificationsCursor, len(activeNotifs), m.notifPageSize())
+		return m, nil
+	case key.Matches(msg, nk.Open):
 		// Both keyboard enter and double-click on a notification share
 		// activateCurrentModalItem so the deep-link semantics (workspace
 		// reveal, filter-aware selection, detail focus, comment scroll for
 		// EventCommented per bt-46p6.16) stay in one place.
 		return m.activateCurrentModalItem()
-	case "c":
+	case key.Matches(msg, nk.Dismiss):
 		if m.notificationsCursor < len(activeNotifs) {
 			m.events.Dismiss(activeNotifs[m.notificationsCursor].ID)
 			remaining := len(m.visibleNotifications())
@@ -2334,19 +2350,19 @@ func (m Model) handleNotificationsKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	case "C":
+	case key.Matches(msg, nk.DismissAll):
 		m.events.DismissAll()
 		m.notificationsCursor = 0
 		m.closeModal()
 		return m, nil
-	case "d":
+	case key.Matches(msg, nk.ShowDismissed):
 		// Toggle dismissed-event visibility (bt-46p6.13). Reset cursor since
 		// the visible-list length changes and the previous index would point
 		// at a different row.
 		m.notifShowDismissed = !m.notifShowDismissed
 		m.notificationsCursor = 0
 		return m, nil
-	case "t":
+	case key.Matches(msg, nk.Kind):
 		// Cycle kind filter forward through kinds present: all → first →
 		// … → last → all (mirrors the alerts tab's type cycle).
 		kinds := m.notifActiveKinds()
@@ -2371,7 +2387,7 @@ func (m Model) handleNotificationsKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 		m.notificationsCursor = 0
 		return m, nil
-	case "T":
+	case key.Matches(msg, nk.KindReverse):
 		// Cycle kind filter BACKWARDS through kinds present.
 		kinds := m.notifActiveKinds()
 		if len(kinds) == 0 {
@@ -2395,12 +2411,12 @@ func (m Model) handleNotificationsKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 		m.notificationsCursor = 0
 		return m, nil
-	case "r", "R":
+	case key.Matches(msg, nk.Reset):
 		// Reset the kind filter.
 		m.notifFilterKind = ""
 		m.notificationsCursor = 0
 		return m, nil
-	case "esc", "q":
+	case key.Matches(msg, nk.Close):
 		m.closeModal()
 		return m, nil
 	}
