@@ -275,6 +275,9 @@ func (s *store) badges(issue *model.Issue) []slots.Badge {
 	return out
 }
 
+// BadgeTone returns the slot tone of the value's Tone; no tone is muted.
+func (v FieldValue) BadgeTone() slots.Tone { return tone(v.Tone) }
+
 func tone(s string) slots.Tone {
 	switch s {
 	case "accent":
@@ -345,6 +348,30 @@ func (s *store) activeNames() []string {
 	for _, cfg := range s.cfgs {
 		if s.active[cfg.Name] != nil {
 			out = append(out, cfg.Name)
+		}
+	}
+	return out
+}
+
+// laneFields lists every active plugin's fields with their lane values, in
+// config then manifest order.
+func (s *store) laneFields() []LaneField {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []LaneField
+	for _, cfg := range s.cfgs {
+		m := s.active[cfg.Name]
+		if m == nil {
+			continue
+		}
+		for _, f := range m.Fields {
+			lf := LaneField{Name: cfg.Name + "." + f.ID, Label: f.Label}
+			for _, v := range f.Values {
+				if v.InLane() {
+					lf.Values = append(lf.Values, v)
+				}
+			}
+			out = append(out, lf)
 		}
 	}
 	return out

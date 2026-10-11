@@ -84,3 +84,38 @@ func TestStoreSectionMarkdownSanitized(t *testing.T) {
 		t.Fatalf("sections = %q, want markdown %q", secs, want)
 	}
 }
+
+func TestStoreLaneFields(t *testing.T) {
+	s := newStore([]Config{{Name: "example"}, {Name: "other"}}, nil)
+	if got := s.laneFields(); got != nil {
+		t.Fatalf("laneFields before activation = %+v", got)
+	}
+
+	no := false
+	m := validManifest()
+	m.Fields[0].Values = append(m.Fields[0].Values, FieldValue{ID: "done", Label: "Done", Lane: &no})
+	m.Fields = append(m.Fields, Field{ID: "owner", Label: "Owner", Values: []FieldValue{{ID: "me", Label: "Me"}}})
+	s.activate("other", Manifest{Fields: []Field{{ID: "lane", Label: "Lane"}}})
+	s.activate("example", m)
+
+	got := s.laneFields()
+	var names []string
+	for _, f := range got {
+		names = append(names, f.Name)
+	}
+	if want := []string{"example.state", "example.owner", "other.lane"}; !reflect.DeepEqual(names, want) {
+		t.Fatalf("names = %v, want %v (config then manifest order)", names, want)
+	}
+	var values []string
+	for _, v := range got[0].Values {
+		values = append(values, v.ID)
+	}
+	if want := []string{"waiting", "queued"}; got[0].Label != "Agent" || !reflect.DeepEqual(values, want) {
+		t.Fatalf("example.state = %q %v, want Agent %v (lane=false dropped)", got[0].Label, values, want)
+	}
+
+	s.deactivate("example")
+	if got := s.laneFields(); len(got) != 1 || got[0].Name != "other.lane" {
+		t.Fatalf("laneFields after deactivation = %+v", got)
+	}
+}

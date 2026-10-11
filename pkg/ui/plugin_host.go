@@ -49,6 +49,7 @@ func (m Model) handlePluginMsg(msg tea.Msg) (Model, tea.Cmd, bool) {
 
 	case plugin.StateChangedMsg:
 		m.clearPluginPending(msg.Beads)
+		m.refreshPluginBoardModes()
 		if m.pluginFields != nil && m.filter.activeBQLExpr != nil && strings.HasPrefix(m.filter.currentFilter, "bql:") {
 			query := strings.TrimPrefix(m.filter.currentFilter, "bql:")
 			if queryMentionsPluginField(query, m.pluginFields()) {
@@ -67,6 +68,7 @@ func (m Model) handlePluginMsg(msg tea.Msg) (Model, tea.Cmd, bool) {
 
 	case plugin.StatusMsg:
 		st := msg.Status
+		m.refreshPluginBoardModes()
 		switch {
 		case st.State == "failed":
 			m.setFailure(fmt.Sprintf("Plugin %s failed: %s (P for details)", st.Name, pluginText(st.LastError, false)))

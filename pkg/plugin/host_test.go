@@ -310,6 +310,9 @@ func TestHostHangingInitFails(t *testing.T) {
 	if th.rec.count(func(m tea.Msg) bool { s, ok := m.(StatusMsg); return ok && s.Status.State == "failed" }) != 1 {
 		t.Error("want one StatusMsg failed")
 	}
+	if n := th.rec.count(func(m tea.Msg) bool { s, ok := m.(StatusMsg); return ok && s.Status.State == "starting" }); n != len(restartBackoff) {
+		t.Errorf("StatusMsg starting sent %d times, want one per restart (%d)", n, len(restartBackoff))
+	}
 	issue := openIssue("example-1")
 	if res := th.Invoke(context.Background(), Action{Plugin: "example", ID: "dispatch"}, &issue, "list"); !res.NotRunning || res.Unknown {
 		t.Errorf("Invoke on failed plugin = %+v, want NotRunning", res)

@@ -789,14 +789,15 @@ type Model struct {
 	viewport           viewport.Model
 	renderer           *MarkdownRenderer
 	board              BoardModel
-	slotRegistry       *slots.Registry        // row badge, section and BQL field providers; built-ins registered in NewModel
-	pluginHost         *plugin.Host           // nil when no plugin is configured
-	pluginSyncHash     string                 // data hash last sent to pluginHost
-	pluginFields       func() []string        // active plugins' BQL field prefixes; set by SetPluginHost, replaceable in tests
-	popupMode          bool                   // --popup: quit after a plugin action asks to
-	pluginActions      pluginActionSource     // plugin actions on beads; set by SetPluginHost, replaceable in tests
-	pluginStatuses     func() []plugin.Status // every configured plugin's status; set by SetPluginHost, replaceable in tests
-	pluginPrompt       *pluginPrompt          // open plugin prompt, action menu or status popup (ModalPluginPrompt)
+	slotRegistry       *slots.Registry           // row badge, section and BQL field providers; built-ins registered in NewModel
+	pluginHost         *plugin.Host              // nil when no plugin is configured
+	pluginSyncHash     string                    // data hash last sent to pluginHost
+	pluginFields       func() []string           // active plugins' BQL field prefixes; set by SetPluginHost, replaceable in tests
+	popupMode          bool                      // --popup: quit after a plugin action asks to
+	pluginActions      pluginActionSource        // plugin actions on beads; set by SetPluginHost, replaceable in tests
+	pluginStatuses     func() []plugin.Status    // every configured plugin's status; set by SetPluginHost, replaceable in tests
+	pluginLaneFields   func() []plugin.LaneField // active plugins' fields, one board mode each; set by SetPluginHost, replaceable in tests
+	pluginPrompt       *pluginPrompt             // open plugin prompt, action menu or status popup (ModalPluginPrompt)
 	labelDashboard     LabelDashboardModel
 	velocityComparison VelocityComparisonModel // bv-125
 	shortcutsSidebar   ShortcutsSidebar        // bv-3qi5
