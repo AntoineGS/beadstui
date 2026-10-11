@@ -392,12 +392,12 @@ func TestRapidViewSwitchingWithNavigation(t *testing.T) {
 
 	// Mix view switches with navigation
 	actions := []tea.KeyPressMsg{
-		integrationKeyMsg("@view.tree"),            // Enter tree
+		integrationKeyMsg("@view.tree"),   // Enter tree
 		integrationKeyMsg("j"),            // Move down
 		integrationKeyMsg("j"),            // Move down
-		integrationKeyMsg("@view.board"),            // Enter board (from tree)
+		integrationKeyMsg("@view.board"),  // Enter board (from tree)
 		integrationKeyMsg("l"),            // Move right in board
-		integrationKeyMsg("@view.graph"),            // Enter graph
+		integrationKeyMsg("@view.graph"),  // Enter graph
 		integrationKeyMsg("j"),            // Move down in graph
 		integrationSpecialKey(tea.KeyEsc), // Exit to list
 		integrationKeyMsg("j"),            // Move down in list
