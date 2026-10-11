@@ -56,9 +56,36 @@ func TestPluginKeyConflictsPartialView(t *testing.T) {
 	// A direct key on the plugin menu binding is reserved from plugins.
 	ks := keys.NewAppKeys()
 	ks.Global.PluginMenu.SetKeys(append(ks.Global.PluginMenu.Keys(), "P")...)
-	got = pluginKeyConflictsIn(ks, statuses[1:])
+	got = pluginKeyConflictsIn(ks, defaultLeaderKey, statuses[1:])
 	if len(got) == 0 || got[len(got)-1] != (PluginKeyConflict{Plugin: "b", Action: "menu", Key: "P", Reason: "bt opens the plugin action menu with it"}) {
 		t.Fatalf("menu key conflicts = %+v", got)
+	}
+}
+
+// TestPluginLeaderKeyReserved: the leader (space by default, any key once
+// configured) is bt's in every view, so plugins never claim or advertise it.
+func TestPluginLeaderKeyReserved(t *testing.T) {
+	got := PluginKeyConflicts([]plugin.Status{{Name: "a", Actions: []plugin.Action{{Plugin: "a", ID: "sp", Key: "space"}}}})
+	want := []PluginKeyConflict{{Plugin: "a", Action: "sp", Key: "space", Reason: "bt binds it in list, board, tree, epics"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("conflicts = %+v\nwant %+v", got, want)
+	}
+
+	for _, leader := range []string{"space", ","} {
+		action := plugin.Action{Plugin: "example", ID: "lead", Label: "Lead", Key: leader}
+		fake := &fakePluginActions{actions: []plugin.Action{action}}
+		m := newPluginActionModel(t, fake)
+		m.leaderKey = leader
+		if bs := m.pluginKeyBindings(); len(bs) != 0 {
+			t.Errorf("leader %q: advertised plugin keys %v", leader, bs)
+		}
+		if got := pluginKeyConflictsIn(m.keys, leader, []plugin.Status{{Name: "example", Actions: []plugin.Action{action}}}); len(got) != 1 {
+			t.Errorf("leader %q: conflicts = %+v, want the leader reserved", leader, got)
+		}
+		_, _ = sendMsg(m, layoutKey(leader))
+		if len(fake.calls) != 0 {
+			t.Errorf("leader %q: plugin action invoked", leader)
+		}
 	}
 }
 

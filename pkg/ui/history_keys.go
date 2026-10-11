@@ -5,7 +5,6 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
-	"github.com/atotto/clipboard"
 )
 
 // handleHistoryKeys handles keyboard input when history view is focused.
@@ -198,7 +197,7 @@ func (m Model) handleHistoryKeys(msg tea.KeyMsg) Model {
 			}
 		}
 		if sha != "" {
-			if err := clipboard.WriteAll(sha); err != nil {
+			if err := writeClipboard(sha); err != nil {
 				m.setNotice(fmt.Sprintf("Clipboard error: %v", err))
 			} else {
 				m.setStatus(fmt.Sprintf("Copied %s to clipboard", shortSHA))

@@ -5,7 +5,6 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
-	"github.com/atotto/clipboard"
 )
 
 // handleBoardKeys handles keyboard input when the board is focused.
@@ -112,7 +111,7 @@ func (m Model) handleBoardKeys(msg tea.KeyMsg) Model {
 	// Copy ID to clipboard (bv-yg39)
 	case key.Matches(msg, kn.CopyID):
 		if selected := m.board.SelectedIssue(); selected != nil {
-			if err := clipboard.WriteAll(selected.ID); err != nil {
+			if err := writeClipboard(selected.ID); err != nil {
 				m.setNotice(fmt.Sprintf("Clipboard error: %v", err))
 			} else {
 				m.setStatus(fmt.Sprintf("Copied %s to clipboard", selected.ID))
