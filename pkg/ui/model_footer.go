@@ -260,6 +260,10 @@ type FooterData struct {
 	// the static ?/; pair and dropped early under width pressure.
 	PluginHints []FooterHint
 
+	// PendingSeq is the pending leader / gg sequence ("SPC v…"); while set it
+	// replaces the static ?/; pair in the hint zone (bt-i4k).
+	PendingSeq string
+
 	// Total visible items in list
 	TotalItems int
 
@@ -418,6 +422,7 @@ func (m *Model) footerData() FooterData {
 	for _, b := range m.pluginKeyBindings() {
 		fd.PluginHints = append(fd.PluginHints, FooterHint{Key: b.Help().Key, Desc: b.Help().Desc})
 	}
+	fd.PendingSeq = m.pendingSeqText()
 
 	// Per-view center meaning (Phase 3)
 	fd.CenterOverride = m.footerCenter()
@@ -1168,8 +1173,14 @@ func (fd FooterData) Render() string {
 	// the spacers absorb the indent without shifting the centered total or hints.
 	const footerLeftPad = 1
 
+	hints := func() string {
+		if fd.PendingSeq != "" {
+			return ActiveTextStyles.Heading.Render(fd.PendingSeq)
+		}
+		return renderStaticHints(hintsCompact)
+	}
 	rightWidth := func() int {
-		w := lipgloss.Width(pluginHints) + lipgloss.Width(renderStaticHints(hintsCompact)) + bellWidth
+		w := lipgloss.Width(pluginHints) + lipgloss.Width(hints()) + bellWidth
 		if alertsSection != "" {
 			w += lipgloss.Width(alertsSection)
 		}
@@ -1210,7 +1221,7 @@ func (fd FooterData) Render() string {
 	}
 
 	lensSection := renderLens(fd, lensLvl)
-	hintsSection := renderStaticHints(hintsCompact)
+	hintsSection := hints()
 
 	// nonHint sums everything except the ?/; slot; the anomaly badge and bell
 	// are reserved here so nothing can squeeze them out. The left indent counts

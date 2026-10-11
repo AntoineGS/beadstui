@@ -779,27 +779,6 @@ func TestJumpToFirstLastColumn(t *testing.T) {
 	}
 }
 
-// TestGGComboState verifies gg combo tracking
-func TestGGComboState(t *testing.T) {
-	theme := createTheme()
-	issues := []model.Issue{{ID: "1", Status: model.StatusOpen}}
-	b := ui.NewBoardModel(issues, theme)
-
-	if b.IsWaitingForG() {
-		t.Error("Should not be waiting for g initially")
-	}
-
-	b.SetWaitingForG()
-	if !b.IsWaitingForG() {
-		t.Error("Should be waiting for g after SetWaitingForG")
-	}
-
-	b.ClearWaitingForG()
-	if b.IsWaitingForG() {
-		t.Error("Should not be waiting for g after ClearWaitingForG")
-	}
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // Search Functionality Tests
 // ═══════════════════════════════════════════════════════════════════════════════

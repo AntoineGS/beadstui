@@ -847,6 +847,13 @@ type Model struct {
 	attentionCached          bool
 	attentionCache           analysis.LabelAttentionResult
 
+	// Leader / gg sequence router and which-key panel (bt-i4k, sequence.go)
+	seq           seqState
+	leaderKey     string        // msg.String() of the leader key
+	whichKeyDelay time.Duration // debounce before the which-key panel; 0 shows it at once
+	whichKeyOff   bool          // never show the which-key panel
+	swallowKey    bool          // the router consumed this key; Update skips forwarding it to the list
+
 	// Actionable view
 	actionableView ActionableModel
 
@@ -1604,6 +1611,8 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 		focused:                focusList,
 		events:                 eventsBuf,
 		splitPaneRatio:         0.4, // Default: list pane gets 40% of width
+		leaderKey:              defaultLeaderKey,
+		whichKeyDelay:          defaultWhichKeyDelay,
 		// Initialize as ready with default dimensions to eliminate "Initializing..." phase
 		ready:               true,
 		width:               defaultWidth,
@@ -2014,6 +2023,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case longformEditorFinishedMsg:
 		return m.handleLongformEditorFinished(msg)
 
+	case whichKeyMsg:
+		if msg.gen == m.seq.gen && m.seq.pending() {
+			m.seq.showPanel = true
+		}
+		return m, nil
+
 	case tea.KeyPressMsg:
 		m, cmd = m.handleKeyPress(msg)
 		cmds = append(cmds, cmd)
@@ -2046,7 +2061,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// a modal-dismiss key (e.g. Esc) must not reach the Bubbles list after
 	// the handler closes the modal and returns focus to the list, because the
 	// list would interpret Esc as "cancel filter" and clear the search query.
-	if m.focused == focusList && m.activeModal == ModalNone && prevModal == ModalNone {
+	// A key the sequence router consumed (leader, gg) never reaches the list.
+	swallowed := m.swallowKey
+	m.swallowKey = false
+	if !swallowed && m.focused == focusList && m.activeModal == ModalNone && prevModal == ModalNone {
 		if _, isWindowSize := msg.(tea.WindowSizeMsg); !isWindowSize {
 			// Enter on an empty filter input dismisses search rather than
 			// committing an empty match-everything query (which leaves the

@@ -6,8 +6,8 @@ import "charm.land/bubbles/v2/key"
 // not in search mode. handleBoardKeys dispatches against these via
 // key.Matches when m.board.IsSearchMode() == false.
 //
-// gg-combo (IsWaitingForG) is a conditional inside this Map (single
-// keystroke, not a dwellable sub-state) per ADR-004 Decision 7.
+// gg is a JumpTop key; the sequence router in pkg/ui owns the two-key
+// combo (bt-i4k).
 //
 // n/N (next/prev match) start Disabled; the dispatcher calls
 // SetEnabled(true) on search-start and SetEnabled(false) on
@@ -41,9 +41,6 @@ type BoardNormalKeys struct {
 	JumpCol3   key.Binding `action:"board.jump_col3"`
 	JumpCol4   key.Binding `action:"board.jump_col4"`
 	JumpColEnd key.Binding `action:"board.jump_col_end"`
-
-	// Vim gg combo (first g — handler sets IsWaitingForG; second g fires JumpTop)
-	GotoTop key.Binding `action:"board.goto_top"` // g: start gg combo (IsWaitingForG conditional)
 
 	// Search
 	Search    key.Binding `action:"board.search"`     // /: enter search mode
@@ -106,8 +103,8 @@ func NewBoardNormalKeys() BoardNormalKeys {
 			key.WithHelp("⌃u", "page up"),
 		),
 		JumpTop: key.NewBinding(
-			key.WithKeys("home", "0"),
-			key.WithHelp("home/0", "first card"),
+			key.WithKeys("home", "0", "gg"),
+			key.WithHelp("home/0/gg", "first card"),
 		),
 		JumpBottom: key.NewBinding(
 			key.WithKeys("G", "end"),
@@ -140,10 +137,6 @@ func NewBoardNormalKeys() BoardNormalKeys {
 		JumpColEnd: key.NewBinding(
 			key.WithKeys("$"),
 			key.WithHelp("$", "last card in column"),
-		),
-		GotoTop: key.NewBinding(
-			key.WithKeys("g"),
-			key.WithHelp("gg", "first card (gg)"),
 		),
 		Search: key.NewBinding(
 			key.WithKeys("/"),
@@ -199,7 +192,7 @@ func (k BoardNormalKeys) FullHelp() [][]key.Binding {
 		// Move
 		{k.Left, k.Right, k.Down, k.Up, k.PageDown, k.PageUp},
 		// Jump
-		{k.JumpTop, k.JumpBottom, k.JumpFirst, k.JumpLast, k.GotoTop, k.JumpColEnd,
+		{k.JumpTop, k.JumpBottom, k.JumpFirst, k.JumpLast, k.JumpColEnd,
 			k.JumpCol1, k.JumpCol2, k.JumpCol3, k.JumpCol4},
 		// Search
 		{k.Search, k.NextMatch, k.PrevMatch},

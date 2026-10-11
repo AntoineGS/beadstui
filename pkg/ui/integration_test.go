@@ -138,8 +138,9 @@ func TestViewTransitionFullCycle(t *testing.T) {
 		t.Error("Should be in board view")
 	}
 
-	// Enter graph view (clears board)
-	newM, _ = m.Update(integrationKeyMsg("g"))
+	// Enter graph view (clears board). On the board a lone g starts the gg
+	// sequence (bt-i4k), so switch through the view.graph action token.
+	newM, _ = m.Update(integrationKeyMsg("@view.graph"))
 	m = newM.(ui.Model)
 	if !m.IsGraphView() {
 		t.Error("Should be in graph view")
@@ -178,8 +179,9 @@ func TestViewTransitionClearsOtherViews(t *testing.T) {
 		t.Error("Should be in board view")
 	}
 
-	// Enter graph view (should clear board)
-	newM, _ = m.Update(integrationKeyMsg("g"))
+	// Enter graph view (should clear board). On the board a lone g starts the
+	// gg sequence (bt-i4k), so switch through the view.graph action token.
+	newM, _ = m.Update(integrationKeyMsg("@view.graph"))
 	m = newM.(ui.Model)
 
 	if m.IsBoardView() {
