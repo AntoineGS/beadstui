@@ -85,7 +85,7 @@ func (m Model) pluginView() string {
 // btBindsKey reports whether bt itself binds msg in view: a global binding,
 // one of the view's bindings, or a key the view's handler consumes anyway.
 func (m Model) btBindsKey(msg tea.KeyPressMsg, view string) bool {
-	return btBindsKeyIn(m.keys, view, msg.String())
+	return btBindsKeyIn(m.keys, m.leaderKey, view, msg.String())
 }
 
 // pluginViews are the views plugin action keys apply to.
@@ -93,8 +93,12 @@ var pluginViews = []string{"list", "board", "tree", "epics"}
 
 // btBindsKeyIn reports whether ks binds key k in plugin view view (one of
 // pluginViews), as pluginView sees it: list not filtering, board not
-// searching.
-func btBindsKeyIn(ks keys.AppKeys, view, k string) bool {
+// searching. The leader key is always bt's: the sequence router takes it
+// before plugin keys run.
+func btBindsKeyIn(ks keys.AppKeys, leader, view, k string) bool {
+	if k == leader {
+		return true
+	}
 	maps := []help.KeyMap{ks.Global}
 	switch view {
 	case "list":
@@ -183,7 +187,7 @@ func (m Model) pluginKeyBindings() []key.Binding {
 	var out []key.Binding
 	seen := map[string]bool{}
 	for _, a := range m.pluginActionsFor(issue) {
-		if a.Key == "" || seen[a.Key] || btBindsKeyIn(m.keys, view, a.Key) {
+		if a.Key == "" || seen[a.Key] || btBindsKeyIn(m.keys, m.leaderKey, view, a.Key) {
 			continue
 		}
 		seen[a.Key] = true

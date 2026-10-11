@@ -5,7 +5,6 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
-	"github.com/atotto/clipboard"
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
@@ -162,7 +161,7 @@ func (m Model) handleListKeys(msg tea.KeyMsg) Model {
 			m.setNotice("No issue selected")
 		} else if issueItem, ok := selectedItem.(IssueItem); ok {
 			id := issueIDForClipboard(issueItem)
-			if err := clipboard.WriteAll(id); err != nil {
+			if err := writeClipboard(id); err != nil {
 				m.setNotice(fmt.Sprintf("Clipboard error: %v", err))
 			} else {
 				m.setStatus(fmt.Sprintf("Copied %s to clipboard", id))

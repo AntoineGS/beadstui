@@ -61,9 +61,14 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		m.commitFilterIfTyping()
 	}
 
-	// q quits at once from anywhere no text field has focus, modals included
-	// (bt-i4k). The plugin prompt answers its plugin first, so it handles q
-	// itself; a pending leader sequence owns the key.
+	// ctrl+c quits from everywhere, text fields and modals included; q quits
+	// at once from anywhere no text field has focus (bt-i4k). The plugin
+	// prompt answers its plugin first, so it handles both itself; a pending
+	// leader sequence owns q.
+	if key.Matches(msg, m.keys.Global.Quit) && m.activeModal != ModalPluginPrompt {
+		m.resetSeq()
+		return m, tea.Quit
+	}
 	if key.Matches(msg, m.keys.Global.Back) && m.activeModal != ModalPluginPrompt &&
 		!m.inTextInput() && m.seq.prefix != keys.LeaderPrefix {
 		return m, tea.Quit
@@ -903,7 +908,10 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// earlier (activeModal != ModalNone), so this is scoped to non-modal views.
 	if m.activeModal == ModalNone {
 		switch {
-		case m.mode == ViewHistory && (m.historyView.IsSearchActive() || m.historyView.FileTreeHasFocus()):
+		// File-tree focus is not text entry, so the leader runs there and its
+		// completed Global actions (SPC f c, SPC v l, ...) pass through.
+		case m.mode == ViewHistory && (m.historyView.IsSearchActive() ||
+			m.historyView.FileTreeHasFocus() && !m.isGlobalToken(msg)):
 			if key.Matches(msg, m.keys.Global.Quit) {
 				return m, tea.Quit
 			}

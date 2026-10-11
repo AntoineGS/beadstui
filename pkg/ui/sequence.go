@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"reflect"
 	"time"
 
 	"charm.land/bubbles/v2/key"
@@ -64,6 +65,20 @@ func (m Model) inTextInput() bool {
 		return true
 	case m.focused == focusTimeTravelInput:
 		return true
+	}
+	return false
+}
+
+// isGlobalToken reports whether msg is the action token of a Global binding.
+func (m Model) isGlobalToken(msg tea.KeyPressMsg) bool {
+	if !keys.IsToken(msg.Text) {
+		return false
+	}
+	g := reflect.ValueOf(m.keys.Global)
+	for i := 0; i < g.NumField(); i++ {
+		if b, ok := g.Field(i).Interface().(key.Binding); ok && key.Matches(msg, b) {
+			return true
+		}
 	}
 	return false
 }

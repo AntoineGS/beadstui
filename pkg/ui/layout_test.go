@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -8,9 +9,47 @@ import (
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/seanmartinsmith/beadstui/pkg/cass"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/plugin"
 	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 )
+
+// clipboardText is what the stubbed clipboard last received.
+var clipboardText *string
+
+// stubClipboard swaps the system clipboard for an in-memory one.
+func stubClipboard(t *testing.T) *string {
+	t.Helper()
+	var got string
+	orig := writeClipboard
+	writeClipboard = func(s string) error { got = s; return nil }
+	clipboardText = &got
+	t.Cleanup(func() { writeClipboard = orig; clipboardText = nil })
+	return &got
+}
+
+// pressCmd presses ks without running the commands they produce, except the
+// action token a completed sequence emits, and returns the command of the
+// action itself. Use it for actions whose commands touch the outside world.
+func pressCmd(t *testing.T, m Model, ks ...string) (Model, tea.Cmd) {
+	t.Helper()
+	m.whichKeyOff = true
+	var cmd tea.Cmd
+	for _, k := range ks {
+		updated, c := m.Update(layoutKey(k))
+		m, cmd = updated.(Model), c
+	}
+	if cmd == nil {
+		return m, nil
+	}
+	kp, ok := cmd().(tea.KeyPressMsg)
+	if !ok || !keys.IsToken(kp.Text) {
+		t.Fatalf("last key emitted %T, want an action token", kp)
+	}
+	updated, c := m.Update(kp)
+	return updated.(Model), c
+}
 
 // Default layout tests (bt-i4k.3): every row of the spec's "Direct keys" and
 // "Leader groups" tables (docs/design/2026-10-10-bt-i4k-leader-keymap.md),
@@ -76,12 +115,13 @@ func layoutModel(t *testing.T) Model {
 	t.Helper()
 	now := time.Now()
 	issues := []model.Issue{
-		{ID: "bt-e", Title: "Epic", Status: model.StatusOpen, IssueType: model.TypeEpic, CreatedAt: now},
+		{ID: "bt-e", Title: "Epic", Status: model.StatusOpen, IssueType: model.TypeEpic, CreatedAt: now, Labels: []string{"area:data"},
+			Description: strings.Repeat("A long description line.\n", 200)},
 		{ID: "bt-c", Title: "Child", Status: model.StatusOpen, IssueType: model.TypeTask, CreatedAt: now,
 			Labels:       []string{"area:tui"},
 			Dependencies: []*model.Dependency{{IssueID: "bt-c", DependsOnID: "bt-e", Type: model.DepParentChild}}},
-		{ID: "bt-1", Title: "One", Status: model.StatusOpen, IssueType: model.TypeTask, CreatedAt: now, Labels: []string{"area:tui"}},
-		{ID: "bt-2", Title: "Two", Status: model.StatusOpen, IssueType: model.TypeTask, CreatedAt: now},
+		{ID: "bt-1", Title: "One", Status: model.StatusOpen, IssueType: model.TypeTask, CreatedAt: now, Labels: []string{"area:tui", "area:cli"}},
+		{ID: "bt-2", Title: "Two", Status: model.StatusOpen, IssueType: model.TypeTask, CreatedAt: now, Labels: []string{"area:cli"}},
 	}
 	m := newSizedModel(t, issues, 140, 40)
 	m.tree.SetBeadsDir(t.TempDir())
@@ -212,6 +252,53 @@ func TestLayout_LeaderGroups(t *testing.T) {
 			}
 		}},
 		{"b m", nil, modal(ModalClaimConfirm)},
+		{"b Y", func(t *testing.T, m Model) Model {
+			stubClipboard(t)
+			m.selectIssueByID("bt-1")
+			return m
+		}, func(t *testing.T, _ layoutState, m Model) {
+			if got := *clipboardText; !strings.Contains(got, "**ID:** bt-1") {
+				t.Errorf("clipboard = %q, want the bt-1 markdown", got)
+			}
+		}},
+		{"b o", func(t *testing.T, m Model) Model {
+			t.Chdir(t.TempDir()) // no .beads here: the editor is never launched
+			return m
+		}, status("No .beads")},
+		{"b x", func(t *testing.T, m Model) Model {
+			t.Chdir(t.TempDir())
+			return m
+		}, func(t *testing.T, _ layoutState, m Model) {
+			if !strings.Contains(m.statusMsg, "Exported 4 issues") {
+				t.Errorf("status = %q, want an export", m.statusMsg)
+			}
+			if files, _ := filepath.Glob("beads_report_*.md"); len(files) != 1 {
+				t.Errorf("export files in the temp dir = %v, want one", files)
+			}
+		}},
+		{"b c", func(t *testing.T, m Model) Model {
+			t.Setenv("PATH", t.TempDir()) // no cass binary: correlation is never run
+			return m
+		}, status("cass not available")},
+		{"b g", func(t *testing.T, m Model) Model {
+			m.historyView = NewHistoryModel(createTestHistoryReport(), m.theme)
+			m.historyView.SetSize(m.width, m.height-1)
+			m.mode = ViewHistory
+			m.focused = focusHistory
+			return m
+		}, func(t *testing.T, _ layoutState, m Model) {
+			if m.mode != ViewGraph || !strings.Contains(m.statusMsg, "Graph view:") {
+				t.Errorf("mode=%v status=%q, want the graph on the history bead", m.mode, m.statusMsg)
+			}
+		}},
+		{"x", func(t *testing.T, m Model) Model {
+			m.pluginActions = &fakePluginActions{actions: []plugin.Action{dispatchAction}}
+			return m
+		}, func(t *testing.T, _ layoutState, m Model) {
+			if m.activeModal != ModalPluginPrompt || m.pluginPrompt == nil || m.pluginPrompt.kind != pluginPromptMenu {
+				t.Errorf("modal = %v, want the plugin action menu", m.activeModal)
+			}
+		}},
 		{"b E", func(t *testing.T, m Model) Model { m.selectIssueByID("bt-e"); return m }, modal(ModalEpicCard)},
 		{"p p", nil, func(t *testing.T, before layoutState, m Model) {
 			if m.showWisps == before.wisps {
@@ -287,6 +374,7 @@ func TestLayout_LeaderGroups(t *testing.T) {
 	}
 	for _, r := range rows {
 		t.Run("SPC "+r.keys, func(t *testing.T) {
+			t.Chdir(t.TempDir()) // exports and indexes stay out of the package dir
 			m := layoutModel(t)
 			if r.setup != nil {
 				m = r.setup(t, m)
@@ -569,6 +657,7 @@ func TestLayout_Esc(t *testing.T) {
 func TestLayout_OldDirectKeysInert(t *testing.T) {
 	for _, k := range []string{"b", "i", "a", "f", "E", "u", "w", "W", "o", "c", "r", "s", "m", "x", "p", "!", "1", "T", "'", "[", "]", "`", "H", "C", "O", "V", "U", "R", "S", "t", "#", "2", "3", "<", ">", "F", "d"} {
 		t.Run(k, func(t *testing.T) {
+			t.Chdir(t.TempDir()) // any stray export or index lands here
 			m := layoutModel(t)
 			before := snap(m)
 			m = press(t, m, k)
@@ -608,5 +697,276 @@ func TestLayout_LabelDashboardHealthOnI(t *testing.T) {
 	}
 	if m = press(t, m, "i"); m.activeModal != ModalLabelHealthDetail {
 		t.Errorf("i: modal = %v, want label health", m.activeModal)
+	}
+}
+
+// TestLayout_SearchRankerCycle checks SPC / m by the state it sets and the
+// index build it emits; the build command is not run.
+func TestLayout_SearchRankerCycle(t *testing.T) {
+	t.Chdir(t.TempDir())
+	m := layoutModel(t)
+	if m.currentSearchMode() != searchModeFuzzy {
+		t.Fatalf("setup: search mode = %v, want fuzzy", m.currentSearchMode())
+	}
+	m, cmd := pressCmd(t, m, "space", "/", "m")
+	if m.currentSearchMode() != searchModeHybrid {
+		t.Errorf("search mode = %v, want hybrid", m.currentSearchMode())
+	}
+	if cmd == nil || !m.semanticIndexBuilding {
+		t.Errorf("cmd=%v building=%v, want an index build emitted", cmd, m.semanticIndexBuilding)
+	}
+}
+
+// TestLayout_HistoryFileTreePassesGlobalActions: file-tree focus keeps j/k
+// and esc local, but completed leader sequences reach the Global actions.
+func TestLayout_HistoryFileTreePassesGlobalActions(t *testing.T) {
+	setup := func(t *testing.T) Model {
+		m := layoutModel(t)
+		m.historyView = NewHistoryModel(createTestHistoryReport(), m.theme)
+		m.historyView.SetSize(m.width, m.height-1)
+		m.mode = ViewHistory
+		m.focused = focusHistory
+		m.historyView.SetFileTreeFocus(true)
+		return m
+	}
+	t.Run("SPC f c", func(t *testing.T) {
+		m := press(t, setup(t), "space", "f", "c")
+		if m.filter.currentFilter != "closed" || m.mode != ViewHistory {
+			t.Errorf("filter=%q mode=%v, want closed in history", m.filter.currentFilter, m.mode)
+		}
+	})
+	t.Run("SPC f x", func(t *testing.T) {
+		m := setup(t)
+		m.SetFilter("closed")
+		m = press(t, m, "space", "f", "x")
+		if m.hasActiveFilters() {
+			t.Errorf("filters still active: %q", m.filter.currentFilter)
+		}
+	})
+	t.Run("SPC v l", func(t *testing.T) {
+		if m := press(t, setup(t), "space", "v", "l"); m.mode != ViewList || m.focused != focusList {
+			t.Errorf("mode=%v focus=%v, want the list", m.mode, m.focused)
+		}
+	})
+	t.Run("esc stays local", func(t *testing.T) {
+		m := press(t, setup(t), "esc")
+		if m.mode != ViewHistory || m.historyView.FileTreeHasFocus() {
+			t.Errorf("mode=%v treeFocus=%v, want history with the tree blurred", m.mode, m.historyView.FileTreeHasFocus())
+		}
+	})
+}
+
+func TestLayout_PendingLeaderOwnsQ(t *testing.T) {
+	m, quit := pressAll(t, layoutModel(t), "space", "v", "q")
+	if quit {
+		t.Fatal("q inside SPC v quit")
+	}
+	if !strings.Contains(m.statusMsg, "SPC v q is not bound") {
+		t.Errorf("status = %q, want SPC v q is not bound", m.statusMsg)
+	}
+	if _, quit := pressAll(t, layoutModel(t), "space", "q"); !quit {
+		t.Error("SPC q did not quit")
+	}
+}
+
+// TestLayout_ForceQuitEverywhere: ctrl+c quits from every modal and text
+// state; the plugin prompt answers its plugin first.
+func TestLayout_ForceQuitEverywhere(t *testing.T) {
+	setups := map[string]func(t *testing.T, m Model) Model{
+		"agent prompt": func(t *testing.T, m Model) Model {
+			m.agentPromptModal = NewAgentPromptModal("/test/AGENTS.md", "AGENTS.md", m.theme)
+			m.agentPromptModal.keys = m.keys.AgentPrompt
+			m.openModal(ModalAgentPrompt)
+			return m
+		},
+		"cass": func(t *testing.T, m Model) Model {
+			m.cassModal = NewCassSessionModal("bt-1", cass.CorrelationResult{BeadID: "bt-1"}, m.theme)
+			m.cassModal.keys = m.keys.Cass
+			m.openModal(ModalCassSession)
+			return m
+		},
+		"epic card": func(t *testing.T, m Model) Model { m.openEpicCard("bt-e"); return m },
+		"update": func(t *testing.T, m Model) Model {
+			m.updateModal = NewUpdateModal("v9.9.9", "https://example", m.theme)
+			m.updateModal.keys = m.keys.Update
+			m.openModal(ModalUpdate)
+			return m
+		},
+		"alerts":   func(t *testing.T, m Model) Model { return runKey(t, m, tokenMsg("notify.notifications")) },
+		"help":     func(t *testing.T, m Model) Model { return press(t, m, "?") },
+		"tutorial": func(t *testing.T, m Model) Model { return runKey(t, m, tokenMsg("app.tutorial")) },
+		"settings": func(t *testing.T, m Model) Model { return runKey(t, m, tokenMsg("app.settings")) },
+		"bql":      func(t *testing.T, m Model) Model { return press(t, m, ":") },
+		"field input": func(t *testing.T, m Model) Model {
+			if m = press(t, m, "e", "t"); m.activeModal != ModalFieldInput {
+				t.Fatalf("setup: modal = %v, want field input", m.activeModal)
+			}
+			return m
+		},
+		"longform": func(t *testing.T, m Model) Model {
+			if m = press(t, m, "e", "d"); m.activeModal != ModalLongformEdit {
+				t.Fatalf("setup: modal = %v, want longform", m.activeModal)
+			}
+			return m
+		},
+		"time travel": func(t *testing.T, m Model) Model { return runKey(t, m, tokenMsg("app.time_travel")) },
+		"list filter": func(t *testing.T, m Model) Model { return press(t, m, "/", "x") },
+		"label search": func(t *testing.T, m Model) Model {
+			return press(t, runKey(t, m, tokenMsg("filter.labels")), "/")
+		},
+		"board search": func(t *testing.T, m Model) Model { return press(t, inView(t, m, "view.board"), "/") },
+		"history search": func(t *testing.T, m Model) Model {
+			m.historyView = NewHistoryModel(createTestHistoryReport(), m.theme)
+			m.historyView.SetSize(m.width, m.height-1)
+			m.mode = ViewHistory
+			m.focused = focusHistory
+			return press(t, m, "/")
+		},
+		"memories search": func(t *testing.T, m Model) Model {
+			m.memories = NewMemoriesModel(m.theme)
+			m.mode = ViewMemories
+			m.focused = focusMemories
+			return press(t, m, "/")
+		},
+		"pending leader": func(t *testing.T, m Model) Model { return press(t, m, "space", "v") },
+	}
+	for name, setup := range setups {
+		t.Run(name, func(t *testing.T) {
+			m := setup(t, layoutModel(t))
+			if m.activeModal == ModalNone && !m.inTextInput() && !m.seq.pending() {
+				t.Fatalf("setup reached no modal, text state or sequence (focus %v)", m.focused)
+			}
+			if _, quit := pressAll(t, m, "ctrl+c"); !quit {
+				t.Errorf("ctrl+c did not quit (modal=%v focus=%v)", m.activeModal, m.focused)
+			}
+		})
+	}
+	t.Run("plugin prompt answers first", func(t *testing.T) {
+		m := layoutModel(t)
+		var r recorder
+		updated, _ := m.Update(selectPrompt(r.reply))
+		m = updated.(Model)
+		if m.activeModal != ModalPluginPrompt {
+			t.Fatalf("setup: modal = %v", m.activeModal)
+		}
+		if _, quit := pressAll(t, m, "ctrl+c"); !quit {
+			t.Error("ctrl+c did not quit the plugin prompt")
+		}
+		if len(r.answers) != 1 || r.answers[0] != nil {
+			t.Errorf("answers = %v, want [nil] before quitting", r.answers)
+		}
+	})
+}
+
+// TestLayout_TopBottomInCursorViews checks gg/home and G/end in every cursor
+// view of the spec: list, board, tree, epics, flow matrix, label dashboard.
+func TestLayout_TopBottomInCursorViews(t *testing.T) {
+	views := []struct {
+		name   string
+		enter  func(t *testing.T, m Model) Model
+		cursor func(m Model) int
+	}{
+		{"list", func(t *testing.T, m Model) Model { return m }, func(m Model) int { return m.list.Index() }},
+		{"board", func(t *testing.T, m Model) Model { return inView(t, m, "view.board") }, func(m Model) int {
+			if iss := m.board.SelectedIssue(); iss != nil {
+				return int(iss.ID[len(iss.ID)-1])
+			}
+			return -1
+		}},
+		{"tree", func(t *testing.T, m Model) Model { return inView(t, m, "view.tree") }, func(m Model) int {
+			if iss := m.tree.SelectedIssue(); iss != nil {
+				return int(iss.ID[len(iss.ID)-1])
+			}
+			return -1
+		}},
+		{"epics", func(t *testing.T, m Model) Model { return inView(t, m, "view.epics") }, func(m Model) int { return m.epicsTree.cursor }},
+		{"flow", func(t *testing.T, m Model) Model { return inView(t, m, "view.flow") }, func(m Model) int { return m.flowMatrix.cursor }},
+		{"labels", func(t *testing.T, m Model) Model { return inView(t, m, "view.labels") }, func(m Model) int { return m.labelDashboard.cursor }},
+	}
+	for _, v := range views {
+		t.Run(v.name, func(t *testing.T) {
+			m := v.enter(t, layoutModel(t))
+			top := v.cursor(m)
+			m = press(t, m, "G")
+			bottom := v.cursor(m)
+			if bottom == top {
+				t.Fatalf("G did not move (cursor %d)", top)
+			}
+			if m = press(t, m, "g", "g"); v.cursor(m) != top {
+				t.Errorf("gg: cursor %d, want %d", v.cursor(m), top)
+			}
+			if m = press(t, m, "end"); v.cursor(m) != bottom {
+				t.Errorf("end: cursor %d, want %d", v.cursor(m), bottom)
+			}
+			if m = press(t, m, "home"); v.cursor(m) != top {
+				t.Errorf("home: cursor %d, want %d", v.cursor(m), top)
+			}
+		})
+	}
+}
+
+func TestLayout_Paging(t *testing.T) {
+	var many []model.Issue
+	for i := 0; i < 80; i++ {
+		many = append(many, model.Issue{ID: "p-" + string(rune('A'+i/26)) + string(rune('a'+i%26)), Title: "Paged", Status: model.StatusOpen, CreatedAt: time.Now()})
+	}
+	for _, keysDown := range [][2]string{{"ctrl+d", "ctrl+u"}, {"pgdown", "pgup"}} {
+		t.Run(keysDown[0], func(t *testing.T) {
+			m := newSizedModel(t, many, 140, 40)
+			m = press(t, m, keysDown[0])
+			down := m.list.Index()
+			if down == 0 {
+				t.Fatalf("%s did not move", keysDown[0])
+			}
+			if m = press(t, m, keysDown[1]); m.list.Index() >= down {
+				t.Errorf("%s: index %d, want below %d", keysDown[1], m.list.Index(), down)
+			}
+		})
+	}
+	t.Run("details , and .", func(t *testing.T) {
+		m := layoutModel(t)
+		m.isSplitView = true
+		m.selectIssueByID("bt-e")
+		m.updateViewportContent()
+		m = press(t, m, ".")
+		if m.viewport.YOffset() == 0 {
+			t.Fatal(". did not page the details")
+		}
+		if m = press(t, m, ","); m.viewport.YOffset() != 0 {
+			t.Errorf(", left offset %d, want 0", m.viewport.YOffset())
+		}
+	})
+}
+
+func TestLayout_CopyID(t *testing.T) {
+	got := stubClipboard(t)
+	m := layoutModel(t)
+	m.selectIssueByID("bt-2")
+	press(t, m, "y")
+	if *got != "bt-2" {
+		t.Errorf("list y copied %q, want bt-2", *got)
+	}
+	b := inView(t, layoutModel(t), "view.board")
+	want := b.board.SelectedIssue().ID
+	press(t, b, "y")
+	if *got != want {
+		t.Errorf("board y copied %q, want %s", *got, want)
+	}
+}
+
+func TestLayout_MatchNav(t *testing.T) {
+	m := inView(t, layoutModel(t), "view.board")
+	m = press(t, m, "/", "b", "t", "-", "enter")
+	if m.board.IsSearchMode() || m.board.SearchMatchCount() < 2 {
+		t.Fatalf("setup: search=%v matches=%d", m.board.IsSearchMode(), m.board.SearchMatchCount())
+	}
+	first := m.board.SelectedIssue().ID
+	m = press(t, m, "n")
+	second := m.board.SelectedIssue().ID
+	if second == first {
+		t.Fatal("n did not move to the next match")
+	}
+	if m = press(t, m, "N"); m.board.SelectedIssue().ID != first {
+		t.Errorf("N: selected %s, want %s", m.board.SelectedIssue().ID, first)
 	}
 }

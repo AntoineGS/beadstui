@@ -801,7 +801,6 @@ func TestTutorialExitKeys(t *testing.T) {
 	}
 
 	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
-	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if !m.ShouldClose() {
 		t.Error("Esc should trigger close")
 	}

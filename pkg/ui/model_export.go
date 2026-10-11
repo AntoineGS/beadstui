@@ -16,6 +16,9 @@ import (
 	"github.com/atotto/clipboard"
 )
 
+// writeClipboard copies text to the system clipboard; tests swap it out.
+var writeClipboard = clipboard.WriteAll
+
 // getCommitURL returns the GitHub/GitLab commit URL for a SHA (bv-xf4p)
 func (m Model) getCommitURL(sha string) string {
 	// Get git remote URL
@@ -175,7 +178,7 @@ func (m *Model) copyIssueToClipboard() {
 	}
 
 	// Copy to clipboard
-	err := clipboard.WriteAll(sb.String())
+	err := writeClipboard(sb.String())
 	if err != nil {
 		m.setNotice(fmt.Sprintf("%s Clipboard error: %v", activeGlyphs.Cross, err))
 		return

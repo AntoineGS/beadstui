@@ -21,10 +21,10 @@ type PluginKeyConflict struct {
 // against bt's default keymaps. Actions are taken in config then manifest
 // order; the first to declare a key wins it.
 func PluginKeyConflicts(statuses []plugin.Status) []PluginKeyConflict {
-	return pluginKeyConflictsIn(keys.NewAppKeys(), statuses)
+	return pluginKeyConflictsIn(keys.NewAppKeys(), defaultLeaderKey, statuses)
 }
 
-func pluginKeyConflictsIn(ks keys.AppKeys, statuses []plugin.Status) []PluginKeyConflict {
+func pluginKeyConflictsIn(ks keys.AppKeys, leader string, statuses []plugin.Status) []PluginKeyConflict {
 	var out []PluginKeyConflict
 	claimed := map[string]plugin.Action{}
 	for _, st := range statuses {
@@ -39,7 +39,7 @@ func pluginKeyConflictsIn(ks keys.AppKeys, statuses []plugin.Status) []PluginKey
 			}
 			var views []string
 			for _, v := range pluginViews {
-				if btBindsKeyIn(ks, v, a.Key) {
+				if btBindsKeyIn(ks, leader, v, a.Key) {
 					views = append(views, v)
 				}
 			}
@@ -82,7 +82,7 @@ func (m Model) pluginStatusLines() []string {
 		return []string{"No plugins configured"}
 	}
 	conflicts := map[string][]PluginKeyConflict{}
-	for _, c := range pluginKeyConflictsIn(m.keys, statuses) {
+	for _, c := range pluginKeyConflictsIn(m.keys, m.leaderKey, statuses) {
 		conflicts[c.Plugin] = append(conflicts[c.Plugin], c)
 	}
 	var lines []string
