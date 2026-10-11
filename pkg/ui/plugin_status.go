@@ -32,7 +32,7 @@ func pluginKeyConflictsIn(ks keys.AppKeys, statuses []plugin.Status) []PluginKey
 			if a.Key == "" {
 				continue
 			}
-			if a.Key == pluginMenuKey {
+			if bindingsMatch(a.Key, ks.Global.PluginMenu) {
 				out = append(out, PluginKeyConflict{Plugin: a.Plugin, Action: a.ID, Key: a.Key,
 					Reason: "bt opens the plugin action menu with it"})
 				continue

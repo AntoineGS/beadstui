@@ -9,14 +9,17 @@ import (
 
 	"github.com/seanmartinsmith/beadstui/pkg/cass"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 )
 
 // CassSessionModal displays correlated cass sessions for a bead.
 // It shows session previews with agent name, timestamp, match reason, and snippet.
 type CassSessionModal struct {
+	keys       keys.CassKeys
 	beadID     string              // The bead this modal is showing sessions for
 	sessions   []cass.ScoredResult // Correlated sessions to display
 	strategy   cass.CorrelationStrategy
@@ -40,6 +43,7 @@ func NewCassSessionModal(beadID string, result cass.CorrelationResult, theme The
 	}
 
 	return CassSessionModal{
+		keys:       keys.NewCassKeys(),
 		beadID:     beadID,
 		sessions:   result.TopSessions,
 		strategy:   result.Strategy,
@@ -63,16 +67,16 @@ func (m CassSessionModal) Update(msg tea.Msg) (CassSessionModal, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "j", "down":
+		switch {
+		case key.Matches(msg, m.keys.Down):
 			if displayCount > 1 && m.selected < displayCount-1 {
 				m.selected++
 			}
-		case "k", "up":
+		case key.Matches(msg, m.keys.Up):
 			if m.selected > 0 {
 				m.selected--
 			}
-		case "y":
+		case key.Matches(msg, m.keys.Copy):
 			// Copy search command to clipboard
 			if err := copyToClipboard(m.searchCmd); err == nil {
 				m.copied = true

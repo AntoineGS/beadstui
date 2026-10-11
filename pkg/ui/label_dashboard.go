@@ -5,13 +5,16 @@ import (
 	"sort"
 	"strings"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 )
 
 // LabelDashboardModel renders a lightweight table of label health
 type LabelDashboardModel struct {
+	keys         keys.LabelDashboardKeys
 	labels       []analysis.LabelHealth
 	cursor       int
 	scrollOffset int // Index of the first visible row
@@ -21,7 +24,7 @@ type LabelDashboardModel struct {
 }
 
 func NewLabelDashboardModel(theme Theme) LabelDashboardModel {
-	return LabelDashboardModel{theme: theme}
+	return LabelDashboardModel{keys: keys.NewLabelDashboardKeys(), theme: theme}
 }
 
 func (m *LabelDashboardModel) SetSize(width, height int) {
@@ -71,8 +74,8 @@ func (m *LabelDashboardModel) Update(msg tea.KeyMsg) (string, tea.Cmd) {
 		visibleRows = 1
 	}
 
-	switch msg.String() {
-	case "j", "down":
+	switch {
+	case key.Matches(msg, m.keys.Down):
 		if m.cursor < len(m.labels)-1 {
 			m.cursor++
 			// Scroll down if moving past bottom
@@ -80,7 +83,7 @@ func (m *LabelDashboardModel) Update(msg tea.KeyMsg) (string, tea.Cmd) {
 				m.scrollOffset = m.cursor - visibleRows + 1
 			}
 		}
-	case "k", "up":
+	case key.Matches(msg, m.keys.Up):
 		if m.cursor > 0 {
 			m.cursor--
 			// Scroll up if moving past top
@@ -88,10 +91,10 @@ func (m *LabelDashboardModel) Update(msg tea.KeyMsg) (string, tea.Cmd) {
 				m.scrollOffset = m.cursor
 			}
 		}
-	case "home":
+	case key.Matches(msg, m.keys.JumpTop):
 		m.cursor = 0
 		m.scrollOffset = 0
-	case "G", "end":
+	case key.Matches(msg, m.keys.JumpBottom):
 		if len(m.labels) > 0 {
 			m.cursor = len(m.labels) - 1
 			// Scroll to bottom
@@ -101,7 +104,7 @@ func (m *LabelDashboardModel) Update(msg tea.KeyMsg) (string, tea.Cmd) {
 				m.scrollOffset = 0
 			}
 		}
-	case "enter":
+	case key.Matches(msg, m.keys.Apply):
 		if m.cursor >= 0 && m.cursor < len(m.labels) {
 			return m.labels[m.cursor].Label, nil
 		}

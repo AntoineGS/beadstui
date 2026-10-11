@@ -25,9 +25,6 @@ type pluginActionSource interface {
 	Invoke(ctx context.Context, a plugin.Action, issue *model.Issue, view string) plugin.ActionResult
 }
 
-// pluginMenuKey opens the plugin action menu.
-const pluginMenuKey = "P"
-
 // pluginActionExpiry is the safety net for a pending plugin action. The
 // host's result is authoritative and arrives within its 60s invoke timeout,
 // so this only fires if a result is lost.
@@ -158,10 +155,6 @@ func (m Model) tryPluginActionKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 		return m, nil, false
 	}
 	k := msg.String()
-	if k == pluginMenuKey {
-		m2, cmd := m.openPluginMenu()
-		return m2, cmd, true
-	}
 	issue := m.selectedIssue()
 	if issue == nil {
 		return m, nil, false
@@ -194,7 +187,7 @@ func (m Model) pluginKeyBindings() []key.Binding {
 	var out []key.Binding
 	seen := map[string]bool{}
 	for _, a := range m.pluginActionsFor(issue) {
-		if a.Key == "" || a.Key == pluginMenuKey || seen[a.Key] || btBindsKeyIn(m.keys, view, a.Key) {
+		if a.Key == "" || seen[a.Key] || btBindsKeyIn(m.keys, view, a.Key) {
 			continue
 		}
 		seen[a.Key] = true

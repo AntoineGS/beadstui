@@ -1,6 +1,9 @@
 package ui
 
-import tea "charm.land/bubbletea/v2"
+import (
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+)
 
 // restoreFocusFromHelp returns the appropriate focus based on current view
 // state. This fixes the bug where dismissing help would always return to
@@ -50,42 +53,42 @@ func (m Model) restoreFocusFromHelp() focus {
 
 // handleHelpKeys handles keyboard input when the help overlay is focused.
 //
-// Body unchanged from the pre-bt-ift6.1 model_keys.go split. Conversion to
-// dispatch via key.Matches against m.keys.Help lands in bt-ift6.9.
+// Dispatches via key.Matches against m.keys.Help.
 func (m Model) handleHelpKeys(msg tea.KeyMsg) Model {
-	switch msg.String() {
-	case "l":
+	k := m.keys.Help
+	switch {
+	case key.Matches(msg, k.Legend):
 		m.helpLegend = !m.helpLegend
 		m.helpScroll = 0
-	case "j", "down":
+	case key.Matches(msg, k.Down):
 		m.helpScroll++
 		if max := m.helpScrollMax(); m.helpScroll > max {
 			m.helpScroll = max
 		}
-	case "k", "up":
+	case key.Matches(msg, k.Up):
 		if m.helpScroll > 0 {
 			m.helpScroll--
 		}
-	case "ctrl+d":
+	case key.Matches(msg, k.PageDown):
 		m.helpScroll += 10
 		if max := m.helpScrollMax(); m.helpScroll > max {
 			m.helpScroll = max
 		}
-	case "ctrl+u":
+	case key.Matches(msg, k.PageUp):
 		m.helpScroll -= 10
 		if m.helpScroll < 0 {
 			m.helpScroll = 0
 		}
-	case "home", "g":
+	case key.Matches(msg, k.JumpTop):
 		m.helpScroll = 0
-	case "G", "end":
+	case key.Matches(msg, k.JumpBottom):
 		m.helpScroll = m.helpScrollMax()
-	case "q", "esc", "?", "f1":
+	case key.Matches(msg, k.Close):
 		// Close help overlay and restore previous focus
 		m.closeModal()
 		m.helpScroll = 0
 		m.focused = m.restoreFocusFromHelp()
-	case "space": // Space opens interactive tutorial (bv-0trk, bv-8y31)
+	case key.Matches(msg, k.Tutorial): // Space opens interactive tutorial (bv-0trk, bv-8y31)
 		m.closeModal()
 		m.helpScroll = 0
 		m.openModal(ModalTutorial)

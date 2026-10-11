@@ -285,6 +285,14 @@ func (k SettingsKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.Prev, k.Next, k.Cancel}
 }
 
+// FullHelp returns column-grouped bindings for the settings screen.
+func (k SettingsKeys) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Up, k.Down, k.Prev, k.Next},
+		{k.Keep, k.Cancel},
+	}
+}
+
 // FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
 func (k RecipePickerKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{

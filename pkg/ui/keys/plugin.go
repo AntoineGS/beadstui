@@ -14,6 +14,7 @@ type PluginSelectKeys struct {
 	Down   key.Binding `action:"nav.down"`
 	Apply  key.Binding `action:"plugin_select.apply"`
 	Cancel key.Binding `action:"plugin_select.cancel"`
+	Close  key.Binding `action:"plugin_select.close"`
 }
 
 // NewPluginSelectKeys returns the default plugin select keymap.
@@ -35,6 +36,10 @@ func NewPluginSelectKeys() PluginSelectKeys {
 			key.WithKeys("esc"),
 			key.WithHelp("esc", "cancel"),
 		),
+		Close: key.NewBinding(
+			key.WithKeys("q"),
+			key.WithHelp("q", "close status"),
+		),
 	}
 }
 
@@ -47,6 +52,6 @@ func (k PluginSelectKeys) ShortHelp() []key.Binding {
 func (k PluginSelectKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down},
-		{k.Apply, k.Cancel},
+		{k.Apply, k.Cancel, k.Close},
 	}
 }

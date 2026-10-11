@@ -63,7 +63,7 @@ type UpdateModal struct {
 	height         int
 	popupSize      *PopupSize
 	startTime      time.Time
-	keys           keys.ConfirmKeys
+	keys           keys.UpdateKeys
 	dismissed      bool
 }
 
@@ -77,7 +77,7 @@ func NewUpdateModal(newVersion, releaseURL string, theme Theme) UpdateModal {
 		theme:          theme,
 		width:          60,
 		height:         20,
-		keys:           keys.NewConfirmKeys(),
+		keys:           keys.NewUpdateKeys(),
 	}
 }
 
@@ -134,7 +134,7 @@ func (m UpdateModal) Update(msg tea.Msg) (UpdateModal, tea.Cmd) {
 			}
 
 		case UpdateStateSuccess, UpdateStateError:
-			if key.Matches(msg, m.keys.Confirm, m.keys.Cancel) || msg.String() == "q" {
+			if key.Matches(msg, m.keys.Confirm, m.keys.Cancel, m.keys.Close) {
 				m.dismissed = true
 			}
 		}

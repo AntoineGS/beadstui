@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 )
 
 // TutorialPage represents a single page of tutorial content.
@@ -27,6 +29,7 @@ const (
 
 // TutorialModel manages the tutorial overlay state.
 type TutorialModel struct {
+	keys         keys.TutorialKeys
 	pages        []TutorialPage
 	currentPage  int
 	scrollOffset int
@@ -56,6 +59,7 @@ func NewTutorialModel(theme Theme) TutorialModel {
 	}
 
 	return TutorialModel{
+		keys:             keys.NewTutorialKeys(),
 		pages:            defaultTutorialPages(),
 		currentPage:      0,
 		scrollOffset:     0,
@@ -83,8 +87,8 @@ func (m TutorialModel) Update(msg tea.Msg) (TutorialModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		// Global keys (work in any focus mode)
-		switch msg.String() {
-		case "esc", "q":
+		switch {
+		case key.Matches(msg, m.keys.Close):
 			// Mark current page as viewed before closing
 			pages := m.visiblePages()
 			if m.currentPage >= 0 && m.currentPage < len(pages) {
@@ -93,7 +97,7 @@ func (m TutorialModel) Update(msg tea.Msg) (TutorialModel, tea.Cmd) {
 			m.shouldClose = true
 			return m, nil
 
-		case "t":
+		case key.Matches(msg, m.keys.ToggleTOC):
 			// Toggle TOC and switch focus
 			m.tocVisible = !m.tocVisible
 			if m.tocVisible {
@@ -104,7 +108,7 @@ func (m TutorialModel) Update(msg tea.Msg) (TutorialModel, tea.Cmd) {
 			}
 			return m, nil
 
-		case "tab":
+		case key.Matches(msg, m.keys.SwitchFocus):
 			// Switch focus between content and TOC (if visible)
 			if m.tocVisible {
 				if m.focus == focusTutorialContent {
@@ -131,29 +135,30 @@ func (m TutorialModel) Update(msg tea.Msg) (TutorialModel, tea.Cmd) {
 
 // handleContentKeys handles keys when content area has focus.
 func (m TutorialModel) handleContentKeys(msg tea.KeyMsg) TutorialModel {
-	switch msg.String() {
+	k := m.keys
+	switch {
 	// Page navigation
-	case "right", "l", "n", "space": // Space added for next page
+	case key.Matches(msg, k.NextPage):
 		m.NextPage()
-	case "left", "h", "p", "shift+tab":
+	case key.Matches(msg, k.PrevPage):
 		m.PrevPage()
 
 	// Content scrolling
-	case "j", "down":
+	case key.Matches(msg, k.Down):
 		m.scrollOffset++
-	case "k", "up":
+	case key.Matches(msg, k.Up):
 		if m.scrollOffset > 0 {
 			m.scrollOffset--
 		}
 
 	// Half-page scrolling (use same overhead as renderContent)
-	case "ctrl+d":
+	case key.Matches(msg, k.PageDown):
 		visibleHeight := m.height - 11
 		if visibleHeight < 5 {
 			visibleHeight = 5
 		}
 		m.scrollOffset += visibleHeight / 2
-	case "ctrl+u":
+	case key.Matches(msg, k.PageUp):
 		visibleHeight := m.height - 11
 		if visibleHeight < 5 {
 			visibleHeight = 5
@@ -164,13 +169,13 @@ func (m TutorialModel) handleContentKeys(msg tea.KeyMsg) TutorialModel {
 		}
 
 	// Jump to top/bottom
-	case "g", "home":
+	case key.Matches(msg, k.JumpTop):
 		m.scrollOffset = 0
-	case "G", "end":
+	case key.Matches(msg, k.JumpBottom):
 		m.scrollOffset = 9999 // Will be clamped in View()
 
 	// Jump to specific page (1-9)
-	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+	case key.Matches(msg, k.JumpPage):
 		pageNum := int(msg.String()[0] - '0')
 		pages := m.visiblePages()
 		if pageNum > 0 && pageNum <= len(pages) {
@@ -184,24 +189,25 @@ func (m TutorialModel) handleContentKeys(msg tea.KeyMsg) TutorialModel {
 func (m TutorialModel) handleTOCKeys(msg tea.KeyMsg) TutorialModel {
 	pages := m.visiblePages()
 
-	switch msg.String() {
-	case "j", "down":
+	k := m.keys
+	switch {
+	case key.Matches(msg, k.Down):
 		if m.tocCursor < len(pages)-1 {
 			m.tocCursor++
 		}
-	case "k", "up":
+	case key.Matches(msg, k.Up):
 		if m.tocCursor > 0 {
 			m.tocCursor--
 		}
-	case "g", "home":
+	case key.Matches(msg, k.JumpTop):
 		m.tocCursor = 0
-	case "G", "end":
+	case key.Matches(msg, k.JumpBottom):
 		m.tocCursor = len(pages) - 1
-	case "enter", "space":
+	case key.Matches(msg, k.Select):
 		// Jump to selected page in TOC
 		m.JumpToPage(m.tocCursor)
 		m.focus = focusTutorialContent
-	case "h", "left":
+	case key.Matches(msg, k.FocusContent):
 		// Switch back to content
 		m.focus = focusTutorialContent
 	}
