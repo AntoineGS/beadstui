@@ -14,7 +14,7 @@ type MemoriesNormalKeys struct {
 	Down        key.Binding `action:"nav.down"`
 	FocusToggle key.Binding `action:"memories.focus_toggle"`
 	Open        key.Binding `action:"memories.open"`
-	BackToList  key.Binding `action:"memories.back"`
+	BackToList  key.Binding `action:"memories.back_to_list"`
 }
 
 // NewMemoriesNormalKeys returns the default Memories keymap.
