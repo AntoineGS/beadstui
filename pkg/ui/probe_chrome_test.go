@@ -19,14 +19,14 @@ import (
 func TestModalChromeAboveItems_MatchesRender(t *testing.T) {
 	cases := []struct {
 		name           string
-		buildKey       rune
+		open           func(m Model) Model
 		setup          func(m Model) Model
 		marker         string
 		intraPageShift int // rows inserted between chrome and first event
 	}{
 		{
 			name:     "notifications tab",
-			buildKey: '1',
+			open: openNotifications,
 			setup: func(m Model) Model {
 				m.events.Append(events.Event{ID: "e1", Kind: events.EventCreated, BeadID: "bt-1", Repo: "bt", Title: "one", At: time.Now()})
 				return m
@@ -43,7 +43,7 @@ func TestModalChromeAboveItems_MatchesRender(t *testing.T) {
 		},
 		{
 			name:     "alerts tab",
-			buildKey: '!',
+			open:  openAlerts,
 			setup:   func(m Model) Model { return m },
 			// seedModel seeds one stale alert with IssueID="bt-fix"; the alerts
 			// renderer prints the message ("fixture") on the cursor row.
@@ -56,7 +56,7 @@ func TestModalChromeAboveItems_MatchesRender(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := seedModel()
 			m = tc.setup(m)
-			m = pressRune(m, tc.buildKey)
+			m = tc.open(m)
 
 			rows := strings.Split(m.renderAlertsPanel(), "\n")
 			firstItemRow := -1

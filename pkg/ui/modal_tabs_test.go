@@ -27,6 +27,18 @@ func pressTab(m Model) Model {
 	return got
 }
 
+// openAlerts and openNotifications open the alerts modal on a tab the way
+// SPC n a / SPC n n do: by the action's token.
+func openAlerts(m Model) Model {
+	got, _ := m.handleKeyPress(tokenMsg("notify.alerts"))
+	return got
+}
+
+func openNotifications(m Model) Model {
+	got, _ := m.handleKeyPress(tokenMsg("notify.notifications"))
+	return got
+}
+
 func seedModel() Model {
 	m := NewModel(nil, nil, "", nil, nil)
 	m.width = 120
@@ -95,7 +107,7 @@ func seedManyNotifications(m *Model, n int) {
 func TestNotificationsModal_PageKeys(t *testing.T) {
 	m := seedModel()
 	seedManyNotifications(&m, 60)
-	m = pressRune(m, '1')
+	m = openNotifications(m)
 	if m.activeTab != TabNotifications {
 		t.Fatalf("expected notifications tab")
 	}
@@ -135,7 +147,7 @@ func TestNotificationsModal_PageKeys(t *testing.T) {
 	if m.notificationsCursor != 59 {
 		t.Errorf("G: cursor %d want 59", m.notificationsCursor)
 	}
-	m = pressRune(m, 'g')
+	m = pressRune(m, 'g') // modals keep their own lone-g top key
 	if m.notificationsCursor != 0 {
 		t.Errorf("g: cursor %d want 0", m.notificationsCursor)
 	}
@@ -147,7 +159,7 @@ func TestAlertsModal_PageKeysLandAtTopOfPage(t *testing.T) {
 	for i := 0; i < 60; i++ {
 		m.alerts = append(m.alerts, drift.Alert{Type: drift.AlertStale, Severity: drift.SeverityWarning, Message: "m", IssueID: fmt.Sprintf("bt-%d", i)})
 	}
-	m = pressRune(m, '!')
+	m = openAlerts(m)
 	if m.activeTab != TabAlerts {
 		t.Fatalf("expected alerts tab")
 	}
@@ -201,7 +213,7 @@ func TestModalFooters_AdvertisePageKeysWithoutOverflow(t *testing.T) {
 
 func TestNotificationModal_BangOpensAlertsTab(t *testing.T) {
 	m := seedModel()
-	m = pressRune(m, '!')
+	m = openAlerts(m)
 	if m.activeModal != ModalAlerts {
 		t.Fatalf("expected ModalAlerts, got %v", m.activeModal)
 	}
@@ -212,7 +224,7 @@ func TestNotificationModal_BangOpensAlertsTab(t *testing.T) {
 
 func TestNotificationModal_OneOpensNotificationsTab(t *testing.T) {
 	m := seedModel()
-	m = pressRune(m, '1')
+	m = openNotifications(m)
 	if m.activeModal != ModalAlerts {
 		t.Fatalf("expected ModalAlerts, got %v", m.activeModal)
 	}
@@ -223,7 +235,7 @@ func TestNotificationModal_OneOpensNotificationsTab(t *testing.T) {
 
 func TestNotificationModal_KeySwitchesTab(t *testing.T) {
 	m := seedModel()
-	m = pressRune(m, '!') // open on alerts
+	m = openAlerts(m)
 	m = pressRune(m, '1') // switch to notifications
 	if m.activeModal != ModalAlerts {
 		t.Fatalf("modal should stay open, got %v", m.activeModal)
@@ -233,18 +245,24 @@ func TestNotificationModal_KeySwitchesTab(t *testing.T) {
 	}
 }
 
-func TestNotificationModal_SameKeyCloses(t *testing.T) {
+// The tab keys only switch tabs (bt-i4k): pressing the open tab's key keeps
+// the modal open; esc closes it.
+func TestNotificationModal_SameKeyStaysOpen(t *testing.T) {
 	m := seedModel()
+	m = openAlerts(m)
 	m = pressRune(m, '!')
-	m = pressRune(m, '!')
+	if m.activeModal != ModalAlerts || m.activeTab != TabAlerts {
+		t.Fatalf("second ! changed the modal: %v / %v", m.activeModal, m.activeTab)
+	}
+	m = pressKey(m, tea.KeyEscape)
 	if m.activeModal == ModalAlerts {
-		t.Fatalf("second ! should close modal")
+		t.Fatalf("esc should close the modal")
 	}
 }
 
 func TestNotificationModal_TabCycles(t *testing.T) {
 	m := seedModel()
-	m = pressRune(m, '!')
+	m = openAlerts(m)
 	if m.activeTab != TabAlerts {
 		t.Fatalf("setup: should be on alerts tab")
 	}
@@ -268,7 +286,7 @@ func TestNotificationModal_PerTabCursorPreserved(t *testing.T) {
 		ID: "e2", Kind: events.EventClosed, BeadID: "bt-2",
 		Title: "t2", At: time.Now(),
 	})
-	m = pressRune(m, '!') // alerts tab
+	m = openAlerts(m)
 	m.alertsCursor = 1
 	m = pressRune(m, '1') // switch to notifications
 	m.notificationsCursor = 1
@@ -578,7 +596,7 @@ func TestAlertsRender_DependencyLoopShowsCyclePath(t *testing.T) {
 		Details:  []string{"bt-x → bt-y → bt-x", "bt-z → bt-w → bt-z"},
 		// IssueID empty — graph-scope alert
 	}}
-	m = pressRune(m, '!')
+	m = openAlerts(m)
 
 	rendered := m.renderAlertsPanel()
 	if !strings.Contains(rendered, "bt-x → bt-y → bt-x") {
@@ -599,7 +617,7 @@ func TestAlertsRender_CentralityChangeShowsFirstChange(t *testing.T) {
 		Message:  "3 PageRank changes detected",
 		Details:  []string{"bt-x dropped from top", "bt-y entered top", "bt-z: 50.0% change"},
 	}}
-	m = pressRune(m, '!')
+	m = openAlerts(m)
 
 	rendered := m.renderAlertsPanel()
 	if !strings.Contains(rendered, "bt-x dropped from top") {
@@ -695,7 +713,7 @@ func TestNotificationsKindFilter_CycleAndReset(t *testing.T) {
 		{ID: "e2", Kind: events.EventClosed, BeadID: "bt-2", Repo: "bt", Title: "two", At: time.Now()},
 		{ID: "e3", Kind: events.EventCreated, BeadID: "bt-3", Repo: "bt", Title: "three", At: time.Now()},
 	})
-	m = pressRune(m, '1')
+	m = openNotifications(m)
 	if m.activeModal != ModalAlerts || m.activeTab != TabNotifications {
 		t.Fatalf("setup: modal/tab not as expected (%v/%v)", m.activeModal, m.activeTab)
 	}
@@ -733,13 +751,13 @@ func TestNotificationsKindFilter_CycleAndReset(t *testing.T) {
 func TestNotificationsOpen_ResetsKindFilter(t *testing.T) {
 	m := seedModel()
 	m.events.Append(events.Event{ID: "e1", Kind: events.EventCreated, BeadID: "bt-1", Repo: "bt", Title: "one", At: time.Now()})
-	m = pressRune(m, '1')
+	m = openNotifications(m)
 	m = pressRune(m, 't')
 	if m.notifFilterKind == "" {
 		t.Fatalf("setup: expected an active kind filter")
 	}
-	m = pressRune(m, 'q') // close
-	m = pressRune(m, '1') // reopen
+	m = pressKey(m, tea.KeyEscape) // close
+	m = openNotifications(m)       // reopen
 	if m.notifFilterKind != "" {
 		t.Fatalf("reopen must reset kind filter, got %q", m.notifFilterKind)
 	}
@@ -772,7 +790,7 @@ func TestAlertsOpen_CursorHoversSelectedBead(t *testing.T) {
 	if !m.selectIssueByID("bt-2") {
 		t.Fatalf("setup: could not select bt-2")
 	}
-	m = pressRune(m, '!')
+	m = openAlerts(m)
 	if m.activeModal != ModalAlerts {
 		t.Fatalf("setup: modal did not open")
 	}
@@ -793,7 +811,7 @@ func TestNotificationsOpen_CursorHoversSelectedBead(t *testing.T) {
 	if !m.selectIssueByID("bt-2") {
 		t.Fatalf("setup: could not select bt-2")
 	}
-	m = pressRune(m, '1')
+	m = openNotifications(m)
 	if m.activeModal != ModalAlerts || m.activeTab != TabNotifications {
 		t.Fatalf("setup: modal/tab not as expected (%v/%v)", m.activeModal, m.activeTab)
 	}
@@ -815,7 +833,7 @@ func TestModalTabSwitch_SyncsCursorToSelection(t *testing.T) {
 	if !m.selectIssueByID("bt-2") {
 		t.Fatalf("setup: could not select bt-2")
 	}
-	m = pressRune(m, '1') // open on notifications
+	m = openNotifications(m)
 	m = pressRune(m, '!') // switch to alerts tab
 	if m.activeTab != TabAlerts {
 		t.Fatalf("expected TabAlerts after !, got %v", m.activeTab)
@@ -835,7 +853,7 @@ func TestAlertsOpen_NoMatchLeavesCursorAtTop(t *testing.T) {
 	if !m.selectIssueByID("bt-1") {
 		t.Fatalf("setup: could not select bt-1")
 	}
-	m = pressRune(m, '!')
+	m = openAlerts(m)
 	if m.alertsCursor != 0 {
 		t.Fatalf("expected alertsCursor=0 with no matching alert, got %d", m.alertsCursor)
 	}

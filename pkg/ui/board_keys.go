@@ -119,35 +119,8 @@ func (m Model) handleBoardKeys(msg tea.KeyMsg) Model {
 			}
 		}
 
-	// Global filter keys (bv-naov) - toggle: press again to revert to all.
-	// Note: o/c/r shadow GlobalKeys candidates in board context; the
-	// board-search dispatcher guard ensures these only run in normal mode.
-	case key.Matches(msg, m.keys.ListNormal.FilterOpen):
-		m.filter.activeBQLExpr = nil
-		if m.filter.currentFilter == "open" {
-			m.filter.currentFilter = "all"
-		} else {
-			m.filter.currentFilter = "open"
-		}
-		m.applyFilter()
-	case key.Matches(msg, m.keys.ListNormal.FilterClosed):
-		m.filter.activeBQLExpr = nil
-		if m.filter.currentFilter == "closed" {
-			m.filter.currentFilter = "all"
-		} else {
-			m.filter.currentFilter = "closed"
-		}
-		m.applyFilter()
-	case key.Matches(msg, m.keys.ListNormal.FilterReady):
-		m.filter.activeBQLExpr = nil
-		if m.filter.currentFilter == "ready" {
-			m.filter.currentFilter = "all"
-		} else {
-			m.filter.currentFilter = "ready"
-		}
-		m.applyFilter()
-	case key.Matches(msg, m.keys.ListNormal.CycleStatusFilter):
-		m.cycleStatusFilter()
+	case key.Matches(msg, kn.FieldEdit):
+		m.requestFieldEdit()
 
 	// Swimlane mode cycling (bv-wjs0)
 	case key.Matches(msg, kn.CycleSwim):

@@ -38,6 +38,8 @@ func (m Model) handleTreeKeys(msg tea.KeyMsg) Model {
 	case key.Matches(msg, k.Back):
 		// Return to list view
 		m.focused = focusList
+	case key.Matches(msg, k.FieldEdit):
+		m.requestFieldEdit()
 	case key.Matches(msg, k.SyncDetail):
 		// Toggle detail panel (sync selection and jump to detail)
 		m = m.syncTreeSelectionToDetail()

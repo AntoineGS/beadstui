@@ -64,6 +64,14 @@ func (m Model) handleEpicsKeys(msg tea.KeyMsg) Model {
 	case key.Matches(msg, k.Up):
 		m.epicsTree.moveCursor(-1)
 		m.epicsViewText = m.epicsTree.View()
+	case key.Matches(msg, k.JumpTop):
+		m.epicsTree.moveCursor(-len(m.epicsTree.rows()))
+		m.epicsViewText = m.epicsTree.View()
+	case key.Matches(msg, k.JumpBottom):
+		m.epicsTree.moveCursor(len(m.epicsTree.rows()))
+		m.epicsViewText = m.epicsTree.View()
+	case key.Matches(msg, k.FieldEdit):
+		m.requestFieldEdit()
 	case key.Matches(msg, k.Collapse):
 		m.epicsTree.collapseCursor()
 		m.epicsViewText = m.epicsTree.View()

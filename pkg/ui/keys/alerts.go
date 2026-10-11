@@ -42,8 +42,8 @@ type AlertsKeys struct {
 func NewAlertsKeys() AlertsKeys {
 	return AlertsKeys{
 		TabSwitch:         key.NewBinding(key.WithKeys("tab"), key.WithHelp("⇥", "switch tab")),
-		ShowAlerts:        key.NewBinding(key.WithKeys("!"), key.WithHelp("!", "alerts tab / close")),
-		ShowNotifications: key.NewBinding(key.WithKeys("1"), key.WithHelp("1", "notifications tab / close")),
+		ShowAlerts:        key.NewBinding(key.WithKeys("!"), key.WithHelp("!", "alerts tab")),
+		ShowNotifications: key.NewBinding(key.WithKeys("1"), key.WithHelp("1", "notifications tab")),
 		Up:                key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("↑/k", "move up")),
 		Down:              key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("↓/j", "move down")),
 		PageLeft:          key.NewBinding(key.WithKeys("h"), key.WithHelp("h", "previous page")),
@@ -66,7 +66,7 @@ func NewAlertsKeys() AlertsKeys {
 		Class:             key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "cycle class")),
 		ClassReverse:      key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "cycle class back")),
 		Reset:             key.NewBinding(key.WithKeys("r", "R"), key.WithHelp("r", "reset filters")),
-		Close:             key.NewBinding(key.WithKeys("esc", "q"), key.WithHelp("esc/q", "close")),
+		Close:             key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")),
 	}
 }
 
@@ -121,7 +121,7 @@ func NewNotificationsKeys() NotificationsKeys {
 		Kind:          key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "cycle kind")),
 		KindReverse:   key.NewBinding(key.WithKeys("T"), key.WithHelp("T", "cycle kind back")),
 		Reset:         key.NewBinding(key.WithKeys("r", "R"), key.WithHelp("r", "reset kind filter")),
-		Close:         key.NewBinding(key.WithKeys("esc", "q"), key.WithHelp("esc/q", "close")),
+		Close:         key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")),
 	}
 }
 

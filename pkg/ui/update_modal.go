@@ -134,7 +134,7 @@ func (m UpdateModal) Update(msg tea.Msg) (UpdateModal, tea.Cmd) {
 			}
 
 		case UpdateStateSuccess, UpdateStateError:
-			if key.Matches(msg, m.keys.Confirm, m.keys.Cancel, m.keys.Close) {
+			if key.Matches(msg, m.keys.Confirm, m.keys.Cancel) {
 				m.dismissed = true
 			}
 		}

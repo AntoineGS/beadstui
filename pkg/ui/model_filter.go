@@ -693,6 +693,18 @@ func (m *Model) cycleStatusFilter() {
 	m.applyFilter()
 }
 
+// toggleStatusFilter sets the status filter to status, or back to "all" when
+// it is already active (bv-naov).
+func (m *Model) toggleStatusFilter(status string) {
+	m.filter.activeBQLExpr = nil
+	if m.filter.currentFilter == status {
+		m.filter.currentFilter = "all"
+	} else {
+		m.filter.currentFilter = status
+	}
+	m.applyFilter()
+}
+
 // cycleSortMode cycles through available sort modes (bv-3ita)
 func (m *Model) cycleSortMode() {
 	m.filter.sortMode = (m.filter.sortMode + 1) % numSortModes

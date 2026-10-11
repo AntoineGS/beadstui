@@ -1063,6 +1063,7 @@ type Model struct {
 	// not queued.
 	claimTargetID      string
 	claimTargetTitle   string
+	writeReturnFocus   focus // focus to restore when a claim or field edit closes
 	pendingWrites      map[string]pendingWrite
 	writeSpinnerIdx    int
 	writeSpinnerActive bool
@@ -1297,9 +1298,12 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 	// hook for "render filtering UI differently".
 	l.SetShowFilter(false)
 	l.DisableQuitKeybindings()
-	// Left/Right move between panes (bt-tg0), so they no longer page.
-	l.KeyMap.PrevPage.SetKeys("h", "pgup", "b", "u")
-	l.KeyMap.NextPage.SetKeys("l", "pgdown", "f", "d")
+	// Left/Right and h/l move between panes (bt-tg0), and letters belong to
+	// bt's layout (bt-i4k): the list pages on pgup/pgdown only, and gg (the
+	// sequence router) replaces its lone-g jump to the top.
+	l.KeyMap.PrevPage.SetKeys("pgup")
+	l.KeyMap.NextPage.SetKeys("pgdown")
+	l.KeyMap.GoToStart.SetKeys("home")
 	// Action tokens (bt-i4k) move the bubbles-owned cursor like the keys do.
 	l.KeyMap.CursorUp.SetKeys(append(l.KeyMap.CursorUp.Keys(), keys.Token("nav.up"))...)
 	l.KeyMap.CursorDown.SetKeys(append(l.KeyMap.CursorDown.Keys(), keys.Token("nav.down"))...)

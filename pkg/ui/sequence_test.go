@@ -29,14 +29,11 @@ func runKeys(t *testing.T, m Model, msgs ...tea.KeyPressMsg) Model {
 	return m
 }
 
-// leaderModel binds the test-only sequence <leader>vb to view.board; the
-// default keymap has no leader keys yet.
+// leaderModel is the default model; the default layout binds SPC v b to
+// view.board (bt-i4k.3).
 func leaderModel(t *testing.T) Model {
 	t.Helper()
-	m := actionTestModel(t)
-	b := &m.keys.Global.Board
-	b.SetKeys(append(b.Keys(), "<leader>vb")...)
-	return m
+	return actionTestModel(t)
 }
 
 func TestLeader_SequenceFiresAction(t *testing.T) {
@@ -64,12 +61,12 @@ func TestLeader_BackspacePopsStep(t *testing.T) {
 	if m.seq.prefix != "<leader>" || len(m.seq.steps) != 0 {
 		t.Fatalf("after backspace seq = %+v, want pending at the leader root", m.seq)
 	}
-	m = runKeys(t, m, runeKey('b'))
+	m = runKeys(t, m, runeKey('z'))
 	if m.mode != ViewList {
-		t.Errorf("mode = %v, want ViewList (SPC b is not bound)", m.mode)
+		t.Errorf("mode = %v, want ViewList (SPC z is not bound)", m.mode)
 	}
-	if !strings.Contains(m.statusMsg, "SPC b is not bound") {
-		t.Errorf("status = %q, want SPC b is not bound", m.statusMsg)
+	if !strings.Contains(m.statusMsg, "SPC z is not bound") {
+		t.Errorf("status = %q, want SPC z is not bound", m.statusMsg)
 	}
 }
 
@@ -113,8 +110,6 @@ func TestLeader_InactiveInModal(t *testing.T) {
 		{ID: "bv-2", Title: "Two", Status: model.StatusOpen, Labels: []string{"area:product"}},
 	}
 	m := newSizedModel(t, issues, 140, 40)
-	b := &m.keys.Global.Board
-	b.SetKeys(append(b.Keys(), "<leader>vb")...)
 	m.labelPicker = NewLabelPickerModel(
 		[]string{"area:tui", "area:product"},
 		map[string]int{"area:tui": 1, "area:product": 1},
@@ -283,7 +278,9 @@ func TestBoard_GThenJMovesDown(t *testing.T) {
 	}
 }
 
-func TestLeader_InertWithoutLeaderKeys(t *testing.T) {
+// TestLeader_SpaceStartsLeaderInTree: space no longer toggles tree nodes
+// (enter does); it starts the leader there like everywhere else (bt-i4k.3).
+func TestLeader_SpaceStartsLeaderInTree(t *testing.T) {
 	issues := []model.Issue{
 		{ID: "parent", Title: "Parent", Status: model.StatusOpen, IssueType: model.TypeEpic},
 		{ID: "child", Title: "Child", Status: model.StatusOpen, IssueType: model.TypeTask,
@@ -301,10 +298,14 @@ func TestLeader_InertWithoutLeaderKeys(t *testing.T) {
 	}
 	was := node.Expanded
 	m = runKeys(t, m, keySpace)
-	if m.tree.SelectedNode().Expanded == was {
-		t.Error("space did not toggle the tree node")
+	if m.tree.SelectedNode().Expanded != was {
+		t.Error("space toggled the tree node")
 	}
-	if m.seq.prefix != "" {
-		t.Errorf("seq = %+v, want idle", m.seq)
+	if m.seq.prefix != keys.LeaderPrefix {
+		t.Errorf("seq = %+v, want a pending leader", m.seq)
+	}
+	m = runKeys(t, m, keyEsc, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.tree.SelectedNode().Expanded == was {
+		t.Error("enter did not toggle the tree node")
 	}
 }

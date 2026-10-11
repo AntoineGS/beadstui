@@ -59,8 +59,7 @@ type LabelPickerNavKeys struct {
 	Toggle key.Binding `action:"label_picker.toggle"`
 	Apply  key.Binding `action:"label_picker.apply"`
 
-	// Exit (Close is the toggle key `l`; Cancel is esc)
-	Close  key.Binding `action:"label_picker.close"`
+	// Exit
 	Cancel key.Binding `action:"label_picker.cancel"`
 }
 
@@ -95,10 +94,6 @@ func NewLabelPickerNavKeys() LabelPickerNavKeys {
 			key.WithKeys("enter"),
 			key.WithHelp("⏎", "apply label filter"),
 		),
-		Close: key.NewBinding(
-			key.WithKeys("l"),
-			key.WithHelp("l", "close picker"),
-		),
 		Cancel: key.NewBinding(
 			key.WithKeys("esc"),
 			key.WithHelp("esc", "close picker"),
@@ -119,7 +114,7 @@ func (k LabelPickerNavKeys) FullHelp() [][]key.Binding {
 		// Selection / apply
 		{k.Toggle, k.Apply},
 		// Mode / exit
-		{k.FocusSearch, k.Close, k.Cancel},
+		{k.FocusSearch, k.Cancel},
 	}
 }
 
@@ -184,7 +179,6 @@ func (k LabelPickerSearchKeys) FullHelp() [][]key.Binding {
 // handleRecipePickerKeys dispatches against these via key.Matches.
 //
 // Up/Down field names match the universal-nav consistency test.
-// Close is the `'` toggle key (same key opens and closes per bt-4l28).
 // Cancel is esc.
 type RecipePickerKeys struct {
 	// Nav
@@ -194,8 +188,7 @@ type RecipePickerKeys struct {
 	// Apply
 	Apply key.Binding `action:"recipe_picker.apply"`
 
-	// Exit (Close is the toggle key; Cancel is esc)
-	Close  key.Binding `action:"recipe_picker.close"`
+	// Exit
 	Cancel key.Binding `action:"recipe_picker.cancel"`
 }
 
@@ -213,10 +206,6 @@ func NewRecipePickerKeys() RecipePickerKeys {
 		Apply: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("⏎", "apply recipe"),
-		),
-		Close: key.NewBinding(
-			key.WithKeys("'"),
-			key.WithHelp("'", "close picker"),
 		),
 		Cancel: key.NewBinding(
 			key.WithKeys("esc"),
@@ -299,7 +288,7 @@ func (k RecipePickerKeys) FullHelp() [][]key.Binding {
 		// Nav
 		{k.Up, k.Down},
 		// Apply / exit
-		{k.Apply, k.Close, k.Cancel},
+		{k.Apply, k.Cancel},
 	}
 }
 
@@ -403,7 +392,6 @@ func (k TimeTravelInputKeys) FullHelp() [][]key.Binding {
 // Up/Down field names match the universal-nav consistency test. PageUp/PageDown
 // use dedicated field names (like LabelPickerNavKeys) so the ←/→ help strings
 // do not trip the universal-nav Left/Right check.
-// Close covers the additional exit keys q and w alongside Cancel (esc).
 type RepoPickerNavKeys struct {
 	// Nav
 	Up       key.Binding `action:"nav.up"`
@@ -421,8 +409,7 @@ type RepoPickerNavKeys struct {
 	// Apply
 	Apply key.Binding `action:"repo_picker.apply"`
 
-	// Exit (Close is q/w; Cancel is esc)
-	Close  key.Binding `action:"repo_picker.close"`
+	// Exit
 	Cancel key.Binding `action:"repo_picker.cancel"`
 }
 
@@ -461,10 +448,6 @@ func NewRepoPickerNavKeys() RepoPickerNavKeys {
 			key.WithKeys("enter"),
 			key.WithHelp("⏎", "apply project filter"),
 		),
-		Close: key.NewBinding(
-			key.WithKeys("q", "w"),
-			key.WithHelp("q/w", "close picker"),
-		),
 		Cancel: key.NewBinding(
 			key.WithKeys("esc"),
 			key.WithHelp("esc", "close picker"),
@@ -485,7 +468,7 @@ func (k RepoPickerNavKeys) FullHelp() [][]key.Binding {
 		// Selection
 		{k.Toggle, k.ToggleAll},
 		// Mode / apply / exit
-		{k.FocusSearch, k.Apply, k.Close, k.Cancel},
+		{k.FocusSearch, k.Apply, k.Cancel},
 	}
 }
 

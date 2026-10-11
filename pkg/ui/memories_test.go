@@ -84,7 +84,7 @@ func TestMemoriesViewToggle(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 180, Height: 50})
 	m = updated.(Model)
 
-	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'u', Text: "u"})
+	updated, cmd := m.Update(tokenMsg("view.memories"))
 	m = updated.(Model)
 	if m.mode != ViewMemories {
 		t.Fatalf("after u: expected ViewMemories, got %v", m.mode)
@@ -109,7 +109,7 @@ func TestMemoriesViewToggle(t *testing.T) {
 	}
 
 	// Second press exits back to the list.
-	updated, _ = m.Update(tea.KeyPressMsg{Code: 'u', Text: "u"})
+	updated, _ = m.Update(tokenMsg("view.memories"))
 	m = updated.(Model)
 	if m.mode != ViewList {
 		t.Errorf("second u: expected ViewList, got %v", m.mode)
@@ -119,33 +119,26 @@ func TestMemoriesViewToggle(t *testing.T) {
 	}
 }
 
-// TestMemoriesQuitKeyDoesNotQuitApp guards the Back(q)/Cancel(esc) cascade
-// wiring: without an explicit `if m.mode == ViewMemories` branch in both
-// cascades, "q" falls through to `return m, tea.Quit` (quits the whole app)
-// and "esc" falls through to the quit-confirm modal. Both would be a bug a
-// user hits immediately on their first "how do I leave this view" keypress.
+// TestMemoriesQuitKeyDoesNotQuitApp guards the Cancel(esc) cascade wiring:
+// without an explicit `if m.mode == ViewMemories` branch, esc would not leave
+// the view. q quits the app from every view since bt-i4k, so only esc is
+// checked.
 func TestMemoriesQuitKeyDoesNotQuitApp(t *testing.T) {
 	issues := []model.Issue{{ID: "bv-1", Title: "One", Status: model.StatusOpen}}
 
-	for _, key := range []string{"q", "esc"} {
+	for _, key := range []string{"esc"} {
 		t.Run(key, func(t *testing.T) {
 			m := NewModel(issues, nil, "", nil, nil)
 			updated, _ := m.Update(tea.WindowSizeMsg{Width: 180, Height: 50})
 			m = updated.(Model)
 
-			updated, _ = m.Update(tea.KeyPressMsg{Code: 'u', Text: "u"})
+			updated, _ = m.Update(tokenMsg("view.memories"))
 			m = updated.(Model)
 			if m.mode != ViewMemories {
 				t.Fatalf("setup: expected ViewMemories, got %v", m.mode)
 			}
 
-			var kp tea.KeyPressMsg
-			if key == "q" {
-				kp = tea.KeyPressMsg{Code: 'q', Text: "q"}
-			} else {
-				kp = tea.KeyPressMsg{Code: tea.KeyEscape}
-			}
-			updated, cmd := m.Update(kp)
+			updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 			m = updated.(Model)
 
 			if cmd != nil {
@@ -182,7 +175,7 @@ func seedMemories(t *testing.T, agg source.MemoriesAggregate, width, height int)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	m = updated.(Model)
 
-	updated, _ = m.Update(tea.KeyPressMsg{Code: 'u', Text: "u"})
+	updated, _ = m.Update(tokenMsg("view.memories"))
 	m = updated.(Model)
 
 	updated, _ = m.Update(MemoriesLoadedMsg{Aggregate: agg})

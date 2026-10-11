@@ -62,9 +62,9 @@ func TestClearAllFiltersResetsToOpen(t *testing.T) {
 
 func TestOpenKeyTogglesToAllFromDefault(t *testing.T) {
 	m := NewModel(defaultFilterIssues(), nil, "", nil, nil)
-	m, _ = sendMsg(m, keyRune('o'))
+	m = press(t, m, "space", "f", "o")
 	if got := m.CurrentFilter(); got != "all" {
-		t.Fatalf("CurrentFilter() after o = %q, want all", got)
+		t.Fatalf("CurrentFilter() after SPC f o = %q, want all", got)
 	}
 	if n := len(m.FilteredIssues()); n != 3 {
 		t.Fatalf("visible = %d, want 3", n)

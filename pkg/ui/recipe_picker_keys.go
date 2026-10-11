@@ -17,12 +17,7 @@ func (m Model) handleRecipePickerKeys(msg tea.KeyMsg) Model {
 	case key.Matches(msg, kk.Down):
 		m.recipePicker.MoveDown()
 
-	case key.Matches(msg, kk.Cancel), key.Matches(msg, kk.Close):
-		// kk.Close is `'` -- the key that opens it (toggle behavior).
-		// kk.Cancel is `esc`.
-		// The dispatcher's modal early-return routes the open key here while
-		// the modal is open, so the toggle-off branch in handleListKeys is
-		// unreachable -- per ADR-004 modals own their dispatch.
+	case key.Matches(msg, kk.Cancel):
 		m.closeModal()
 		m.focused = focusList
 

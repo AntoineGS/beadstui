@@ -97,12 +97,12 @@ Two notes:
 | Key | View | What it shows |
 |-----|------|---------------|
 | `esc` | **List** | Issue list with detail panel (default; `esc` returns here from other views) |
-| `b` | **Board** | Kanban columns by status |
-| `g` | **Graph** | Dependency graph |
-| `i` | **Insights** | PageRank, critical path, cycle detection |
-| `h` | **History** | Bead-to-commit correlation timeline |
-| `a` | **Actionable** | Execution plan grouped into parallel tracks |
-| `f` | **Flow matrix** | How labels block each other (cross-label dependency flow) |
+| SPC v b | **Board** | Kanban columns by status |
+| SPC v g | **Graph** | Dependency graph |
+| SPC v i | **Insights** | PageRank, critical path, cycle detection |
+| SPC v h | **History** | Bead-to-commit correlation timeline |
+| SPC v a | **Actionable** | Execution plan grouped into parallel tracks |
+| SPC v f | **Flow matrix** | How labels block each other (cross-label dependency flow) |
 
 ![Board view](docs/screenshots/03-kanban.webp)
 
@@ -140,20 +140,21 @@ Supports `=`, `!=`, `<`, `>`, `~` (substring), `in`, `not in`, `and`/`or`/`not`,
 |-----|--------|
 | `j`/`k` or arrows | Navigate |
 | `Enter` | Open detail (focuses the detail pane in split view) |
-| `left` / `right` | Move between the list and the details |
+| `h` / `l` or `left` / `right` | Move between the list and the details |
 | `,` / `.` | Page the details up / down from either pane |
-| `b` / `g` / `i` / `h` | Board / Graph / Insights / History |
-| `a` | Actionable view |
-| `f` | Flow matrix |
+| SPC v b / g / i / h | Board / Graph / Insights / History |
+| SPC v a | Actionable view |
+| SPC v f | Flow matrix |
 | `/` | Search |
 | `:` | BQL query |
-| `o` / `c` / `r` | Toggle open (the default) / closed / ready issues; press again for all |
-| `l` | Label picker |
-| `p` | Priority hints |
-| `t` | Time travel |
-| `s` | Cycle sort |
+| SPC f o / c / r | Toggle open (the default) / closed / ready issues; press again for all |
+| SPC f l | Label picker |
+| SPC n h | Priority hints |
+| SPC t | Time travel |
+| SPC s s | Cycle sort |
 | `?` | Help |
-| `q` | Back / quit |
+| `esc` | Back / cancel |
+| `q` | Quit |
 | `ctrl+c` | Quit |
 
 ## Configuration

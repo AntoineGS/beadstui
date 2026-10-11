@@ -259,7 +259,7 @@ func TestLensStaticHintsDegrade(t *testing.T) {
 	}
 }
 
-// TestStatusCycleKeyEndToEnd drives the '#' key through the real update loop and
+// TestStatusCycleKeyEndToEnd drives SPC f s through the real update loop and
 // proves it cycles the full status set, that the lens reflects each stop, and
 // that it emits no "Filter:" toast echo (bt-gpvwe absorbed by bt-2vshd).
 func TestStatusCycleKeyEndToEnd(t *testing.T) {
@@ -271,13 +271,12 @@ func TestStatusCycleKeyEndToEnd(t *testing.T) {
 		t.Fatalf("precondition: default filter should be open, got %q", m.filter.currentFilter)
 	}
 
-	// One '#' per expected stop after the default "open".
+	// One SPC f s per expected stop after the default "open".
 	want := []string{"in_progress", "blocked", "closed", "deferred", "all", "open"}
 	for _, expect := range want {
-		nm, _ = m.Update(tea.KeyPressMsg{Code: '#', Text: "#"})
-		m = nm.(Model)
+		m = press(t, m, "space", "f", "s")
 		if m.filter.currentFilter != expect {
-			t.Fatalf("after '#' expected filter %q, got %q", expect, m.filter.currentFilter)
+			t.Fatalf("after SPC f s expected filter %q, got %q", expect, m.filter.currentFilter)
 		}
 		// The lens reflects the active status; no Filter: toast echo.
 		if m.statusMsg != "" {

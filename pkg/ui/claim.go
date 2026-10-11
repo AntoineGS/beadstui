@@ -151,17 +151,18 @@ func writeCmd(target bdroute.WriteTarget, id string, kind writeKind, field strin
 // pending for that bead (double-dispatch guard; v1 simplification - one
 // pending write per issue, see pendingWrite doc).
 func (m *Model) requestClaim() {
-	sel, ok := m.list.SelectedItem().(IssueItem)
-	if !ok {
+	iss := m.selectedIssue()
+	if iss == nil {
 		m.setNotice("No issue selected")
 		return
 	}
-	if _, pending := m.pendingWrites[sel.Issue.ID]; pending {
-		m.setNotice(fmt.Sprintf("write already pending for %s", sel.Issue.ID))
+	if _, pending := m.pendingWrites[iss.ID]; pending {
+		m.setNotice(fmt.Sprintf("write already pending for %s", iss.ID))
 		return
 	}
-	m.claimTargetID = sel.Issue.ID
-	m.claimTargetTitle = sel.Issue.Title
+	m.claimTargetID = iss.ID
+	m.claimTargetTitle = iss.Title
+	m.writeReturnFocus = m.focused
 	m.openModal(ModalClaimConfirm)
 	m.focused = focusClaimConfirm
 }
@@ -178,7 +179,7 @@ func (m Model) confirmClaim() (Model, tea.Cmd) {
 	m.claimTargetID = ""
 	m.claimTargetTitle = ""
 	m.closeModal()
-	m.focused = focusList
+	m.focused = m.writeReturnFocus
 	if id == "" {
 		return m, nil
 	}
@@ -215,7 +216,7 @@ func (m *Model) cancelClaim() {
 	m.claimTargetID = ""
 	m.claimTargetTitle = ""
 	m.closeModal()
-	m.focused = focusList
+	m.focused = m.writeReturnFocus
 	m.setNotice("Claim cancelled")
 }
 

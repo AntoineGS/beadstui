@@ -152,7 +152,7 @@ func TestPluginActionKeyLosesToBtBinding(t *testing.T) {
 		t.Fatal("j did not move the list cursor")
 	}
 
-	m, _ = sendMsg(m, keyRune('P'))
+	m, _ = sendMsg(m, tokenMsg("plugin.menu"))
 	if m.activeModal != ModalPluginPrompt || m.pluginPrompt == nil || m.pluginPrompt.kind != pluginPromptMenu {
 		t.Fatalf("P did not open the action menu (modal %v)", m.activeModal)
 	}
@@ -250,7 +250,7 @@ func TestPluginActionMenuInvokes(t *testing.T) {
 	m := newPluginActionModel(t, fake)
 	id := selectedID(m)
 
-	m, _ = sendMsg(m, keyRune('P'))
+	m, _ = sendMsg(m, tokenMsg("plugin.menu"))
 	if m.activeModal != ModalPluginPrompt || m.focused != focusPluginPrompt {
 		t.Fatalf("P: modal %v focus %v", m.activeModal, m.focused)
 	}
@@ -271,7 +271,7 @@ func TestPluginActionMenuInvokes(t *testing.T) {
 func TestPluginActionMenuEmpty(t *testing.T) {
 	m := newPluginActionModel(t, &fakePluginActions{})
 	id := selectedID(m)
-	m, _ = sendMsg(m, keyRune('P'))
+	m, _ = sendMsg(m, tokenMsg("plugin.menu"))
 	if m.activeModal != ModalNone {
 		t.Fatalf("empty menu opened a modal %v", m.activeModal)
 	}
@@ -282,7 +282,7 @@ func TestPluginActionMenuEmpty(t *testing.T) {
 
 func TestPluginActionMenuEscCloses(t *testing.T) {
 	m := newPluginActionModel(t, &fakePluginActions{actions: []plugin.Action{dispatchAction}})
-	m, _ = sendMsg(m, keyRune('P'))
+	m, _ = sendMsg(m, tokenMsg("plugin.menu"))
 	m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyEsc})
 	if m.activeModal != ModalNone || m.focused != focusList || len(m.pendingWrites) != 0 {
 		t.Fatalf("esc: modal %v focus %v pending %v", m.activeModal, m.focused, m.pendingWrites)
@@ -614,7 +614,7 @@ func TestPluginPromptRefusedWhileTyping(t *testing.T) {
 			return m
 		}},
 		{"board search", func(m Model) Model {
-			m, _ = sendMsg(m, keyRune('b'))
+			m, _ = sendMsg(m, tokenMsg("view.board"))
 			m, _ = sendMsg(m, keyRune('/'))
 			if m.mode != ViewBoard || !m.board.IsSearchMode() {
 				t.Fatalf("mode %v search %v, want board search", m.mode, m.board.IsSearchMode())
@@ -774,7 +774,7 @@ func TestPluginTextSanitized(t *testing.T) {
 
 	fake := &fakePluginActions{actions: []plugin.Action{{Plugin: "example", ID: "dispatch", Label: dirty, Key: "D"}}}
 	m := newPluginActionModel(t, fake)
-	m, _ = sendMsg(m, keyRune('P'))
+	m, _ = sendMsg(m, tokenMsg("plugin.menu"))
 	if m.pluginPrompt == nil || m.pluginPrompt.options[0].label != "Dispatch" {
 		t.Fatalf("menu label not sanitized: %+v", m.pluginPrompt)
 	}

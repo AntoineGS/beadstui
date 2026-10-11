@@ -151,7 +151,7 @@ func TestRepoColumnHomeAllToggleWithRecipe(t *testing.T) {
 			m.setActiveRecipe(&recipe.Recipe{Name: "all"})
 		}
 		for _, want := range []bool{false, true, false} {
-			updated, _ := m.Update(tea.KeyPressMsg{Code: 'W', Text: "W"})
+			updated, _ := m.Update(tokenMsg("project.home_all"))
 			m = updated.(Model)
 			assertRepoColumn(t, m, want)
 			if !want && (len(m.list.Items()) != 1 || m.list.Items()[0].(IssueItem).Issue.ID != "se-123") {
@@ -217,7 +217,7 @@ func TestLabelPickerRespectsProjectScope(t *testing.T) {
 
 	openPicker := func(m Model) Model {
 		t.Helper()
-		updated, _ := m.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})
+		updated, _ := m.Update(tokenMsg("filter.labels"))
 		m = updated.(Model)
 		if m.activeModal != ModalLabelPicker {
 			t.Fatalf("expected label picker open, got modal %v", m.activeModal)
@@ -263,7 +263,7 @@ func TestLabelPickerRespectsProjectScope(t *testing.T) {
 	// An applied label with no issues in scope stays listed (count 0) and
 	// selected, so Enter does not silently drop it from the filter.
 	m.filter.labelFilter = "b-only"
-	updated, _ = m.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})
+	updated, _ = m.Update(tokenMsg("filter.labels"))
 	m = updated.(Model)
 	assertLabels(m, map[string]int{"shared": 1, "a-only": 1, "b-only": 0})
 	if sel := m.labelPicker.SelectedLabels(); len(sel) != 1 || sel[0] != "b-only" {
@@ -424,7 +424,7 @@ func TestPriorityHintsToggleUsesActiveRepoFilter(t *testing.T) {
 	})
 	m.SetActiveRepos(map[string]bool{"proja": true})
 
-	updated2, _ := m.Update(tea.KeyPressMsg{Code: 'p', Text: "p"})
+	updated2, _ := m.Update(tokenMsg("notify.priority_hints"))
 	m = updated2.(Model)
 
 	if !m.ac.showPriorityHints {
@@ -607,7 +607,7 @@ func TestActionableViewRespectsActiveRepos(t *testing.T) {
 	})
 	m.SetActiveRepos(map[string]bool{"proja": true})
 
-	updated2, _ := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
+	updated2, _ := m.Update(tokenMsg("view.actionable"))
 	m = updated2.(Model)
 
 	if m.mode != ViewActionable {
@@ -646,7 +646,7 @@ func TestOpenInsightsViewRespectsActiveRepos(t *testing.T) {
 	})
 	m.SetActiveRepos(map[string]bool{"proja": true})
 
-	updated2, _ := m.Update(tea.KeyPressMsg{Code: 'i', Text: "i"})
+	updated2, _ := m.Update(tokenMsg("view.insights"))
 	m = updated2.(Model)
 
 	if m.mode != ViewInsights {
@@ -727,7 +727,7 @@ func TestLabelDashboardRespectsActiveRepos(t *testing.T) {
 	})
 	m.SetActiveRepos(map[string]bool{"proja": true})
 
-	updated2, _ := m.Update(tea.KeyPressMsg{Code: '[', Text: "["})
+	updated2, _ := m.Update(tokenMsg("view.labels"))
 	m = updated2.(Model)
 
 	if m.mode != ViewLabelDashboard {
@@ -765,7 +765,7 @@ func TestAttentionViewRespectsActiveRepos(t *testing.T) {
 	})
 	m.SetActiveRepos(map[string]bool{"proja": true})
 
-	updated2, _ := m.Update(tea.KeyPressMsg{Code: ']', Text: "]"})
+	updated2, _ := m.Update(tokenMsg("view.attention"))
 	m = updated2.(Model)
 
 	if m.mode != ViewAttention {
@@ -798,7 +798,7 @@ func TestFlowMatrixRespectsActiveRepos(t *testing.T) {
 	})
 	m.SetActiveRepos(map[string]bool{"proja": true})
 
-	updated2, _ := m.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
+	updated2, _ := m.Update(tokenMsg("view.flow"))
 	m = updated2.(Model)
 
 	if m.mode != ViewFlowMatrix {
@@ -923,7 +923,7 @@ func TestLabelDashboardFollowsLabelFilter(t *testing.T) {
 	m = updated.(Model)
 	m.filter.labelFilter = "proja-labelA"
 	m.applyFilter()
-	updated, _ = m.Update(tea.KeyPressMsg{Code: '[', Text: "["})
+	updated, _ = m.Update(tokenMsg("view.labels"))
 	m = updated.(Model)
 	for _, lh := range m.labelHealthCache.Labels {
 		for _, id := range lh.Issues {
@@ -1018,7 +1018,7 @@ func TestActionableViewRefreshesOnFilterChange(t *testing.T) {
 	m := NewModel(buildRecommendationFixture("proja"), nil, "", nil, nil)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
 	m = updated.(Model)
-	updated, _ = m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
+	updated, _ = m.Update(tokenMsg("view.actionable"))
 	m = updated.(Model)
 	if m.mode != ViewActionable || len(m.actionableView.plan.Tracks) == 0 {
 		t.Fatalf("precondition: actionable view open with tracks (mode %v)", m.mode)
@@ -1056,7 +1056,7 @@ func TestSnapshotReloadKeepsOpenInsightsFiltered(t *testing.T) {
 	m = updated.(Model)
 	m.EnableWorkspaceMode(WorkspaceInfo{Enabled: true, RepoCount: 2, RepoPrefixes: []string{"proja-", "projb-"}})
 	m.SetActiveRepos(map[string]bool{"proja": true})
-	updated, _ = m.Update(tea.KeyPressMsg{Code: 'i', Text: "i"})
+	updated, _ = m.Update(tokenMsg("view.insights"))
 	m = updated.(Model)
 
 	snap := NewSnapshotBuilder(fixture()).Build()
@@ -1085,7 +1085,7 @@ func TestReloadRefreshesOpenLabelDashboard(t *testing.T) {
 	m := NewModel(buildLabelFlowFixture("proja"), nil, "", nil, nil)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
 	m = updated.(Model)
-	updated, _ = m.Update(tea.KeyPressMsg{Code: '[', Text: "["})
+	updated, _ = m.Update(tokenMsg("view.labels"))
 	m = updated.(Model)
 
 	relabeled := buildLabelFlowFixture("proja")
@@ -1108,7 +1108,7 @@ func TestInsightsReloadKeepsCursor(t *testing.T) {
 	m := NewModel(issues, nil, "", nil, nil)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
 	m = updated.(Model)
-	updated, _ = m.Update(tea.KeyPressMsg{Code: 'i', Text: "i"})
+	updated, _ = m.Update(tokenMsg("view.insights"))
 	m = updated.(Model)
 	panel := PanelKeystones
 	m.insightsPanel.RestoreCursor(panel, 2) // the user moved to row 2 of keystones

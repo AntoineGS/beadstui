@@ -163,30 +163,6 @@ func TestRecipePickerHeightBounded(t *testing.T) {
 	}
 }
 
-// TestRecipePickerApostropheTogglesOff is the bt-4l28 regression guard: the
-// open key (`'`) re-pressed while the modal is open must close it, matching
-// the toggle convention used by Help (`?`), Sidebar (`;`), Tutorial, etc.
-// Pre-fix the toggle-off branch lived in handleListKeys but the dispatcher's
-// modal early-return routes the key to handleRecipePickerKeys first, leaving
-// the branch unreachable.
-func TestRecipePickerApostropheTogglesOff(t *testing.T) {
-	m := seedModel()
-	m.openModal(ModalRecipePicker)
-	m.focused = focusRecipePicker
-
-	if m.activeModal != ModalRecipePicker {
-		t.Fatalf("setup: recipe picker should be open")
-	}
-
-	m = m.handleRecipePickerKeys(tea.KeyPressMsg{Code: '\'', Text: "'"})
-	if m.activeModal == ModalRecipePicker {
-		t.Fatalf("expected ' to close recipe picker, modal still open")
-	}
-	if m.focused != focusList {
-		t.Fatalf("expected focus to return to focusList, got %v", m.focused)
-	}
-}
-
 // TestRecipePickerUniformRowWidth is a regression guard for bt-rhfo dogfood:
 // every rendered row of the recipe panel must end at the panel's right
 // border. Pre-fix description rows ended at column ~28 while name/blank

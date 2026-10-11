@@ -20,6 +20,7 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/debug"
 	"github.com/seanmartinsmith/beadstui/pkg/drift"
 	"github.com/seanmartinsmith/beadstui/pkg/ui/events"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 )
 
 // currentSearchMode derives the active search ranker from the underlying
@@ -58,6 +59,14 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// directly. See bt-ocmw.
 	if m.focused != focusList {
 		m.commitFilterIfTyping()
+	}
+
+	// q quits at once from anywhere no text field has focus, modals included
+	// (bt-i4k). The plugin prompt answers its plugin first, so it handles q
+	// itself; a pending leader sequence owns the key.
+	if key.Matches(msg, m.keys.Global.Back) && m.activeModal != ModalPluginPrompt &&
+		!m.inTextInput() && m.seq.prefix != keys.LeaderPrefix {
+		return m, tea.Quit
 	}
 
 	// Handle AGENTS.md prompt modal (bv-i8dk)
@@ -213,9 +222,9 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 	// Handle alerts panel modal if open (bv-168, bt-46p6.10)
 	if m.activeModal == ModalAlerts {
-		// Tab switching + close-on-same-key at the top of the modal block
-		// (bt-46p6.10). Runs before per-tab dispatch so these keys behave
-		// consistently regardless of which tab has focus.
+		// Tab switching at the top of the modal block (bt-46p6.10). Runs
+		// before per-tab dispatch so these keys behave consistently regardless
+		// of which tab has focus. ! and 1 only switch tabs; esc closes.
 		ak := m.keys.Alerts
 		switch {
 		case key.Matches(msg, ak.TabSwitch):
@@ -228,18 +237,13 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.syncModalCursorToSelection()
 			return m, nil
 		case key.Matches(msg, ak.ShowAlerts):
-			if m.activeTab == TabAlerts {
-				m.resetAlertFilters()
-				m.closeModal()
-			} else {
+			if m.activeTab != TabAlerts {
 				m.activeTab = TabAlerts
 				m.syncModalCursorToSelection()
 			}
 			return m, nil
 		case key.Matches(msg, ak.ShowNotifications):
-			if m.activeTab == TabNotifications {
-				m.closeModal()
-			} else {
+			if m.activeTab != TabNotifications {
 				m.activeTab = TabNotifications
 				m.markNotificationsSeen()
 				m.syncModalCursorToSelection()
@@ -544,9 +548,8 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Settings screen (bt-54c3). This early return is what makes esc safe as
-	// the open key: while the screen is up, esc lands here and cancels, so the
-	// global "back / cancel" binding never sees it.
+	// Settings screen (bt-54c3). While the screen is up, esc lands here and
+	// cancels, so the global "back / cancel" binding never sees it.
 	if m.activeModal == ModalSettings {
 		if key.Matches(msg, m.keys.Global.Quit) {
 			return m, tea.Quit
@@ -670,7 +673,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Force refresh (bv-4auz): Ctrl+R / F5 triggers an immediate reload.
+	// Force refresh (bv-4auz): SPC r triggers an immediate reload.
 	if key.Matches(msg, m.keys.Global.Refresh) && m.list.FilterState() != list.Filtering {
 		now := time.Now()
 		if !m.data.lastForceRefresh.IsZero() && now.Sub(m.data.lastForceRefresh) < time.Second {
@@ -701,16 +704,14 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 	}
 
-	// Undocumented: ctrl+p toggles a top-right [WxH] dimension chip so
-	// dimension-sensitive bugs can be reported with exact terminal cell
-	// counts. Bypasses the keymap so it stays out of `?` help and is
-	// effectively hidden from users who don't know to press it.
+	// SPC w d toggles a top-right [WxH] dimension chip so dimension-sensitive
+	// bugs can be reported with exact terminal cell counts.
 	if key.Matches(msg, m.keys.Global.DebugDims) && m.list.FilterState() != list.Filtering {
 		m.showDebugDims = !m.showDebugDims
 		return m, nil
 	}
 
-	// Handle shortcuts sidebar toggle (; or F2) - bv-3qi5
+	// Handle shortcuts sidebar toggle (;) - bv-3qi5
 	if key.Matches(msg, m.keys.Global.Sidebar) && m.list.FilterState() != list.Filtering {
 		m.showShortcutsSidebar = !m.showShortcutsSidebar
 		if m.showShortcutsSidebar {
@@ -751,7 +752,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// is the only operation that doesn't already have a key.
 	if m.focused == focusList && m.list.FilterState() != list.Filtering && key.Matches(msg, m.keys.Global.HybridPreset) {
 		if !m.semanticHybridEnabled {
-			m.setStatus("Not in hybrid mode — press Ctrl+S to cycle there")
+			m.setStatus("Not in hybrid mode — press SPC / m to cycle there")
 			return m, nil
 		}
 		m.semanticHybridPreset = nextHybridPreset(m.semanticHybridPreset)
@@ -955,62 +956,6 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		// moved into list_keys.go's handleListKeys per the no-match-and-
 		// fall-through rule.
 		switch {
-		case key.Matches(msg, m.keys.Global.Back):
-			// q: context-aware cascade. Single binding, single Help.Desc;
-			// the cascade lives here in the dispatcher (ADR-004 Decision 1).
-			if m.fullscreen != fullscreenNone {
-				// Exit the on-demand fullscreen pane first (bt-530vn) so q
-				// mirrors its own escape hatch instead of falling through to
-				// quit-confirm while a pane is maximized.
-				m.exitFullscreenPane()
-				return m, nil
-			}
-			if m.showDetails && !m.isSplitView {
-				m.showDetails = false
-				m.focused = focusList
-				return m, nil
-			}
-			if m.focused == focusInsights {
-				m.focused = focusList
-				return m, nil
-			}
-			if m.focused == focusFlowMatrix {
-				if m.flowMatrix.showDrilldown {
-					m.flowMatrix.showDrilldown = false
-					return m, nil
-				}
-				m.focused = focusList
-				return m, nil
-			}
-			if m.mode == ViewGraph {
-				m.mode = ViewList
-				m.focused = focusList
-				return m, nil
-			}
-			if m.mode == ViewBoard {
-				m.mode = ViewList
-				m.focused = focusList
-				return m, nil
-			}
-			if m.mode == ViewLabelDashboard {
-				m.mode = ViewList
-				m.isSplitView = true // restore split view cleared on entry (bt-trqo)
-				m.focused = focusList
-				return m, nil
-			}
-			if m.mode == ViewEpics {
-				m.mode = ViewList
-				m.focused = focusList
-				return m, nil
-			}
-			if m.mode == ViewMemories {
-				m.mode = ViewList
-				m.isSplitView = true // restore split view cleared on entry (mirrors ViewLabelDashboard, bt-2ea7t.4)
-				m.focused = focusList
-				return m, nil
-			}
-			return m, tea.Quit
-
 		case key.Matches(msg, m.keys.Global.Cancel):
 			// esc: context-aware cascade closing modals and going back.
 			if m.fullscreen != fullscreenNone {
@@ -1057,7 +1002,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				m.focused = focusList
 				return m, nil
 			}
-			if m.mode == ViewEpics {
+			if m.mode == ViewEpics || m.mode == ViewTree {
 				m.mode = ViewList
 				m.focused = focusList
 				return m, nil
@@ -1076,23 +1021,51 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				m.focused = focusList
 				return m, nil
 			}
-			// At main list - first ESC clears filters, second opens settings
+			// At the main list esc clears the filters; with none left it does
+			// nothing (bt-i4k). The settings menu is SPC ,.
 			if m.hasActiveFilters() {
 				m.clearAllFilters()
-				return m, nil
 			}
-			// Nothing left to back out of, so esc has reached its base state.
-			// btop opens its menu here, which is the behaviour asked for
-			// (bt-54c3, and the bt-2aa49 amendment that funds this surface).
-			//
-			// The old esc-to-quit-confirm is not lost, it moves one level in:
-			// QUIT is an entry on this menu, exactly as in btop. `q` still
-			// quits directly without passing through here at all.
+			return m, nil
+
+		case key.Matches(msg, m.keys.Global.Settings):
 			m.openModal(ModalSettingsMenu)
 			m.settingsMenu.Reset()
 			m.settingsMenu.SetTheme(m.theme)
 			m.settingsMenu.SetSize(m.width, m.height-1)
 			m.focused = focusSettingsMenu
+			return m, nil
+
+		case key.Matches(msg, m.keys.Global.ViewList):
+			if m.mode == ViewList {
+				return m, nil
+			}
+			if m.mode == ViewLabelDashboard || m.mode == ViewMemories {
+				m.isSplitView = true // restore split view cleared on entry
+			}
+			m.clearAttentionOverlay()
+			m.historyDoltOnly = false
+			m.mode = ViewList
+			m.focused = focusList
+			return m, nil
+
+		// The status filters toggle back to "all" when pressed again; the
+		// cycle walks the full status set. None emit a toast: the footer lens
+		// status chip already shows the active filter (bt-2vshd).
+		case key.Matches(msg, m.keys.Global.FilterOpen):
+			m.toggleStatusFilter("open")
+			return m, nil
+		case key.Matches(msg, m.keys.Global.FilterClosed):
+			m.toggleStatusFilter("closed")
+			return m, nil
+		case key.Matches(msg, m.keys.Global.FilterReady):
+			m.toggleStatusFilter("ready")
+			return m, nil
+		case key.Matches(msg, m.keys.Global.CycleStatusFilter):
+			m.cycleStatusFilter()
+			return m, nil
+		case key.Matches(msg, m.keys.Global.FilterClear):
+			m.clearAllFilters()
 			return m, nil
 
 		case key.Matches(msg, m.keys.Global.Board):
@@ -1338,12 +1311,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, m.keys.Global.Notifications):
-			// Open notifications modal (closed → open). Attention view's 1-9
-			// label quick-jump is gated on m.mode == ViewAttention and handled
-			// earlier at line ~196.
-			if m.mode == ViewAttention {
-				break
-			}
+			// Open notifications modal (closed → open).
 			m.activeTab = TabNotifications
 			m.markNotificationsSeen()
 			m.openModal(ModalAlerts)
@@ -1509,7 +1477,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				m.focused = focusList
 				return m, cmd
 			}
-			// Open detail modal on 'h'
+			// Open detail modal on 'i'
 			if key.Matches(msg, m.keys.LabelDashboard.Health) && len(m.labelDashboard.labels) > 0 {
 				idx := m.labelDashboard.cursor
 				if idx >= 0 && idx < len(m.labelDashboard.labels) {
@@ -1592,6 +1560,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				return m, nil
 			case key.Matches(msg,
 				ln.CopyID, ln.CopyIssue, ln.OpenInEditor, ln.RecipeTriage,
+				ln.CycleSort, ln.CycleSortReverse,
 				ln.TimeTravelInput, ln.EpicCard,
 				ln.SelfUpdate, ln.CassSession, ln.Claim, ln.FieldEdit,
 				ln.SplitFocusToggle, ln.SplitShrinkLeft, ln.SplitShrinkRight,

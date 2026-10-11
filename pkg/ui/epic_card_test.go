@@ -134,17 +134,17 @@ func TestHandleEpicCardKeys_Drill(t *testing.T) {
 }
 
 // TestListKeys_EpicCard_OpensOnEpic verifies EpicCard's key-migration
-// regression (bt-oiaj.5 wave): 'F' opens the card now that 'e' moved to the
-// global field-edit binding, see
+// regression (bt-oiaj.5 wave): the card opens on its own binding (SPC b E
+// since bt-i4k) now that 'e' is the field-edit binding, see
 // docs/plans/2026-07-07-bt-edits-wave-oiaj13-5-6.md.
 func TestListKeys_EpicCard_OpensOnEpic(t *testing.T) {
 	m := epicCardModel(epicCardFixture())
 	if !m.selectIssueByID("ep1") {
 		t.Fatal("setup: ep1 not in visible list")
 	}
-	m = m.handleListKeys(tea.KeyPressMsg{Code: 'F', Text: "F"})
+	m = m.handleListKeys(tokenMsg("bead.epic_card"))
 	if m.activeModal != ModalEpicCard {
-		t.Fatalf("F on an epic should open the card, activeModal=%v", m.activeModal)
+		t.Fatalf("SPC b E on an epic should open the card, activeModal=%v", m.activeModal)
 	}
 	if m.epicCardID != "ep1" {
 		t.Errorf("epicCardID=%q, want ep1", m.epicCardID)

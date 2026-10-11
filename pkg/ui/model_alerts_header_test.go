@@ -120,7 +120,7 @@ func TestAlertsHeader_RendersAllSections(t *testing.T) {
 // attention anomalies (badge number), so the badge is traceable.
 func TestAlertsBadgeOpen_PreFiltersToAnomalies(t *testing.T) {
 	m := statusHeaderModel(t)
-	m = pressRune(m, '!')
+	m = openAlerts(m)
 	if m.activeModal != ModalAlerts || m.activeTab != TabAlerts {
 		t.Fatalf("setup: modal/tab not as expected (%v/%v)", m.activeModal, m.activeTab)
 	}
@@ -146,7 +146,7 @@ func TestAlertsBadgeOpen_NoAnomaliesOpensUnfiltered(t *testing.T) {
 		{Type: drift.AlertStale, Severity: drift.SeverityWarning, Message: "stale a", IssueID: "bt-1"},
 		{Type: drift.AlertStale, Severity: drift.SeverityWarning, Message: "stale b", IssueID: "bt-2"},
 	}
-	m = pressRune(m, '!')
+	m = openAlerts(m)
 	if m.activeModal != ModalAlerts {
 		t.Fatalf("setup: modal did not open")
 	}
@@ -198,7 +198,7 @@ func TestFooterLargeDatasetBadgeGone(t *testing.T) {
 // class filter, alongside the existing s/t/p/o dimensions.
 func TestAlertsClassFilterCycle(t *testing.T) {
 	m := statusHeaderModel(t)
-	m = pressRune(m, '!')
+	m = openAlerts(m)
 	// Opening from the lit badge pre-sets "anomaly"; start the cycle from a
 	// clean state to exercise every transition deterministically.
 	m.alertFilterClass = ""

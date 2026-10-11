@@ -153,13 +153,17 @@ func TestUpdateHelpQuitAndTabFocus(t *testing.T) {
 		t.Fatalf("expected list focus after second tab")
 	}
 
-	// Escape at the base state opens the esc menu (bt-54c3). It used to open
-	// the quit confirm directly; that moved one level in, matching btop, whose
-	// Esc menu lists QUIT as an entry.
+	// Escape at the base state does nothing (bt-i4k); the settings menu
+	// (bt-54c3) opens on SPC ,.
 	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	m = updated.(Model)
+	if m.activeModal != ModalNone {
+		t.Fatalf("esc at the base opened modal %v", m.activeModal)
+	}
+	updated, _ = m.Update(tokenMsg("app.settings"))
+	m = updated.(Model)
 	if m.activeModal != ModalSettingsMenu {
-		t.Fatalf("expected esc menu after esc, got modal %v", m.activeModal)
+		t.Fatalf("expected settings menu after SPC ,, got modal %v", m.activeModal)
 	}
 
 	// esc again backs out rather than falling through to the global cascade --
@@ -171,8 +175,8 @@ func TestUpdateHelpQuitAndTabFocus(t *testing.T) {
 	}
 
 	// The quit confirm is still reachable, now via the menu's QUIT entry, and
-	// 'y' still confirms. This is the path that replaced esc-esc-to-quit.
-	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+	// 'y' still confirms.
+	updated, _ = m.Update(tokenMsg("app.settings"))
 	m = updated.(Model)
 	m.settingsMenu.selected = menuQuit
 	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -225,7 +229,7 @@ func TestHistoryViewToggle(t *testing.T) {
 		t.Fatalf("history view should be off initially")
 	}
 
-	updated, _ = m.Update(tea.KeyPressMsg{Code: 'h', Text: "h"})
+	updated, _ = m.Update(tokenMsg("view.history"))
 	m = updated.(Model)
 
 	if m.mode != ViewHistory {
@@ -236,7 +240,7 @@ func TestHistoryViewToggle(t *testing.T) {
 	}
 
 	// h again should toggle off
-	updated, _ = m.Update(tea.KeyPressMsg{Code: 'h', Text: "h"})
+	updated, _ = m.Update(tokenMsg("view.history"))
 	m = updated.(Model)
 
 	if m.mode == ViewHistory {
@@ -350,7 +354,7 @@ func TestHistoryViewTransitionNoLeakage(t *testing.T) {
 	// load and the model lands in ViewHistory + historyLoading=true; the
 	// rendered frame is the loading screen until HistoryLoadedMsg arrives.
 	// The leak-pattern assertions below still apply to the loading frame.
-	updated, _ = m.Update(tea.KeyPressMsg{Code: 'h', Text: "h"})
+	updated, _ = m.Update(tokenMsg("view.history"))
 	m = updated.(Model)
 
 	view := m.View()
@@ -420,7 +424,7 @@ func TestHistoryAsyncDispatch(t *testing.T) {
 	m = updated.(Model)
 
 	// Press h to enter history.
-	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'h', Text: "h"})
+	updated, cmd := m.Update(tokenMsg("view.history"))
 	m = updated.(Model)
 
 	if m.mode != ViewHistory {
@@ -441,7 +445,7 @@ func TestHistoryAsyncDispatch(t *testing.T) {
 	}
 
 	// Press h again from the loading state to exit cleanly.
-	updated, _ = m.Update(tea.KeyPressMsg{Code: 'h', Text: "h"})
+	updated, _ = m.Update(tokenMsg("view.history"))
 	m = updated.(Model)
 
 	if m.mode != ViewList {
@@ -480,7 +484,7 @@ func TestHistoryDoltOnlyShortCircuit(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
 	m = updated.(Model)
 
-	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'h', Text: "h"})
+	updated, cmd := m.Update(tokenMsg("view.history"))
 	m = updated.(Model)
 
 	if m.mode != ViewHistory {
@@ -504,7 +508,7 @@ func TestHistoryDoltOnlyShortCircuit(t *testing.T) {
 		t.Errorf("Dolt-only empty state missing title; frame was:\n%s", frame)
 	}
 
-	updated, _ = m.Update(tea.KeyPressMsg{Code: 'h', Text: "h"})
+	updated, _ = m.Update(tokenMsg("view.history"))
 	m = updated.(Model)
 
 	if m.mode != ViewList {
@@ -793,7 +797,7 @@ func TestHistorySearchKeyIsolation(t *testing.T) {
 	m = updated.(Model)
 
 	// Enter history view.
-	updated, _ = m.Update(tea.KeyPressMsg{Code: 'h', Text: "h"})
+	updated, _ = m.Update(tokenMsg("view.history"))
 	m = updated.(Model)
 	if m.mode != ViewHistory {
 		t.Fatalf("setup: expected ViewHistory after h key, got %v", m.mode)
@@ -863,7 +867,7 @@ func TestHistoryViewKeys(t *testing.T) {
 	m = updated.(Model)
 
 	// Enter history view
-	updated, _ = m.Update(tea.KeyPressMsg{Code: 'h', Text: "h"})
+	updated, _ = m.Update(tokenMsg("view.history"))
 	m = updated.(Model)
 
 	// Esc should close history view
@@ -875,7 +879,7 @@ func TestHistoryViewKeys(t *testing.T) {
 	}
 
 	// Re-enter and test 'c' key cycles confidence
-	updated, _ = m.Update(tea.KeyPressMsg{Code: 'h', Text: "h"})
+	updated, _ = m.Update(tokenMsg("view.history"))
 	m = updated.(Model)
 
 	initialConf := m.historyView.GetMinConfidence()

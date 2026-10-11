@@ -52,6 +52,7 @@ type BoardNormalKeys struct {
 	ToggleEmpty  key.Binding `action:"board.toggle_empty"`  // z: cycle empty-column visibility (bt-oiaj.5 wave migration - was e; e is now the global field-edit binding, see docs/plans/2026-07-07-bt-edits-wave-oiaj13-5-6.md)
 	CycleSwim    key.Binding `action:"board.cycle_swim"`    // s: cycle swimlane mode
 	CopyID       key.Binding `action:"board.copy_id"`       // y: copy selected issue ID
+	FieldEdit    key.Binding `action:"bead.edit"`           // e: edit the selected card's fields
 
 	// Detail panel
 	DetailToggle key.Binding `action:"board.detail_toggle"` // tab: show/hide detail panel
@@ -160,6 +161,10 @@ func NewBoardNormalKeys() BoardNormalKeys {
 			key.WithKeys("y"),
 			key.WithHelp("y", "copy card ID"),
 		),
+		FieldEdit: key.NewBinding(
+			key.WithKeys("e"),
+			key.WithHelp("e", "edit field"),
+		),
 		DetailToggle: key.NewBinding(
 			key.WithKeys("tab"),
 			key.WithHelp("⇥", "toggle detail panel"),
@@ -197,7 +202,7 @@ func (k BoardNormalKeys) FullHelp() [][]key.Binding {
 		// Search
 		{k.Search, k.NextMatch, k.PrevMatch},
 		// Actions
-		{k.CycleSwim, k.ToggleExpand, k.ToggleEmpty, k.CopyID, k.Enter},
+		{k.CycleSwim, k.ToggleExpand, k.ToggleEmpty, k.CopyID, k.FieldEdit, k.Enter},
 		// Detail panel
 		{k.DetailToggle, k.DetailDown, k.DetailUp},
 	}
