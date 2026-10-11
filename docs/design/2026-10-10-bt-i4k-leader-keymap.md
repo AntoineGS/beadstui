@@ -49,8 +49,12 @@ example `@filter.open`) in addition to its physical keys. bubbletea v2's
 `KeyPressMsg.String()` returns `Text` when it is non-empty
 (`ultraviolet Key.String`), so `tea.KeyPressMsg{Text: "@filter.open"}` matches
 `key.Matches(msg, k.FilterOpen)`. The router dispatches completed leader
-sequences, and any other action invocation, by re-entering `handleKeyPress` with
-that synthetic message. The roughly 250 existing `key.Matches` call sites keep
+sequences, and any other action invocation, through `actionCmd(id)`: a `tea.Cmd`
+that emits that synthetic message, so it runs the full `Update` (including the
+forward to the bubbles list, whose `CursorUp`/`CursorDown` keys also carry the
+`@nav.up`/`@nav.down` tokens). Tokens are never written by hand:
+`NewAppKeys` calls `stampTokens`, which walks every tagged field by reflection
+and appends its token. The roughly 250 existing `key.Matches` call sites keep
 working unchanged, and a binding with no physical keys stays `Enabled()`
 because its key list is never empty.
 
@@ -73,9 +77,10 @@ ID rules:
 - IDs are unique within a map. The same ID in two maps is allowed only for the
   shared `nav.*` IDs and for IDs a layout table assigns to several maps on purpose.
 
-`keys.Registry` (built by reflection over `AppKeys`) indexes
-`id -> []BindingRef{Map, Field}` and exposes lookup, iteration, and key rewriting
-(`SetKeys` through a pointer into `AppKeys`).
+`(*AppKeys).Walk(fn func(Ref, *key.Binding))` visits every tagged binding by
+reflection (`Ref{Map, Field, ID}`), handing out a pointer into `AppKeys` so
+callers can rewrite keys with `SetKeys`. `(*AppKeys).Lookup(id)` returns every
+binding with that ID. This is the whole registry; there is no separate index.
 
 ### Key notation inside `WithKeys`
 
@@ -83,7 +88,7 @@ ID rules:
 |---|---|
 | `j`, `ctrl+d`, `enter` | Direct key, matched by `key.Matches` as today. |
 | `@filter.open` | Action token (exactly one per binding, always present). |
-| `<leader>fo` | Leader sequence. After `<leader>`, each rune is one key; named keys are written in angle brackets (`<tab>`, `<ctrl+x>`). Never equals a real `msg.String()`, so `key.Matches` ignores it. |
+| `<leader>fo` | Leader sequence. After `<leader>`, each rune is one key; named keys are written in angle brackets (`<tab>`, `<space>`, `<ctrl+x>`), and the literal `<` and `>` keys are `<lt>` and `<gt>`, as in vim. Never equals a real `msg.String()`, so `key.Matches` ignores it. |
 | `gg` | Two-key `g` prefix sequence (the only non-leader sequence). |
 
 ### Sequence router (phase 3)
@@ -99,10 +104,14 @@ type seqState struct {
 }
 ```
 
-The router runs in `handleKeyPress` after every modal early-return and after the
-in-view text-input guards (list filtering, board search, history search,
-memories search, time-travel input). The leader is therefore inactive in modals
-and in text input, so `space` still toggles items in pickers.
+The router runs in `handleKeyPress` right after the modal early-returns and
+before the global chord layer (`?`, refresh, ...), so a key typed mid-sequence
+always belongs to the sequence. It runs only when `m.activeModal == ModalNone`
+and `!m.inTextInput()` (list filtering, board search, history search, memories
+search, time-travel input). The leader is therefore inactive in modals and in
+text input, so `space` still toggles items in pickers. Keys the router consumes
+set `m.swallowKey`, which stops `Update` from forwarding them to the bubbles
+list afterwards.
 
 1. Idle, key == leader: start a leader sequence and schedule
    `tea.Tick(whichKeyDelay, whichKeyMsg{gen})`. Delay 0 shows the panel at once.
@@ -111,9 +120,11 @@ and in text input, so `space` still toggles items in pickers.
 4. Pending, other key: walk the active leader tree (built from the Global map
    plus the active view map's enabled bindings).
    - Group: descend. If the panel is visible it stays visible; otherwise reschedule the tick.
-   - Leaf: reset, then return `m.dispatchAction(id)`, which re-enters
-     `handleKeyPress` with `@id`.
-   - Miss: reset and show status `SPC f z is not bound` (`g` sequences cancel silently).
+   - Leaf: reset, then return `actionCmd(id)`, which emits a key press
+     carrying `@id`.
+   - Miss: reset and show status `SPC f z is not bound`; the key is consumed.
+     A `g` sequence miss resets silently and the second key is then handled
+     normally (so `g` then `j` still moves down).
 5. `whichKeyMsg{gen}` with a matching gen and a sequence still pending: set
    `showPanel = true`.
 
@@ -180,11 +191,13 @@ wins. A config leader sequence that is a prefix of a default group makes that
 group's entries unreachable, and each one is recorded as shadowed.
 
 Plugin keys lose to every bt binding in the plugin's view (today's `btBindsKeyIn`
-rule). Each loss is recorded as a shadow `{plugin.<name>.<action>, K, <bt id>}`.
+rule). Plugin actions depend on the selected bead, so plugin shadows are
+computed when `?` renders, for the current view and selection.
 
-Reporting: on startup, if any shadows or config errors exist, a status line
+Reporting: on startup, if config produced any shadows or errors, a status line
 reads `keys: 2 shadowed, 1 config error - see ?`. The `?` overlay has a
-"Shadowed / errors" group listing each, struck through.
+"Shadowed / errors" group listing config shadows, config errors, and the
+current view's shadowed plugin keys, struck through.
 
 ## Default layout (phase 3)
 
@@ -196,12 +209,13 @@ Active in every non-modal view unless noted.
 |---|---|---|
 | `j k` `↓ ↑` | `nav.down` `nav.up` | move |
 | `h l` `← →` | per view | left/right: list ↔ details pane, board column, tree collapse/expand, insights panel |
-| `gg` `home` / `G` `end` | `nav.top` / `nav.bottom` | top / bottom (every view; replaces `g`, `0`-only and `home`-only variants) |
+| `gg` `home` / `G` `end` | `nav.top` / `nav.bottom` | top / bottom in every cursor view (list, board, tree, epics, flow, label dashboard); replaces the single-`g` variants. A lone `g` never acts. |
 | `ctrl+d` `pgdown` / `ctrl+u` `pgup` | `nav.page_down` / `nav.page_up` | page |
 | `enter` | per view | open / drill in |
 | `tab` | per view | cycle pane focus |
 | `esc` | `app.cancel` | cancel / back one level; no-op at base list |
-| `q` `ctrl+c` | `app.quit` | quit immediately (`q` only when no text input has focus; `ctrl+c` always) |
+| `q` | `app.quit` | quit immediately when no text input has focus (also from modals) |
+| `ctrl+c` | `app.force_quit` | quit, always (even while typing) |
 | `/` | `app.search` | search (list filter; board/history/memories search; bounce from details) |
 | `n` `N` | per view | next / prev match where search exists |
 | `:` | `app.bql` | BQL query |
@@ -250,7 +264,7 @@ Active in every non-modal view unless noted.
 | `SPC p h` | `project.home_all` | home ↔ all projects | `W` | Global |
 | `SPC p w` | `project.wisps` | toggle wisps | `ctrl+w` | Global |
 | `SPC w h` / `SPC w l` | `window.focus_left` / `window.focus_right` | focus pane left/right | (`←`/`→`) | ListNormal |
-| `SPC w <` / `SPC w >` | `window.shrink` / `window.grow` | resize list pane | `<` `>` | ListNormal |
+| `SPC w <` / `SPC w >` (`<leader>w<lt>` / `<leader>w<gt>`) | `window.shrink` / `window.grow` | resize list pane | `<` `>` | ListNormal |
 | `SPC w 1` / `SPC w 2` | `window.fullscreen_list` / `window.fullscreen_details` | fullscreen pane | `2` `3` | ListNormal |
 | `SPC w d` | `window.debug_dims` | toggle dimension chip | `ctrl+p` (hidden) | Global |
 | `SPC n n` | `notify.notifications` | notifications | `1` | Global |
@@ -264,7 +278,7 @@ Active in every non-modal view unless noted.
 | `SPC ,` | `app.settings` | settings menu | (esc at base) | Global |
 | `SPC T` | `app.tutorial` | tutorial | `` ` `` | Global |
 | `SPC U` | `app.self_update` | self-update | `U` | ListNormal |
-| `SPC q` | `app.quit` | quit | `q` | Global (second key on the quit binding) |
+| `SPC q` | `app.quit` | quit | `q` | Global (leader key on the `app.quit` binding) |
 
 Group labels: `v` view, `f` filter, `s` sort, `b` bead, `p` project, `w`
 window, `n` notify, `/` search.
@@ -298,10 +312,12 @@ Modals keep their own letters; the leader is inactive inside them. Changes:
 - `q` quits the app from any modal without text focus (alerts, notifications,
   pickers in nav mode, cass, help, settings, settings menu, confirm, agent prompt,
   update, label drilldown/health/graph, epic card, field select, field picker,
-  plugin select). Close keys that duplicated a view key (`l` label picker, `'`
-  recipes, `w` repo picker, `V` cass, `!`/`1` alerts toggling closed, `?` help,
-  `g` label graph, `d`/`h` label modals) are removed; `esc` closes. `tab` still
-  switches the alerts/notifications tabs.
+  plugin select). The plugin prompt treats `q` like `ctrl+c` (it answers the
+  plugin, then quits). Close keys that duplicated a view key (`l` label picker,
+  `'` recipes, `w` repo picker, `V` cass, `!`/`1` alerts toggling closed, `g`
+  label graph, `d`/`h` label modals) are removed; `esc` closes. `?`/`f1` still
+  toggle the help overlay closed. `tab` still switches the alerts/notifications
+  tabs.
 - The quit-confirm modal is no longer reachable from `q`/`esc`.
 
 ## Phases
@@ -309,7 +325,7 @@ Modals keep their own letters; the leader is inactive inside them. Changes:
 Each phase is one child bead, lands on `task/bt-i4k`, and passes `go build ./...`,
 `go vet ./...`, `go test ./...` before the next starts.
 
-1. **bt-i4k.1 Action registry.** Tags, tokens, `keys.Registry`, `Model.dispatchAction`. No behavior change.
+1. **bt-i4k.1 Action registry.** Tags, tokens, `AppKeys.Walk`, `actionCmd`. No behavior change.
 2. **bt-i4k.2 Raw-string migration.** New maps for every raw handler in the appendix; no behavior change.
 3. **bt-i4k.3 Leader and layout.** Sequence router, which-key panel, default layout tables above, `q`/`esc` semantics, `e` beyond the list, tests rewritten to the new keys.
 4. **bt-i4k.4 Help consolidation.** `?` local-only, sidebar removal, footer trim, plugin keys in `?`, tutorial/README/docs sweep, ADR-004 status note.
