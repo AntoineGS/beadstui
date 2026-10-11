@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/seanmartinsmith/beadstui/internal/bdexec"
 	"github.com/seanmartinsmith/beadstui/internal/source"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
@@ -445,6 +447,17 @@ func TestMemoriesLoadCmd_DogfoodLiveProject(t *testing.T) {
 	repoRoot := filepath.Join(cwd, "..", "..")
 	if _, err := os.Stat(filepath.Join(repoRoot, ".beads")); err != nil {
 		t.Skip("no .beads/ found at the repo root; not running inside a live bt checkout")
+	}
+	// The check needs memories to exist. A store with none (a contributor's
+	// own database, a fresh clone) cannot prove the wiring, so ask bd directly
+	// and skip only when bd itself has nothing: a loader that drops real
+	// memories still fails below.
+	direct := bdexec.Run(context.Background(), repoRoot, "memories", "--json")
+	if direct.Err != nil {
+		t.Skipf("bd memories failed in repoRoot=%s; cannot check the loader against it: %v", repoRoot, direct.Err)
+	}
+	if mems, err := source.ParseMemoriesJSON([]byte(direct.Stdout), source.Origin{}); err != nil || len(mems) == 0 {
+		t.Skipf("bd reports no memories for repoRoot=%s (err=%v); nothing for the loader to find", repoRoot, err)
 	}
 
 	msg := LoadMemoriesCmd(repoRoot)()

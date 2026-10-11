@@ -22,6 +22,18 @@ func TestMain(m *testing.M) {
 	os.Setenv("BT_NO_BROWSER", "1")
 	os.Setenv("BT_TEST_MODE", "1")
 
+	// Keep the developer's ~/.config/bt/theme.yaml and an exported BT_THEME
+	// out of every test (bt-xlo). LoadTheme layers both over the palette under
+	// test, so a user theme made distinct palettes resolve to the same colors.
+	// Tests that need a user theme still write one via withThemeConfigHome.
+	os.Unsetenv("BT_THEME")
+	themeHome, err := os.MkdirTemp("", "bt-theme-home-test-*")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pkg/ui TestMain: failed to create isolated theme home: %v\n", err)
+		os.Exit(1)
+	}
+	themeConfigHome = themeHome
+
 	realPath, pathErr := projects.DefaultRegistryPath()
 
 	var before []byte
@@ -50,6 +62,7 @@ func TestMain(m *testing.M) {
 
 	code := m.Run()
 
+	_ = os.RemoveAll(themeHome)
 	if isolatedHere {
 		_ = os.Remove(tmpPath)
 	}
