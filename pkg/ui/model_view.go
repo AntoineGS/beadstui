@@ -395,6 +395,12 @@ func (m Model) View() tea.View {
 		body = OverlayBottomRight(body, bubble, m.width, bodyRows, toastBubbleMarginRight, toastBubbleMarginBottom)
 	}
 
+	// which-key panel (bt-i4k): a non-dim, full-width strip anchored just
+	// above the footer, drawn over the toast while a sequence is pending.
+	if panel := m.renderWhichKey(); panel != "" {
+		body = OverlayBottomRight(body, panel, m.width, bodyRows, 0, 0)
+	}
+
 	// Ensure the final output fits exactly in the terminal height
 	// This prevents the header from being pushed off the top
 	finalStyle := lipgloss.NewStyle().

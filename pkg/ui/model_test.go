@@ -406,8 +406,9 @@ func TestViewSwitchClearsOthers(t *testing.T) {
 		t.Fatal("IsBoardView should be true after 'b'")
 	}
 
-	// Switch to graph view - board should be cleared
-	newM, _ = m.Update(keyMsg("g"))
+	// Switch to graph view - board should be cleared. On the board a lone g
+	// starts the gg sequence (bt-i4k), so switch through the action token.
+	newM, _ = m.Update(keyMsg("@view.graph"))
 	m = newM.(ui.Model)
 
 	if !m.IsGraphView() {

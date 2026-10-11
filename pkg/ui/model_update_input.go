@@ -635,6 +635,13 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m.handlePluginPromptKeys(msg)
 	}
 
+	// Leader and gg sequences (bt-i4k): a key typed mid-sequence belongs to
+	// the sequence, so the router runs before every global key.
+	var handled bool
+	if m, cmd, handled = m.routeSequence(msg); handled {
+		return m, cmd
+	}
+
 	// Handle help overlay toggle (? or F1)
 	if key.Matches(msg, m.keys.Global.Help) && m.list.FilterState() != list.Filtering {
 		if m.activeModal == ModalHelp {

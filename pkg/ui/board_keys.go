@@ -17,8 +17,7 @@ import (
 // letters reach board.AppendSearchChar instead of firing global hotkeys (the
 // letter-leak class fixed in bt-s2xpy; originally flagged in bt-ift6.3).
 //
-// gg-combo (IsWaitingForG) remains a conditional inside the normal-mode
-// branch -- single keystroke, not a dwellable sub-state, per Decision 7.
+// gg arrives as the nav.top token from the sequence router (bt-i4k).
 func (m Model) handleBoardKeys(msg tea.KeyMsg) Model {
 	// ===========================================================================
 	// Search mode input handling (bv-yg39)
@@ -50,18 +49,7 @@ func (m Model) handleBoardKeys(msg tea.KeyMsg) Model {
 		return m
 	}
 
-	// ===========================================================================
-	// Vim 'gg' combo handling (bv-yg39)
-	// ===========================================================================
 	kn := m.keys.BoardNormal
-	if m.board.IsWaitingForG() {
-		m.board.ClearWaitingForG()
-		if key.Matches(msg, kn.GotoTop) {
-			m.board.MoveToTop()
-			return m
-		}
-		// Not a second 'g', fall through to normal handling
-	}
 
 	// ===========================================================================
 	// Normal key handling (bv-yg39 enhanced)
@@ -101,10 +89,6 @@ func (m Model) handleBoardKeys(msg tea.KeyMsg) Model {
 	case key.Matches(msg, kn.JumpCol4):
 		m.board.JumpToColumn(ColClosed)
 
-	// Vim-style positional nav
-	case key.Matches(msg, kn.GotoTop):
-		// First 'g' -- wait for second to complete gg combo
-		m.board.SetWaitingForG()
 	case key.Matches(msg, kn.JumpColEnd):
 		m.board.MoveToBottom()
 

@@ -50,9 +50,6 @@ type BoardModel struct {
 	searchMatches []searchMatch // Cards matching current query
 	searchCursor  int           // Current match index
 
-	// Vim key combo tracking (bv-yg39)
-	waitingForG bool // True if we're waiting for second 'g' in 'gg' combo
-
 	// Empty column visibility override (bv-tf6j)
 	// nil = auto (status shows all, priority/type hide empty)
 	// true = always show all columns
@@ -837,15 +834,6 @@ func (b *BoardModel) JumpToLastColumn() {
 		b.focusedCol = len(b.activeColIdx) - 1
 	}
 }
-
-// ClearWaitingForG clears the gg combo state
-func (b *BoardModel) ClearWaitingForG() { b.waitingForG = false }
-
-// SetWaitingForG sets the gg combo state
-func (b *BoardModel) SetWaitingForG() { b.waitingForG = true }
-
-// IsWaitingForG returns whether we're waiting for second g
-func (b *BoardModel) IsWaitingForG() bool { return b.waitingForG }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Search functionality (bv-yg39)
