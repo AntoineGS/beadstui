@@ -207,6 +207,7 @@ func (m *Model) SetPluginHost(h *plugin.Host) {
 	m.pluginFields = h.FieldPrefixes
 	m.pluginActions = h
 	m.pluginStatuses = h.Statuses
+	m.pluginLaneFields = h.LaneFields
 	h.Register(m.slotRegistry)
 }
 

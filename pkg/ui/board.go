@@ -449,14 +449,7 @@ func (b *BoardModel) SetSwimLaneMode(mode SwimLaneMode) {
 	if mode == cur {
 		return
 	}
-	known := false
-	for _, m := range b.modeList() {
-		if m.Key == mode {
-			known = true
-			break
-		}
-	}
-	if !known {
+	if !b.hasMode(mode) {
 		return
 	}
 
@@ -464,6 +457,11 @@ func (b *BoardModel) SetSwimLaneMode(mode SwimLaneMode) {
 		b.cursors = make(map[SwimLaneMode]boardCursor)
 	}
 	b.cursors[cur] = boardCursor{lane: b.actualFocusedCol(), selectedRow: b.selectedRow}
+	b.enterMode(mode)
+}
+
+// enterMode makes mode active with the cursor last saved for it.
+func (b *BoardModel) enterMode(mode SwimLaneMode) {
 	saved := b.cursors[mode]
 	delete(b.cursors, mode)
 
@@ -471,6 +469,73 @@ func (b *BoardModel) SetSwimLaneMode(mode SwimLaneMode) {
 	b.selectedRow = saved.selectedRow
 	b.regroupIssues()
 	b.JumpToColumn(saved.lane)
+}
+
+// hasMode reports whether key is one of the board's modes.
+func (b *BoardModel) hasMode(key SwimLaneMode) bool {
+	for _, m := range b.modeList() {
+		if m.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+// isBuiltinMode reports whether key is a built-in mode.
+func isBuiltinMode(key SwimLaneMode) bool {
+	for _, m := range builtinBoardModes {
+		if m.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+// SetExtraModes sets the modes cycled after the built-in ones, e.g. one per
+// plugin field. When the active mode is gone the board falls back to the
+// default mode; when it is an extra mode its lanes are rebuilt.
+func (b *BoardModel) SetExtraModes(extra []BoardMode) {
+	if len(extra) == 0 {
+		b.modes = nil
+	} else {
+		b.modes = append(append([]BoardMode(nil), builtinBoardModes...), extra...)
+	}
+	for key := range b.cursors {
+		if !b.hasMode(key) {
+			delete(b.cursors, key)
+		}
+	}
+	switch {
+	case !b.hasMode(b.swimLaneMode):
+		b.enterMode(SwimByStatus)
+	case !isBuiltinMode(b.swimLaneMode):
+		b.RefreshLanes()
+	}
+}
+
+// RefreshLanes regroups the active mode's lanes after the values it groups
+// by changed, keeping the selected card selected and the search results
+// current. Built-in modes group only on issue data, so it does nothing for
+// them.
+func (b *BoardModel) RefreshLanes() {
+	if isBuiltinMode(b.mode().Key) {
+		return
+	}
+	var selectedID string
+	if sel := b.SelectedIssue(); sel != nil {
+		selectedID = sel.ID
+	}
+	b.columns = b.groupColumns()
+	b.clampSelection()
+	b.updateActiveColumns()
+	b.SelectIssueByID(selectedID)
+	if b.searchQuery != "" {
+		b.searchMatches = b.findSearchMatches()
+		if b.searchCursor >= len(b.searchMatches) {
+			b.searchCursor = 0
+		}
+	}
+	b.lastDetailID = ""
 }
 
 // groupColumns returns the active mode's lanes, from the snapshot cache
@@ -841,24 +906,30 @@ func (b *BoardModel) BackspaceSearch() {
 
 // updateSearchMatches finds all cards matching the search query
 func (b *BoardModel) updateSearchMatches() {
-	b.searchMatches = nil
+	b.searchMatches = b.findSearchMatches()
 	b.searchCursor = 0
-	if b.searchQuery == "" {
-		return
+	if len(b.searchMatches) > 0 {
+		b.jumpToMatch(0)
 	}
+}
+
+// findSearchMatches returns the positions of the cards matching the query.
+func (b *BoardModel) findSearchMatches() []searchMatch {
+	if b.searchQuery == "" {
+		return nil
+	}
+	var matches []searchMatch
 	query := strings.ToLower(b.searchQuery)
 	for colIdx, issues := range b.columns {
 		for rowIdx, issue := range issues {
 			idLower := strings.ToLower(issue.ID)
 			titleLower := strings.ToLower(issue.Title)
 			if strings.Contains(idLower, query) || strings.Contains(titleLower, query) {
-				b.searchMatches = append(b.searchMatches, searchMatch{col: colIdx, row: rowIdx})
+				matches = append(matches, searchMatch{col: colIdx, row: rowIdx})
 			}
 		}
 	}
-	if len(b.searchMatches) > 0 {
-		b.jumpToMatch(0)
-	}
+	return matches
 }
 
 // jumpToMatch navigates to a specific match
@@ -1234,7 +1305,10 @@ func (b BoardModel) View(width, height int) string {
 		// - Medium (100-140): Count + P0/P1 counts
 		// - Wide (>140): Full stats including oldest age
 		var headerText string
-		baseHeader := fmt.Sprintf("%s %s (%d)", columnEmoji[colIdx], columnTitles[colIdx], issueCount)
+		baseHeader := fmt.Sprintf("%s (%d)", columnTitles[colIdx], issueCount)
+		if columnEmoji[colIdx] != "" {
+			baseHeader = columnEmoji[colIdx] + " " + baseHeader
+		}
 
 		if width < 100 {
 			// Narrow: just the base header

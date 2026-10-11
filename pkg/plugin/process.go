@@ -76,7 +76,7 @@ func (p *proc) setState(state string) {
 	p.mu.Lock()
 	p.state = state
 	p.mu.Unlock()
-	if state == stateActive || state == stateFailed {
+	if state == stateActive || state == stateFailed || state == stateStarting {
 		p.h.emit(StatusMsg{Status: p.status()})
 	}
 }

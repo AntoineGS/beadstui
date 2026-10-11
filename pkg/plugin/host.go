@@ -108,7 +108,8 @@ type ToastMsg struct {
 	Toast  Toast
 }
 
-// StatusMsg reports a plugin becoming active or failing for good.
+// StatusMsg reports a plugin becoming active, stopping to restart (state
+// starting), or failing for good.
 type StatusMsg struct{ Status Status }
 
 // PromptMsg asks the UI to show a confirm or select prompt for a running
@@ -342,6 +343,17 @@ func (h *Host) FieldPrefixes() []string {
 	}
 	return out
 }
+
+// LaneField is an active plugin field the board can group by.
+type LaneField struct {
+	Name   string       // "<plugin>.<field>", as in BQL
+	Label  string       // the field's label
+	Values []FieldValue // values with lane=true, in manifest order
+}
+
+// LaneFields returns the fields of every active plugin, in config then
+// manifest order.
+func (h *Host) LaneFields() []LaneField { return h.store.laneFields() }
 
 // Statuses reports every configured plugin, in config order.
 func (h *Host) Statuses() []Status {

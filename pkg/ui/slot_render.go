@@ -47,22 +47,25 @@ func badgeStyle(b slots.Badge) lipgloss.Style {
 	if b.Style != nil {
 		return *b.Style
 	}
-	var fg color.Color
-	switch b.Tone {
-	case slots.ToneAccent:
-		fg = ColorPrimary
-	case slots.ToneOK:
-		fg = ColorSuccess
-	case slots.ToneWarn:
-		fg = ColorWarning
-	case slots.ToneError:
-		fg = ColorDanger
-	default:
-		fg = ColorMuted
-	}
 	// Provider tones carry domain meaning; inherit text attributes without
 	// turning an unfilled tone indicator into a general filled badge.
-	return ActiveTextStyles.Badge.UnsetBackground().Foreground(fg)
+	return ActiveTextStyles.Badge.UnsetBackground().Foreground(toneColor(b.Tone))
+}
+
+// toneColor maps a slot tone to its theme colour.
+func toneColor(t slots.Tone) color.Color {
+	switch t {
+	case slots.ToneAccent:
+		return ColorPrimary
+	case slots.ToneOK:
+		return ColorSuccess
+	case slots.ToneWarn:
+		return ColorWarning
+	case slots.ToneError:
+		return ColorDanger
+	default:
+		return ColorMuted
+	}
 }
 
 // compactAge formats a duration for a badge: "<1m", "4m", "3h", "2d".
