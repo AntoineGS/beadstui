@@ -814,6 +814,14 @@ func (m Model) viewKeyMap() help.KeyMap {
 // active, the truthful help is ListSearchKeys (apply / cancel / result-nav),
 // otherwise ListNormalKeys (the full action set).
 func (m Model) viewSpecificKeyMap() help.KeyMap {
+	km, _ := m.activeViewMap().(help.KeyMap)
+	return km
+}
+
+// activeViewMap returns the keys map struct value for m.mode's current
+// sub-state, or nil. It is the one source for both viewSpecificKeyMap and the
+// sequence router's seqMaps.
+func (m Model) activeViewMap() any {
 	switch m.mode {
 	case ViewList:
 		if m.list.FilterState() == list.Filtering {
