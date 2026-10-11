@@ -213,6 +213,9 @@ func (m Model) shouldDeferRefresh() bool {
 // openModal sets the active modal, closing any previously open modal.
 func (m *Model) openModal(t ModalType) {
 	m.activeModal = t
+	if m.seq.pending() {
+		m.resetSeq()
+	}
 	if t == ModalHelp {
 		m.helpLegend = false
 		m.helpScroll = 0

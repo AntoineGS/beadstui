@@ -3,6 +3,7 @@ package ui
 import (
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 
@@ -35,41 +36,8 @@ type whichKeyMsg struct{ gen int }
 // active non-modal view map.
 func (m Model) seqMaps() []any {
 	maps := []any{m.keys.Global}
-	switch m.mode {
-	case ViewList:
-		if m.list.FilterState() == list.Filtering {
-			maps = append(maps, m.keys.ListSearch)
-		} else {
-			maps = append(maps, m.keys.ListNormal)
-		}
-	case ViewTree:
-		maps = append(maps, m.keys.Tree)
-	case ViewBoard:
-		if m.board.IsSearchMode() {
-			maps = append(maps, m.keys.BoardSearch)
-		} else {
-			maps = append(maps, m.keys.BoardNormal)
-		}
-	case ViewGraph:
-		maps = append(maps, m.keys.Graph)
-	case ViewInsights:
-		maps = append(maps, m.keys.Insights)
-	case ViewActionable:
-		maps = append(maps, m.keys.Actionable)
-	case ViewFlowMatrix:
-		maps = append(maps, m.keys.FlowMatrix)
-	case ViewEpics:
-		maps = append(maps, m.keys.Epics)
-	case ViewLabelDashboard:
-		maps = append(maps, m.keys.LabelDashboard)
-	case ViewAttention:
-		maps = append(maps, m.keys.Attention)
-	case ViewMemories:
-		if m.memories.IsSearchActive() {
-			maps = append(maps, m.keys.MemoriesSearch)
-		} else {
-			maps = append(maps, m.keys.MemoriesNormal)
-		}
+	if vm := m.activeViewMap(); vm != nil {
+		maps = append(maps, vm)
 	}
 	return maps
 }
@@ -165,6 +133,12 @@ func (m Model) routeSequence(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 		return m, m.whichKeyTick(), true
 	}
 
+	if key.Matches(msg, m.keys.Global.Quit) {
+		// ctrl+c quits from anywhere, mid-sequence included.
+		m.resetSeq()
+		return m, nil, false
+	}
+
 	switch k {
 	case "esc":
 		m.resetSeq()
@@ -187,6 +161,9 @@ func (m Model) routeSequence(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 			}
 		}
 		m.swallowKey = true
+		if m.seq.prefix == keys.LeaderPrefix {
+			return m, m.whichKeyTick(), true
+		}
 		return m, nil, true
 	}
 

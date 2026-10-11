@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 )
 
 var (
@@ -153,6 +154,73 @@ func TestWhichKey_Debounced(t *testing.T) {
 	shown, _ := m.Update(tick)
 	if !shown.(Model).seq.showPanel {
 		t.Error("matching tick did not show the panel")
+	}
+}
+
+func TestWhichKey_BackspaceReschedules(t *testing.T) {
+	m := leaderModel(t)
+	m.whichKeyDelay = time.Millisecond
+	m, _, _ = m.routeSequence(keySpace)
+	m, _, _ = m.routeSequence(runeKey('v'))
+	m, cmd, handled := m.routeSequence(keyBackspace)
+	if !handled || cmd == nil {
+		t.Fatalf("backspace: handled=%v cmd=%v, want handled with a tick", handled, cmd)
+	}
+	tick, ok := cmd().(whichKeyMsg)
+	if !ok || tick.gen != m.seq.gen {
+		t.Fatalf("tick = %#v, want whichKeyMsg{gen: %d}", tick, m.seq.gen)
+	}
+	shown, _ := m.Update(tick)
+	if !shown.(Model).seq.showPanel {
+		t.Error("tick after backspace did not show the panel")
+	}
+}
+
+func TestLeader_CtrlCQuitsMidSequence(t *testing.T) {
+	m := runKeys(t, leaderModel(t), keySpace)
+	if !m.seq.pending() {
+		t.Fatal("setup: leader not pending")
+	}
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	quit := false
+	for _, msg := range runMsgs(cmd) {
+		if _, ok := msg.(tea.QuitMsg); ok {
+			quit = true
+		}
+	}
+	if !quit {
+		t.Error("ctrl+c mid-sequence did not quit")
+	}
+	if updated.(Model).seq.pending() {
+		t.Error("sequence still pending after ctrl+c")
+	}
+}
+
+func TestLeader_OpenModalResetsSequence(t *testing.T) {
+	m := leaderModel(t)
+	m.whichKeyDelay = 0
+	m = runKeys(t, m, keySpace)
+	if !m.seq.pending() || !m.seq.showPanel {
+		t.Fatalf("setup: seq = %+v, want pending with panel", m.seq)
+	}
+	m.openModal(ModalHelp)
+	if m.seq.pending() || m.seq.showPanel {
+		t.Errorf("seq = %+v after openModal, want idle", m.seq)
+	}
+}
+
+func TestSeqMaps_History(t *testing.T) {
+	m := actionTestModel(t)
+	m.mode = ViewHistory
+	maps := m.seqMaps()
+	if len(maps) != 2 {
+		t.Fatalf("seqMaps = %d maps, want Global + history", len(maps))
+	}
+	if _, ok := maps[1].(keys.HistoryNormalKeys); !ok {
+		t.Errorf("history map = %T, want keys.HistoryNormalKeys", maps[1])
+	}
+	if _, ok := m.viewSpecificKeyMap().(keys.HistoryNormalKeys); !ok {
+		t.Errorf("viewSpecificKeyMap = %T, want keys.HistoryNormalKeys", m.viewSpecificKeyMap())
 	}
 }
 
