@@ -170,15 +170,16 @@ func TestHandleListKeysFiltersAndTimeTravelPrompt(t *testing.T) {
 	m.isSplitView = false
 	m.SetFilter("all")
 
-	m = m.handleListKeys(tea.KeyPressMsg{Code: 'o', Text: "o"})
+	// The status filters are Global since bt-i4k (SPC f o/c/r).
+	m, _ = m.handleKeyPress(tokenMsg("filter.open"))
 	if m.filter.currentFilter != "open" {
 		t.Fatalf("expected filter 'open', got %s", m.filter.currentFilter)
 	}
-	m = m.handleListKeys(tea.KeyPressMsg{Code: 'c', Text: "c"})
+	m, _ = m.handleKeyPress(tokenMsg("filter.closed"))
 	if m.filter.currentFilter != "closed" {
 		t.Fatalf("expected filter 'closed', got %s", m.filter.currentFilter)
 	}
-	m = m.handleListKeys(tea.KeyPressMsg{Code: 'r', Text: "r"})
+	m, _ = m.handleKeyPress(tokenMsg("filter.ready"))
 	if m.filter.currentFilter != "ready" {
 		t.Fatalf("expected filter 'ready', got %s", m.filter.currentFilter)
 	}
@@ -203,7 +204,7 @@ func TestHandleListKeysFiltersAndTimeTravelPrompt(t *testing.T) {
 
 	// Time-travel prompt toggling
 	m.timeTravelMode = false
-	m = m.handleListKeys(tea.KeyPressMsg{Code: 't', Text: "t"})
+	m = m.handleListKeys(tokenMsg("app.time_travel"))
 	if m.activeModal != ModalTimeTravelInput || m.focused != focusTimeTravelInput {
 		t.Fatalf("time-travel prompt not activated")
 	}
@@ -236,33 +237,33 @@ func TestHandleListKeysSortCycle(t *testing.T) {
 	}
 
 	// Forward: s advances the mode
-	m = m.handleListKeys(tea.KeyPressMsg{Code: 's', Text: "s"})
+	m = m.handleListKeys(tokenMsg("sort.cycle"))
 	forwardOne := m.filter.sortMode
 	if forwardOne == SortDefault {
 		t.Fatalf("s should advance sort mode")
 	}
 
 	// Forward again: lands on a different mode (or wraps cleanly)
-	m = m.handleListKeys(tea.KeyPressMsg{Code: 's', Text: "s"})
+	m = m.handleListKeys(tokenMsg("sort.cycle"))
 	forwardTwo := m.filter.sortMode
 	if forwardTwo == forwardOne {
 		t.Fatalf("second s should advance again, got same mode %v", forwardTwo)
 	}
 
 	// Reverse: S brings us back to forwardOne
-	m = m.handleListKeys(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	m = m.handleListKeys(tokenMsg("sort.cycle_reverse"))
 	if m.filter.sortMode != forwardOne {
 		t.Fatalf("S should reverse to previous mode %v, got %v", forwardOne, m.filter.sortMode)
 	}
 
 	// Reverse again: back to SortDefault
-	m = m.handleListKeys(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	m = m.handleListKeys(tokenMsg("sort.cycle_reverse"))
 	if m.filter.sortMode != SortDefault {
 		t.Fatalf("S should reverse to SortDefault, got %v", m.filter.sortMode)
 	}
 
 	// Reverse past zero: wraps to last mode
-	m = m.handleListKeys(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	m = m.handleListKeys(tokenMsg("sort.cycle_reverse"))
 	if m.filter.sortMode != numSortModes-1 {
 		t.Fatalf("S at SortDefault should wrap to %v, got %v", numSortModes-1, m.filter.sortMode)
 	}
@@ -282,7 +283,7 @@ func TestHandleListKeysTriageRecipe(t *testing.T) {
 	m.isSplitView = false
 
 	// R must not panic regardless of whether a triage recipe is registered.
-	m = m.handleListKeys(tea.KeyPressMsg{Code: 'R', Text: "R"})
+	m = m.handleListKeys(tokenMsg("sort.triage"))
 
 	if r := m.filter.recipeLoader.Get("triage"); r != nil && m.filter.activeRecipe == nil {
 		t.Fatalf("R should set activeRecipe when triage recipe exists")
@@ -377,42 +378,42 @@ func TestViewTogglesGraphBoardInsightsActionable(t *testing.T) {
 	_, _ = m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
 
 	// Graph toggle
-	modelAny, _ := m.Update(tea.KeyPressMsg{Code: 'g', Text: "g"})
+	modelAny, _ := m.Update(tokenMsg("view.graph"))
 	m = modelAny.(Model)
 	if m.mode != ViewGraph || m.focused != focusGraph {
 		t.Fatalf("graph view not activated")
 	}
 
 	// Board toggle
-	modelAny, _ = m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	modelAny, _ = m.Update(tokenMsg("view.board"))
 	m = modelAny.(Model)
 	if m.mode != ViewBoard || m.focused != focusBoard {
 		t.Fatalf("board view not activated")
 	}
 
 	// Insights toggle
-	modelAny, _ = m.Update(tea.KeyPressMsg{Code: 'i', Text: "i"})
+	modelAny, _ = m.Update(tokenMsg("view.insights"))
 	m = modelAny.(Model)
 	if m.mode != ViewInsights || m.focused != focusInsights {
 		t.Fatalf("insights not focused after toggle")
 	}
 
 	// Actionable toggle
-	modelAny, _ = m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
+	modelAny, _ = m.Update(tokenMsg("view.actionable"))
 	m = modelAny.(Model)
 	if m.mode != ViewActionable || m.focused != focusActionable {
 		t.Fatalf("actionable view not activated")
 	}
 
 	// Priority hints toggle
-	modelAny, _ = m.Update(tea.KeyPressMsg{Code: 'p', Text: "p"})
+	modelAny, _ = m.Update(tokenMsg("notify.priority_hints"))
 	m = modelAny.(Model)
 	if !m.ac.showPriorityHints {
-		t.Fatalf("priority hints should toggle on with 'p'")
+		t.Fatalf("priority hints should toggle on with SPC n h")
 	}
 
-	// Recipe picker toggle (' key)
-	modelAny, _ = m.Update(tea.KeyPressMsg{Code: '\'', Text: "'"})
+	// Recipe picker (SPC f R)
+	modelAny, _ = m.Update(tokenMsg("filter.recipes"))
 	m = modelAny.(Model)
 	if m.activeModal != ModalRecipePicker || m.focused != focusRecipePicker {
 		t.Fatalf("recipe picker not opened correctly")

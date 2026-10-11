@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/bql"
 	"github.com/seanmartinsmith/beadstui/pkg/drift"
@@ -350,7 +349,7 @@ func TestLabelPickerCountsFollowStatusFilter(t *testing.T) {
 	if n := len(m.FilteredIssues()); n != 1 {
 		t.Fatalf("list = %v, want only proja-1", idsOf(m.FilteredIssues()))
 	}
-	updated, _ := m.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})
+	updated, _ := m.Update(tokenMsg("filter.labels"))
 	m = updated.(Model)
 	if got := m.labelPicker.labelCounts["tests"]; got != 1 {
 		t.Fatalf("picker tests count = %d, want 1 (matches the list)", got)
@@ -530,7 +529,7 @@ func TestFilterConsistencyMatrix(t *testing.T) {
 								want[l]++
 							}
 						}
-						updated, _ := m.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})
+						updated, _ := m.Update(tokenMsg("filter.labels"))
 						m = updated.(Model)
 						for l, n := range want {
 							if got := m.labelPicker.labelCounts[l]; got != n {

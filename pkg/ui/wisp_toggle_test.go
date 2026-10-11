@@ -88,10 +88,9 @@ func TestWispFiltering(t *testing.T) {
 }
 
 // TestWispToggleDispatch_WorkspaceMode covers bt-8jds: in workspace/global
-// mode, `w` is claimed by the project picker (ProjectsOrWisps), so wisp
-// visibility must be reachable via a different key. Ctrl+W was chosen since
-// `W` is already the live WorkspaceHomeAll ("home / all projects") binding
-// in this exact mode - this test also regression-guards that collision.
+// mode, project.picker (SPC p p) opens the project picker, so wisp
+// visibility is reachable via project.wisps (SPC p w; ctrl+w before bt-i4k).
+// project.home_all (SPC p h) stays separate.
 func TestWispToggleDispatch_WorkspaceMode(t *testing.T) {
 	issues := []model.Issue{
 		{ID: "bt-001", Title: "Normal", Status: model.StatusOpen},
@@ -105,7 +104,7 @@ func TestWispToggleDispatch_WorkspaceMode(t *testing.T) {
 		if m.showWisps {
 			t.Fatalf("precondition: showWisps should start false")
 		}
-		modelAny, _ := m.Update(tea.KeyPressMsg{Code: 'w', Mod: tea.ModCtrl})
+		modelAny, _ := m.Update(tokenMsg("project.wisps"))
 		got := modelAny.(Model)
 		if !got.showWisps {
 			t.Error("ctrl+w should enable wisps in workspace mode")
@@ -114,7 +113,7 @@ func TestWispToggleDispatch_WorkspaceMode(t *testing.T) {
 			t.Error("ctrl+w must not open the project picker")
 		}
 
-		modelAny, _ = got.Update(tea.KeyPressMsg{Code: 'w', Mod: tea.ModCtrl})
+		modelAny, _ = got.Update(tokenMsg("project.wisps"))
 		got = modelAny.(Model)
 		if got.showWisps {
 			t.Error("second ctrl+w should disable wisps again")
@@ -123,7 +122,7 @@ func TestWispToggleDispatch_WorkspaceMode(t *testing.T) {
 
 	t.Run("plain w still opens the project picker, not wisp toggle", func(t *testing.T) {
 		before := m.showWisps
-		modelAny, _ := m.Update(tea.KeyPressMsg{Code: 'w', Text: "w"})
+		modelAny, _ := m.Update(tokenMsg("project.picker"))
 		got := modelAny.(Model)
 		if got.activeModal != ModalRepoPicker {
 			t.Errorf("plain 'w' in workspace mode should open the project picker, got activeModal=%v", got.activeModal)
@@ -136,7 +135,7 @@ func TestWispToggleDispatch_WorkspaceMode(t *testing.T) {
 	t.Run("shift-W still does home/all projects toggle, not wisp toggle", func(t *testing.T) {
 		m.currentProjectDB = "bt"
 		before := m.showWisps
-		modelAny, _ := m.Update(tea.KeyPressMsg{Code: 'W', Text: "W"})
+		modelAny, _ := m.Update(tokenMsg("project.home_all"))
 		got := modelAny.(Model)
 		if got.activeModal == ModalRepoPicker {
 			t.Error("shift-W must not open the project picker")
@@ -165,7 +164,7 @@ func TestWispToggleDispatch_SingleProjectMode(t *testing.T) {
 	// the returned value explicitly rather than relying on outer-scope
 	// mutation across subtests.
 	t.Run("plain w still toggles wisps", func(t *testing.T) {
-		modelAny, _ := m.Update(tea.KeyPressMsg{Code: 'w', Text: "w"})
+		modelAny, _ := m.Update(tokenMsg("project.picker"))
 		got := modelAny.(Model)
 		if !got.showWisps {
 			t.Error("'w' should still toggle wisps on in single-project mode")
@@ -174,7 +173,7 @@ func TestWispToggleDispatch_SingleProjectMode(t *testing.T) {
 	})
 
 	t.Run("ctrl+w also toggles wisps", func(t *testing.T) {
-		modelAny, _ := m.Update(tea.KeyPressMsg{Code: 'w', Mod: tea.ModCtrl})
+		modelAny, _ := m.Update(tokenMsg("project.wisps"))
 		got := modelAny.(Model)
 		if got.showWisps {
 			t.Error("ctrl+w should toggle wisps off after the prior 'w' toggled it on")

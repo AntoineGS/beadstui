@@ -72,7 +72,7 @@ func mixedIssues() []model.Issue {
 func TestStatusFilterChangeMovesCursorToFirstRow(t *testing.T) {
 	m := newSizedModel(t, mixedIssues(), 140, 40)
 	m.list.Select(1)
-	m, _ = sendMsg(m, keyRune('#')) // open -> in_progress: two rows, index 1 still in range
+	m = press(t, m, "space", "f", "s") // open -> in_progress: two rows, index 1 still in range
 	if m.CurrentFilter() != "in_progress" {
 		t.Fatalf("setup: filter = %q, want in_progress", m.CurrentFilter())
 	}

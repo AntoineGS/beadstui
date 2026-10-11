@@ -358,7 +358,7 @@ func (m Model) commitLongformEdit() (Model, tea.Cmd) {
 		m.setFailure(fmt.Sprintf("Edit refused: unknown long-form field %q", field))
 		m.fieldEditTargetID = ""
 		m.closeModal()
-		m.focused = focusList
+		m.focused = m.writeReturnFocus
 		return m, nil
 	}
 

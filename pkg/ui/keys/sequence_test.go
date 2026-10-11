@@ -188,12 +188,29 @@ func TestSeqEntries(t *testing.T) {
 	}
 }
 
-func TestDefaultKeymapHasNoLeaderYet(t *testing.T) {
-	var maps []any
-	for _, m := range allMaps() {
-		maps = append(maps, m)
+// TestDefaultLeaderTrees checks the default layout (bt-i4k.3): Global plus
+// each view map builds a leader tree and a gg tree with no duplicate
+// sequences and no leaf that is also a group, and every top-level group is
+// labeled.
+func TestDefaultLeaderTrees(t *testing.T) {
+	g := NewGlobalKeys()
+	if len(SeqEntries(LeaderPrefix, g)) == 0 {
+		t.Fatal("Global has no leader sequences")
 	}
-	if got := SeqEntries(LeaderPrefix, maps...); len(got) != 0 {
-		t.Errorf("default keymap leader entries = %+v, want none until bt-i4k.3 layout", got)
+	for name, m := range allMaps() {
+		for _, prefix := range []string{LeaderPrefix, gPrefix} {
+			root, errs := BuildSeqTree(prefix, SeqEntries(prefix, g, m), LeaderGroups)
+			for _, err := range errs {
+				t.Errorf("Global+%s %s: %v", name, prefix, err)
+			}
+			if prefix != LeaderPrefix {
+				continue
+			}
+			for _, c := range root.Children {
+				if c.IsGroup() && c.Label == "+group" {
+					t.Errorf("Global+%s: leader group %q has no label", name, c.Key)
+				}
+			}
+		}
 	}
 }

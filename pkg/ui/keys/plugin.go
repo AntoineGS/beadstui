@@ -8,7 +8,8 @@ import "charm.land/bubbles/v2/key"
 //
 // Up/Down field names and Help.Key strings match FieldPickerKeys for the
 // universal-nav consistency test. Cancel (not Esc) avoids that check, like
-// the other pickers.
+// the other pickers. Close (q) quits bt like ctrl+c, answering the plugin
+// first.
 type PluginSelectKeys struct {
 	Up     key.Binding `action:"nav.up"`
 	Down   key.Binding `action:"nav.down"`
@@ -38,7 +39,7 @@ func NewPluginSelectKeys() PluginSelectKeys {
 		),
 		Close: key.NewBinding(
 			key.WithKeys("q"),
-			key.WithHelp("q", "close status"),
+			key.WithHelp("q", "quit"),
 		),
 	}
 }

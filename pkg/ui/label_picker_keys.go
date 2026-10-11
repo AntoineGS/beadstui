@@ -39,11 +39,6 @@ func (m Model) handleLabelPickerNavKeys(msg tea.KeyMsg) Model {
 		m.closeModal()
 		m.focused = focusList
 
-	case key.Matches(msg, kk.Close):
-		// Press the same key that opens it to close (toggle behavior).
-		m.closeModal()
-		m.focused = focusList
-
 	case key.Matches(msg, kk.FocusSearch):
 		// "/" enters search mode. Once search is focused, "/" falls through
 		// to the input so it can be typed literally as part of a query.

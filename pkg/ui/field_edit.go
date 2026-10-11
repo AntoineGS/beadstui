@@ -410,33 +410,35 @@ func styleTextInput(input *textinput.Model, t Theme) {
 // Trigger / commit (mirrors requestClaim/confirmClaim — claim.go).
 // ---------------------------------------------------------------------------
 
-// requestFieldEdit opens the field-select modal for the currently selected
-// bead. Mirrors requestClaim (claim.go): same "no selection" / "write
-// already pending" guards, same double-dispatch refusal (one pending write
-// per issue — bt-oiaj.13 v1 simplification).
+// requestFieldEdit opens the field-select modal for the bead selected in the
+// list, board, tree or epics view (bt-i4k). Mirrors requestClaim (claim.go):
+// same "no selection" / "write already pending" guards, same double-dispatch
+// refusal (one pending write per issue — bt-oiaj.13 v1 simplification).
 func (m *Model) requestFieldEdit() {
-	sel, ok := m.list.SelectedItem().(IssueItem)
-	if !ok {
+	iss := m.selectedIssue()
+	if iss == nil {
 		m.setNotice("No issue selected")
 		return
 	}
-	if _, pending := m.pendingWrites[sel.Issue.ID]; pending {
-		m.setNotice(fmt.Sprintf("write already pending for %s", sel.Issue.ID))
+	if _, pending := m.pendingWrites[iss.ID]; pending {
+		m.setNotice(fmt.Sprintf("write already pending for %s", iss.ID))
 		return
 	}
-	m.fieldEditTargetID = sel.Issue.ID
-	m.fieldSelect = NewFieldSelectModal(sel.Issue.Status, m.theme)
+	m.fieldEditTargetID = iss.ID
+	m.writeReturnFocus = m.focused
+	m.fieldSelect = NewFieldSelectModal(iss.Status, m.theme)
 	m.fieldSelect.SetSize(m.width, m.height-1)
 	m.openModal(ModalFieldSelect)
 	m.focused = focusFieldSelect
 }
 
 // cancelFieldEdit fully closes the field-edit flow (Esc from the
-// field-select hub) — back to the list, matching cancelClaim's shape.
+// field-select hub) — back to the view it opened from, matching
+// cancelClaim's shape.
 func (m *Model) cancelFieldEdit() {
 	m.fieldEditTargetID = ""
 	m.closeModal()
-	m.focused = focusList
+	m.focused = m.writeReturnFocus
 	m.setNotice("Edit cancelled")
 }
 
@@ -460,7 +462,7 @@ func (m Model) openFieldPickerOrInput(field string) (Model, tea.Cmd) {
 		m.setFailure(fmt.Sprintf("Edit %s refused: issue not found in loaded data", m.fieldEditTargetID))
 		m.fieldEditTargetID = ""
 		m.closeModal()
-		m.focused = focusList
+		m.focused = m.writeReturnFocus
 		return m, nil
 	}
 
@@ -552,7 +554,7 @@ func (m Model) commitFieldEdit(field, target string, args []string) (Model, tea.
 	id := m.fieldEditTargetID
 	m.fieldEditTargetID = ""
 	m.closeModal()
-	m.focused = focusList
+	m.focused = m.writeReturnFocus
 	if id == "" {
 		return m, nil
 	}

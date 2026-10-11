@@ -215,7 +215,7 @@ func TestFocusTransitionBoard(t *testing.T) {
 	}
 
 	// Press 'b' to enter board view
-	newM, _ := m.Update(keyMsg("b"))
+	newM, _ := m.Update(keyMsg("@view.board"))
 	m = newM.(ui.Model)
 
 	if m.FocusState() != "board" {
@@ -226,7 +226,7 @@ func TestFocusTransitionBoard(t *testing.T) {
 	}
 
 	// Press 'b' again to exit board view
-	newM, _ = m.Update(keyMsg("b"))
+	newM, _ = m.Update(keyMsg("@view.board"))
 	m = newM.(ui.Model)
 
 	if m.FocusState() != "list" {
@@ -245,7 +245,7 @@ func TestFocusTransitionGraph(t *testing.T) {
 	m := ui.NewModel(issues, nil, "", nil, nil)
 
 	// Press 'g' to enter graph view
-	newM, _ := m.Update(keyMsg("g"))
+	newM, _ := m.Update(keyMsg("@view.graph"))
 	m = newM.(ui.Model)
 
 	if m.FocusState() != "graph" {
@@ -256,7 +256,7 @@ func TestFocusTransitionGraph(t *testing.T) {
 	}
 
 	// Press 'g' again to exit graph view
-	newM, _ = m.Update(keyMsg("g"))
+	newM, _ = m.Update(keyMsg("@view.graph"))
 	m = newM.(ui.Model)
 
 	if m.FocusState() != "list" {
@@ -275,7 +275,7 @@ func TestFocusTransitionActionable(t *testing.T) {
 	m := ui.NewModel(issues, nil, "", nil, nil)
 
 	// Press 'a' to enter actionable view
-	newM, _ := m.Update(keyMsg("a"))
+	newM, _ := m.Update(keyMsg("@view.actionable"))
 	m = newM.(ui.Model)
 
 	if m.FocusState() != "actionable" {
@@ -286,7 +286,7 @@ func TestFocusTransitionActionable(t *testing.T) {
 	}
 
 	// Press 'a' again to exit actionable view
-	newM, _ = m.Update(keyMsg("a"))
+	newM, _ = m.Update(keyMsg("@view.actionable"))
 	m = newM.(ui.Model)
 
 	if m.FocusState() != "list" {
@@ -305,7 +305,7 @@ func TestFocusTransitionInsights(t *testing.T) {
 	m := ui.NewModel(issues, nil, "", nil, nil)
 
 	// Press 'i' to enter insights view
-	newM, _ := m.Update(keyMsg("i"))
+	newM, _ := m.Update(keyMsg("@view.insights"))
 	m = newM.(ui.Model)
 
 	if m.FocusState() != "insights" {
@@ -313,7 +313,7 @@ func TestFocusTransitionInsights(t *testing.T) {
 	}
 
 	// Press 'i' again to exit insights view
-	newM, _ = m.Update(keyMsg("i"))
+	newM, _ = m.Update(keyMsg("@view.insights"))
 	m = newM.(ui.Model)
 
 	if m.FocusState() != "list" {
@@ -329,7 +329,7 @@ func TestFocusTransitionTree(t *testing.T) {
 	m := ui.NewModel(issues, nil, "", nil, nil)
 
 	// Press 'T' to enter tree view
-	newM, _ := m.Update(keyMsg("T"))
+	newM, _ := m.Update(keyMsg("@view.tree"))
 	m = newM.(ui.Model)
 
 	if m.FocusState() != "tree" {
@@ -337,7 +337,7 @@ func TestFocusTransitionTree(t *testing.T) {
 	}
 
 	// Press 'T' again to exit tree view
-	newM, _ = m.Update(keyMsg("T"))
+	newM, _ = m.Update(keyMsg("@view.tree"))
 	m = newM.(ui.Model)
 
 	if m.FocusState() != "list" {
@@ -369,7 +369,7 @@ func TestFocusTransitionHistory(t *testing.T) {
 	m := ui.NewModel(issues, nil, "", nil, nil)
 
 	// Press 'h' to enter history view
-	newM, _ := m.Update(keyMsg("h"))
+	newM, _ := m.Update(keyMsg("@view.history"))
 	m = newM.(ui.Model)
 
 	if m.FocusState() != "history" {
@@ -380,7 +380,7 @@ func TestFocusTransitionHistory(t *testing.T) {
 	}
 
 	// Press 'h' again to exit history view
-	newM, _ = m.Update(keyMsg("h"))
+	newM, _ = m.Update(keyMsg("@view.history"))
 	m = newM.(ui.Model)
 
 	if m.FocusState() != "list" {
@@ -399,7 +399,7 @@ func TestViewSwitchClearsOthers(t *testing.T) {
 	m := ui.NewModel(issues, nil, "", nil, nil)
 
 	// Enter board view
-	newM, _ := m.Update(keyMsg("b"))
+	newM, _ := m.Update(keyMsg("@view.board"))
 	m = newM.(ui.Model)
 
 	if !m.IsBoardView() {
@@ -419,7 +419,7 @@ func TestViewSwitchClearsOthers(t *testing.T) {
 	}
 
 	// Switch to actionable view - graph should be cleared
-	newM, _ = m.Update(keyMsg("a"))
+	newM, _ = m.Update(keyMsg("@view.actionable"))
 	m = newM.(ui.Model)
 
 	if !m.IsActionableView() {
@@ -441,10 +441,11 @@ func TestEscClosesViews(t *testing.T) {
 		enterKey   string
 		expectView string
 	}{
-		{"board", "b", "board"},
-		{"graph", "g", "graph"},
-		{"actionable", "a", "actionable"},
-		{"insights", "i", "insights"},
+		{"board", "@view.board", "board"},
+		{"graph", "@view.graph", "graph"},
+		{"actionable", "@view.actionable", "actionable"},
+		{"insights", "@view.insights", "insights"},
+		{"tree", "@view.tree", "tree"},
 	}
 
 	for _, tt := range tests {
@@ -465,45 +466,6 @@ func TestEscClosesViews(t *testing.T) {
 
 			if m.FocusState() != "list" {
 				t.Errorf("After Esc from %s, focus = %q, want 'list'", tt.name, m.FocusState())
-			}
-		})
-	}
-}
-
-// TestQuitClosesViews verifies 'q' returns to list from various views
-func TestQuitClosesViews(t *testing.T) {
-	issues := []model.Issue{
-		{ID: "1", Title: "Test Issue", Status: model.StatusOpen, Priority: 1},
-	}
-
-	tests := []struct {
-		name       string
-		enterKey   string
-		expectView string
-	}{
-		{"board", "b", "board"},
-		{"graph", "g", "graph"},
-		{"insights", "i", "insights"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m := ui.NewModel(issues, nil, "", nil, nil)
-
-			// Enter the view
-			newM, _ := m.Update(keyMsg(tt.enterKey))
-			m = newM.(ui.Model)
-
-			if m.FocusState() != tt.expectView {
-				t.Fatalf("After %q, focus = %q, want %q", tt.enterKey, m.FocusState(), tt.expectView)
-			}
-
-			// Press 'q' to return to list
-			newM, _ = m.Update(keyMsg("q"))
-			m = newM.(ui.Model)
-
-			if m.FocusState() != "list" {
-				t.Errorf("After 'q' from %s, focus = %q, want 'list'", tt.name, m.FocusState())
 			}
 		})
 	}

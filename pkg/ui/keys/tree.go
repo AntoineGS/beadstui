@@ -24,6 +24,7 @@ type TreeKeys struct {
 	PageUp      key.Binding `action:"nav.page_up"`
 	SyncDetail  key.Binding `action:"tree.sync_detail"`
 	Back        key.Binding `action:"tree.back"`
+	FieldEdit   key.Binding `action:"bead.edit"`
 }
 
 // NewTreeKeys returns the default tree keymap.
@@ -46,16 +47,16 @@ func NewTreeKeys() TreeKeys {
 			key.WithHelp("→/l", "expand / move to child"),
 		),
 		Toggle: key.NewBinding(
-			key.WithKeys("enter", "space"),
-			key.WithHelp("⏎/␣", "toggle expand"),
+			key.WithKeys("enter"),
+			key.WithHelp("⏎", "toggle expand"),
 		),
 		JumpTop: key.NewBinding(
-			key.WithKeys("g"),
-			key.WithHelp("g", "jump to top"),
+			key.WithKeys("home", "gg"),
+			key.WithHelp("gg/home", "jump to top"),
 		),
 		JumpBottom: key.NewBinding(
-			key.WithKeys("G"),
-			key.WithHelp("G", "jump to bottom"),
+			key.WithKeys("G", "end"),
+			key.WithHelp("G/end", "jump to bottom"),
 		),
 		ExpandAll: key.NewBinding(
 			key.WithKeys("o"),
@@ -78,8 +79,12 @@ func NewTreeKeys() TreeKeys {
 			key.WithHelp("⇥", "sync to detail pane"),
 		),
 		Back: key.NewBinding(
-			key.WithKeys("T", "esc"),
-			key.WithHelp("T/esc", "back to list"),
+			key.WithKeys("esc"),
+			key.WithHelp("esc", "back to list"),
+		),
+		FieldEdit: key.NewBinding(
+			key.WithKeys("e"),
+			key.WithHelp("e", "edit field"),
 		),
 	}
 }
@@ -95,7 +100,7 @@ func (k TreeKeys) ShortHelp() []key.Binding {
 func (k TreeKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Collapse, k.Expand, k.JumpTop, k.JumpBottom},
-		{k.Toggle, k.ExpandAll, k.CollapseAll, k.SyncDetail},
+		{k.Toggle, k.ExpandAll, k.CollapseAll, k.SyncDetail, k.FieldEdit},
 		{k.PageDown, k.PageUp},
 		{k.Back},
 	}

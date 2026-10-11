@@ -91,7 +91,7 @@ func NewHelpKeys() HelpKeys {
 		JumpTop:    key.NewBinding(key.WithKeys("home", "g"), key.WithHelp("home/g", "jump to top")),
 		JumpBottom: key.NewBinding(key.WithKeys("G", "end"), key.WithHelp("end/G", "jump to bottom")),
 		Legend:     key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "toggle legend")),
-		Close:      key.NewBinding(key.WithKeys("q", "esc", "?", "f1"), key.WithHelp("q/esc", "close help")),
+		Close:      key.NewBinding(key.WithKeys("esc", "?", "f1"), key.WithHelp("esc", "close help")),
 		Tutorial:   key.NewBinding(key.WithKeys("space"), key.WithHelp("space", "open tutorial")),
 	}
 }
@@ -123,7 +123,7 @@ func NewCassKeys() CassKeys {
 		Up:    key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("↑/k", "move up")),
 		Down:  key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("↓/j", "move down")),
 		Copy:  key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "copy search command")),
-		Close: key.NewBinding(key.WithKeys("V", "esc", "enter", "q"), key.WithHelp("V/esc", "close")),
+		Close: key.NewBinding(key.WithKeys("esc", "enter"), key.WithHelp("esc", "close")),
 	}
 }
 
@@ -158,7 +158,7 @@ func NewAgentPromptKeys() AgentPromptKeys {
 		Yes:     key.NewBinding(key.WithKeys("y", "Y"), key.WithHelp("y", "yes, add it")),
 		No:      key.NewBinding(key.WithKeys("n", "N"), key.WithHelp("n", "no thanks")),
 		Never:   key.NewBinding(key.WithKeys("d", "D"), key.WithHelp("d", "don't ask again")),
-		Dismiss: key.NewBinding(key.WithKeys("esc", "q"), key.WithHelp("esc/q", "dismiss")),
+		Dismiss: key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "dismiss")),
 	}
 }
 
@@ -196,7 +196,7 @@ type TutorialKeys struct {
 // NewTutorialKeys returns the default tutorial keymap.
 func NewTutorialKeys() TutorialKeys {
 	return TutorialKeys{
-		Close:        key.NewBinding(key.WithKeys("esc", "q"), key.WithHelp("esc/q", "close tutorial")),
+		Close:        key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close tutorial")),
 		ToggleTOC:    key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "toggle contents")),
 		SwitchFocus:  key.NewBinding(key.WithKeys("tab"), key.WithHelp("⇥", "switch pane / next page")),
 		NextPage:     key.NewBinding(key.WithKeys("right", "l", "n", "space"), key.WithHelp("→/l", "next page")),
@@ -230,11 +230,10 @@ func (k TutorialKeys) FullHelp() [][]key.Binding {
 }
 
 // UpdateKeys are the bindings for the self-update modal. Confirm and Cancel
-// match the shared confirm keys; Close dismisses the finished modal.
+// match the shared confirm keys; either one dismisses the finished modal.
 type UpdateKeys struct {
 	Confirm key.Binding `action:"update.confirm"`
 	Cancel  key.Binding `action:"update.cancel"`
-	Close   key.Binding `action:"update.close"`
 }
 
 // NewUpdateKeys returns the default self-update modal keymap.
@@ -242,7 +241,6 @@ func NewUpdateKeys() UpdateKeys {
 	return UpdateKeys{
 		Confirm: key.NewBinding(key.WithKeys("enter", "y", "Y"), key.WithHelp("⏎/y", "update")),
 		Cancel:  key.NewBinding(key.WithKeys("esc", "n", "N"), key.WithHelp("esc/n", "cancel")),
-		Close:   key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "close")),
 	}
 }
 
@@ -253,5 +251,5 @@ func (k UpdateKeys) ShortHelp() []key.Binding {
 
 // FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
 func (k UpdateKeys) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.Confirm, k.Cancel, k.Close}}
+	return [][]key.Binding{{k.Confirm, k.Cancel}}
 }

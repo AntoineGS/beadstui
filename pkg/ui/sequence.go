@@ -43,8 +43,16 @@ func (m Model) seqMaps() []any {
 }
 
 // inTextInput reports whether typed keys belong to a text field, where the
-// leader and gg must stay inactive.
+// leader and gg must stay inactive and q is typed rather than quitting.
 func (m Model) inTextInput() bool {
+	switch m.activeModal {
+	case ModalBQLQuery, ModalTimeTravelInput, ModalFieldInput, ModalLongformEdit:
+		return true
+	case ModalLabelPicker:
+		return m.labelPicker.IsSearchFocused()
+	case ModalRepoPicker:
+		return m.repoPicker.IsSearchFocused()
+	}
 	switch {
 	case m.list.FilterState() == list.Filtering:
 		return true

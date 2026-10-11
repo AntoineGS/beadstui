@@ -43,9 +43,8 @@ type HistoryNormalKeys struct {
 	JumpToGraph   key.Binding `action:"history.jump_to_graph"`
 	CycleConf     key.Binding `action:"history.cycle_conf"`
 
-	// Exit (field name ExitHistory, not Back, to avoid the universal-nav
-	// consistency test: history uses "h/esc" while Tree.Back uses "E/esc"
-	// and the test enforces that shared field names carry identical Help.Key)
+	// Exit (field name ExitHistory, not Back, keeps it outside the
+	// universal-nav consistency test)
 	ExitHistory key.Binding `action:"history.exit_history"`
 }
 
@@ -89,7 +88,7 @@ func NewHistoryNormalKeys() HistoryNormalKeys {
 			key.WithHelp("/", "search commits/beads"),
 		),
 		ToggleFileTree: key.NewBinding(
-			key.WithKeys("f", "F"),
+			key.WithKeys("f"),
 			key.WithHelp("f", "toggle file tree"),
 		),
 		CopySHA: key.NewBinding(
@@ -105,16 +104,16 @@ func NewHistoryNormalKeys() HistoryNormalKeys {
 			key.WithHelp("⏎", "jump to bead in list"),
 		),
 		JumpToGraph: key.NewBinding(
-			key.WithKeys("g"),
-			key.WithHelp("g", "jump to graph view for bead"),
+			key.WithKeys("<leader>bg"),
+			key.WithHelp("SPC b g", "jump to graph view for bead"),
 		),
 		CycleConf: key.NewBinding(
 			key.WithKeys("c"),
 			key.WithHelp("c", "cycle confidence filter"),
 		),
 		ExitHistory: key.NewBinding(
-			key.WithKeys("h", "esc"),
-			key.WithHelp("h/esc", "exit history"),
+			key.WithKeys("esc"),
+			key.WithHelp("esc", "exit history"),
 		),
 	}
 }

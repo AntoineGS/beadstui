@@ -29,7 +29,7 @@ func (m Model) handleRepoPickerKeys(msg tea.KeyMsg) Model {
 func (m Model) handleRepoPickerNavKeys(msg tea.KeyMsg) Model {
 	kk := m.keys.RepoPickerNav
 	switch {
-	case key.Matches(msg, kk.Cancel), key.Matches(msg, kk.Close):
+	case key.Matches(msg, kk.Cancel):
 		m.closeModal()
 		m.focused = focusList
 

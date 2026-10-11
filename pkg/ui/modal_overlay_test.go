@@ -424,9 +424,9 @@ func TestAlertsModalOccludesDetailPane(t *testing.T) {
 			longLine := strings.Repeat(sentinel+" ", 60)
 			m.viewport.SetContent(strings.Repeat(longLine+"\n", 40))
 
-			m = pressRune(m, '1')
+			m = openNotifications(m)
 			if m.activeModal != ModalAlerts {
-				t.Fatalf("expected ModalAlerts after pressing '1', got %v", m.activeModal)
+				t.Fatalf("expected ModalAlerts after SPC n n, got %v", m.activeModal)
 			}
 
 			view := m.View().Content
@@ -650,12 +650,11 @@ func TestAlertsModal_ModalBandRowWidthsAreUniform(t *testing.T) {
 			updated, _ := m.Update(tea.WindowSizeMsg{Width: w, Height: height})
 			m = updated.(Model)
 
-			// Open the alerts/notifications modal (key '1' in the seedModel
-			// test harness, matching the existing TestAlertsModalOccludesDetailPane
-			// flow).
-			m = pressRune(m, '1')
+			// Open the alerts/notifications modal (SPC n n, matching the
+			// existing TestAlertsModalOccludesDetailPane flow).
+			m = openNotifications(m)
 			if m.activeModal != ModalAlerts {
-				t.Fatalf("expected ModalAlerts after pressing '1', got %v", m.activeModal)
+				t.Fatalf("expected ModalAlerts after SPC n n, got %v", m.activeModal)
 			}
 
 			view := m.View().Content

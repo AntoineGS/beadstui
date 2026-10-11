@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/seanmartinsmith/beadstui/pkg/plugin"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 )
 
 func TestPluginKeyConflicts(t *testing.T) {
@@ -36,7 +37,8 @@ func TestPluginKeyConflicts(t *testing.T) {
 
 func TestPluginKeyConflictsPartialView(t *testing.T) {
 	// z is bound by the board and epics views only, so the first action
-	// still claims z in the list and tree views.
+	// still claims z in the list and tree views. P is free since the plugin
+	// menu moved to SPC x (bt-i4k).
 	statuses := []plugin.Status{
 		{Name: "a", Actions: []plugin.Action{{Plugin: "a", ID: "one", Key: "z"}}},
 		{Name: "b", Actions: []plugin.Action{{Plugin: "b", ID: "two", Key: "z"}, {Plugin: "b", ID: "menu", Key: "P"}}},
@@ -46,10 +48,17 @@ func TestPluginKeyConflictsPartialView(t *testing.T) {
 		{Plugin: "a", Action: "one", Key: "z", Reason: "bt binds it in board, epics"},
 		{Plugin: "b", Action: "two", Key: "z", Reason: "bt binds it in board, epics"},
 		{Plugin: "b", Action: "two", Key: "z", Reason: "taken by a/one"},
-		{Plugin: "b", Action: "menu", Key: "P", Reason: "bt opens the plugin action menu with it"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("conflicts = %+v\nwant %+v", got, want)
+	}
+
+	// A direct key on the plugin menu binding is reserved from plugins.
+	ks := keys.NewAppKeys()
+	ks.Global.PluginMenu.SetKeys(append(ks.Global.PluginMenu.Keys(), "P")...)
+	got = pluginKeyConflictsIn(ks, statuses[1:])
+	if len(got) == 0 || got[len(got)-1] != (PluginKeyConflict{Plugin: "b", Action: "menu", Key: "P", Reason: "bt opens the plugin action menu with it"}) {
+		t.Fatalf("menu key conflicts = %+v", got)
 	}
 }
 
@@ -68,7 +77,7 @@ var exampleStatuses = []plugin.Status{
 
 func TestPluginStatusOpensWithoutActions(t *testing.T) {
 	m := newPluginStatusModel(t, &fakePluginActions{}, exampleStatuses)
-	m, _ = sendMsg(m, keyRune('P'))
+	m, _ = sendMsg(m, tokenMsg("plugin.menu"))
 	if m.activeModal != ModalPluginPrompt || m.pluginPrompt == nil || m.pluginPrompt.kind != pluginPromptStatus {
 		t.Fatalf("P without actions: modal %v prompt %+v", m.activeModal, m.pluginPrompt)
 	}
@@ -87,7 +96,7 @@ func TestPluginStatusOpensWithoutActions(t *testing.T) {
 func TestPluginStatusFromActionMenu(t *testing.T) {
 	fake := &fakePluginActions{actions: []plugin.Action{dispatchAction}}
 	m := newPluginStatusModel(t, fake, exampleStatuses)
-	m, _ = sendMsg(m, keyRune('P'))
+	m, _ = sendMsg(m, tokenMsg("plugin.menu"))
 	if m.pluginPrompt == nil || m.pluginPrompt.kind != pluginPromptMenu {
 		t.Fatal("P with actions did not open the menu")
 	}
@@ -103,9 +112,9 @@ func TestPluginStatusFromActionMenu(t *testing.T) {
 	if len(fake.calls) != 0 {
 		t.Fatal("status row invoked an action")
 	}
-	m, _ = sendMsg(m, keyRune('q'))
+	m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyEscape})
 	if m.activeModal != ModalNone || m.focused != focusList {
-		t.Fatalf("q did not close: modal %v focus %v", m.activeModal, m.focused)
+		t.Fatalf("esc did not close: modal %v focus %v", m.activeModal, m.focused)
 	}
 }
 
@@ -115,7 +124,7 @@ func TestPluginStatusScrolls(t *testing.T) {
 		statuses = append(statuses, plugin.Status{Name: fmt.Sprintf("p%02d", i), State: "active"})
 	}
 	m := newPluginStatusModel(t, &fakePluginActions{}, statuses)
-	m, _ = sendMsg(m, keyRune('P'))
+	m, _ = sendMsg(m, tokenMsg("plugin.menu"))
 	if out := ansi.Strip(m.renderPluginPrompt()); !strings.Contains(out, "p00") || strings.Contains(out, "p59") {
 		t.Fatalf("first page:\n%s", out)
 	}

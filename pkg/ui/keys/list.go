@@ -10,13 +10,11 @@ import "charm.land/bubbles/v2/key"
 // [v1 — revisit]. Help-only — the bubbles list owns dispatch for arrow /
 // vim nav — but declared so the help surface is truthful.
 //
-// Tab / < / > sit on this Map (not on GlobalKeys) per ADR-004 Decision 1's
-// no-match-and-fall-through rule. Each view that wants split-view detail-
-// toggle / pane-resize declares its own bindings.
-//
-// History (h) is intentionally absent — it lives on GlobalKeys.History
-// because handleListKeys cannot return tea.Cmd and the history switch
-// dispatches an async LoadHistoryCmd (bt-uizm).
+// Tab and the pane-resize keys sit on this Map (not on GlobalKeys) per
+// ADR-004 Decision 1's no-match-and-fall-through rule. Each view that wants
+// split-view detail-toggle / pane-resize declares its own bindings. Their
+// leader sequences (SPC s, SPC b, SPC w, ...) therefore work only in the list
+// view (bt-i4k).
 //
 // Convention (per ADR-004 Decision 1, set by ListKeys in bt-ift6.2):
 // arrows-primary, vim-keys-as-alternate. WithKeys lists arrow first, vim
@@ -30,26 +28,8 @@ type ListNormalKeys struct {
 	PageDown   key.Binding `action:"nav.page_down"`
 	PageUp     key.Binding `action:"nav.page_up"`
 
-	// Filter (recipe-style filters that aren't the bubbles fuzzy filter — those
-	// are entered via / and live in ListSearchKeys' state).
-	//
-	// No FilterAll binding: 'a' is GlobalKeys.Actionable and the global
-	// view-switch shadows any list-scoped 'a' before this handler runs.
-	// The pre-.2 handleListKeys had a dead `case "a"` for FilterAll that
-	// was never reachable; .2 dropped it. Reset-to-all stays reachable by
-	// pressing the active filter key again (o/c/r toggle to "all").
-	FilterOpen   key.Binding `action:"filter.open"`
-	FilterClosed key.Binding `action:"filter.closed"`
-	FilterReady  key.Binding `action:"filter.ready"`
-
-	// CycleStatusFilter cycles the status membership filter through the full
-	// set the lens exposes (all -> open -> in_progress -> blocked -> closed ->
-	// deferred) on one key, the way CycleSort cycles the order (bt-gpvwe,
-	// absorbed by bt-2vshd). It SUPPLEMENTS o/c/r rather than replacing them, so
-	// the derived "ready" filter stays reachable on r and the bt-xron toggle-off
-	// bug is untouched. '#' is uniformly free across every key map (verified) and
-	// is the keybindings audit's Best-tier pick for a new list shortcut.
-	CycleStatusFilter key.Binding `action:"filter.cycle_status"`
+	// The status filters (SPC f ...) live on GlobalKeys so they work from
+	// every view (bt-i4k).
 
 	// Detail & pane
 	Enter            key.Binding `action:"list.open"`
@@ -69,7 +49,7 @@ type ListNormalKeys struct {
 	// Pane fullscreen (bt-530vn): btop-style per-pane maximize toggle,
 	// reachable at any terminal width - distinct from the width-driven
 	// single-pane auto-collapse (bt-9a3wv). Pressing the same key again (or
-	// Esc/q) restores the prior layout; the dispatcher cascade lives in
+	// esc) restores the prior layout; the dispatcher cascade lives in
 	// model_update_input.go, not here.
 	PaneFullscreenIssues  key.Binding `action:"window.fullscreen_list"`
 	PaneFullscreenDetails key.Binding `action:"window.fullscreen_details"`
@@ -96,8 +76,8 @@ type ListNormalKeys struct {
 	SelfUpdate   key.Binding `action:"app.self_update"`
 
 	// Write verbs (bt-oiaj.10). Claim is the first bt write to ship: it shells
-	// out `bd update <id> --claim` behind a confirm. 'm' = "claim it for me"
-	// (the only free letter in "claim"; c/l/a/i are all taken).
+	// out `bd update <id> --claim` behind a confirm (SPC b m, "claim it for
+	// me").
 	Claim key.Binding `action:"bead.claim"`
 }
 
@@ -113,8 +93,8 @@ func NewListNormalKeys() ListNormalKeys {
 			key.WithHelp("↓/j", "move down"),
 		),
 		JumpTop: key.NewBinding(
-			key.WithKeys("home"),
-			key.WithHelp("home", "jump to top"),
+			key.WithKeys("home", "gg"),
+			key.WithHelp("gg/home", "jump to top"),
 		),
 		JumpBottom: key.NewBinding(
 			key.WithKeys("G", "end"),
@@ -129,42 +109,25 @@ func NewListNormalKeys() ListNormalKeys {
 			key.WithHelp("⌃u", "page up"),
 		),
 
-		FilterOpen: key.NewBinding(
-			key.WithKeys("o"),
-			key.WithHelp("o", "open issues / all"),
-		),
-		FilterClosed: key.NewBinding(
-			key.WithKeys("c"),
-			key.WithHelp("c", "closed issues"),
-		),
-		FilterReady: key.NewBinding(
-			key.WithKeys("r"),
-			key.WithHelp("r", "ready (no blockers)"),
-		),
-		CycleStatusFilter: key.NewBinding(
-			key.WithKeys("#"),
-			key.WithHelp("#", "cycle status filter"),
-		),
-
 		Enter: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("⏎", "open detail"),
 		),
 		EpicCard: key.NewBinding(
-			key.WithKeys("F"),
-			key.WithHelp("F", "epic card"),
+			key.WithKeys("<leader>bE"),
+			key.WithHelp("SPC b E", "epic card"),
 		),
 		SplitFocusToggle: key.NewBinding(
 			key.WithKeys("tab"),
 			key.WithHelp("⇥", "toggle split focus"),
 		),
 		PaneRight: key.NewBinding(
-			key.WithKeys("right"),
-			key.WithHelp("→", "go to details"),
+			key.WithKeys("right", "l", "<leader>wl"),
+			key.WithHelp("→/l", "go to details"),
 		),
 		PaneLeft: key.NewBinding(
-			key.WithKeys("left"),
-			key.WithHelp("←", "back to list"),
+			key.WithKeys("left", "h", "<leader>wh"),
+			key.WithHelp("←/h", "back to list"),
 		),
 		DetailPageUp: key.NewBinding(
 			key.WithKeys(","),
@@ -179,38 +142,38 @@ func NewListNormalKeys() ListNormalKeys {
 			key.WithHelp("e", "edit field"),
 		),
 		SplitShrinkLeft: key.NewBinding(
-			key.WithKeys("<"),
-			key.WithHelp("<", "shrink list pane"),
+			key.WithKeys("<leader>w<lt>"),
+			key.WithHelp("SPC w <", "shrink list pane"),
 		),
 		SplitShrinkRight: key.NewBinding(
-			key.WithKeys(">"),
-			key.WithHelp(">", "expand list pane"),
+			key.WithKeys("<leader>w<gt>"),
+			key.WithHelp("SPC w >", "expand list pane"),
 		),
 		PaneFullscreenIssues: key.NewBinding(
-			key.WithKeys("2"),
-			key.WithHelp("2", "fullscreen issues pane"),
+			key.WithKeys("<leader>w1"),
+			key.WithHelp("SPC w 1", "fullscreen issues pane"),
 		),
 		PaneFullscreenDetails: key.NewBinding(
-			key.WithKeys("3"),
-			key.WithHelp("3", "fullscreen details pane"),
+			key.WithKeys("<leader>w2"),
+			key.WithHelp("SPC w 2", "fullscreen details pane"),
 		),
 
 		CycleSort: key.NewBinding(
-			key.WithKeys("s"),
-			key.WithHelp("s", "cycle sort"),
+			key.WithKeys("<leader>ss"),
+			key.WithHelp("SPC s s", "cycle sort"),
 		),
 		CycleSortReverse: key.NewBinding(
-			key.WithKeys("S"),
-			key.WithHelp("S", "cycle sort reverse"),
+			key.WithKeys("<leader>sS"),
+			key.WithHelp("SPC s S", "cycle sort reverse"),
 		),
 		RecipeTriage: key.NewBinding(
-			key.WithKeys("R"),
-			key.WithHelp("R", "triage recipe"),
+			key.WithKeys("<leader>st"),
+			key.WithHelp("SPC s t", "triage recipe"),
 		),
 
 		TimeTravelInput: key.NewBinding(
-			key.WithKeys("t"),
-			key.WithHelp("t", "time travel"),
+			key.WithKeys("<leader>t"),
+			key.WithHelp("SPC t", "time travel"),
 		),
 
 		CopyID: key.NewBinding(
@@ -218,25 +181,25 @@ func NewListNormalKeys() ListNormalKeys {
 			key.WithHelp("y", "copy ID"),
 		),
 		CopyIssue: key.NewBinding(
-			key.WithKeys("C"),
-			key.WithHelp("C", "copy issue"),
+			key.WithKeys("<leader>bY"),
+			key.WithHelp("SPC b Y", "copy issue"),
 		),
 		OpenInEditor: key.NewBinding(
-			key.WithKeys("O"),
-			key.WithHelp("O", "open in editor"),
+			key.WithKeys("<leader>bo"),
+			key.WithHelp("SPC b o", "open in editor"),
 		),
 		CassSession: key.NewBinding(
-			key.WithKeys("V"),
-			key.WithHelp("V", "cass session"),
+			key.WithKeys("<leader>bc"),
+			key.WithHelp("SPC b c", "cass session"),
 		),
 		SelfUpdate: key.NewBinding(
-			key.WithKeys("U"),
-			key.WithHelp("U", "self-update"),
+			key.WithKeys("<leader>U"),
+			key.WithHelp("SPC U", "self-update"),
 		),
 
 		Claim: key.NewBinding(
-			key.WithKeys("m"),
-			key.WithHelp("m", "claim (assign to me)"),
+			key.WithKeys("<leader>bm"),
+			key.WithHelp("SPC b m", "claim (assign to me)"),
 		),
 	}
 }
@@ -245,17 +208,15 @@ func NewListNormalKeys() ListNormalKeys {
 // Most-used / most-orienting first; arrow-nav is intrinsic so it's not
 // repeated here in favor of action-driving bindings.
 func (k ListNormalKeys) ShortHelp() []key.Binding {
-	return []key.Binding{k.Enter, k.FilterOpen, k.FilterClosed, k.FilterReady, k.CycleSort, k.CopyID}
+	return []key.Binding{k.Enter, k.FieldEdit, k.CopyID, k.CycleSort}
 }
 
 // FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
-// Columns: Move / Filter / Detail & Pane / Sort / Time / Actions.
+// Columns: Move / Detail & Pane / Sort / Time / Actions.
 func (k ListNormalKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		// Move
 		{k.Up, k.Down, k.JumpTop, k.JumpBottom, k.PageDown, k.PageUp},
-		// Filter
-		{k.FilterOpen, k.FilterClosed, k.FilterReady, k.CycleStatusFilter},
 		// Detail & pane
 		{k.Enter, k.PaneRight, k.PaneLeft, k.DetailPageUp, k.DetailPageDown, k.EpicCard, k.SplitFocusToggle, k.SplitShrinkLeft, k.SplitShrinkRight, k.PaneFullscreenIssues, k.PaneFullscreenDetails},
 		// Sort / triage
@@ -273,8 +234,8 @@ func (k ListNormalKeys) FullHelp() [][]key.Binding {
 // so the help surface is truthful in that state — Decision 7's principle
 // applied at the within-handler level.
 //
-// Globals that pre-empt the filter-state guard (Ctrl+S search-mode cycle,
-// H hybrid preset, Ctrl+C quit) are intentionally not redeclared here. They
+// Globals that pre-empt the filter-state guard (Ctrl+C quit) are
+// intentionally not redeclared here. They
 // surface via GlobalKeys.FullHelp() concat in help surfaces; redeclaring
 // them would create a drift surface.
 //

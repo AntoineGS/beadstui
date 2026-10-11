@@ -30,9 +30,9 @@ type pluginActionSource interface {
 // so this only fires if a result is lost.
 const pluginActionExpiry = 65 * time.Second
 
-// listPagingKeys are the bubbles list's own paging and jump keys, which the
-// list consumes even though no bt map binds them.
-var listPagingKeys = key.NewBinding(key.WithKeys("b", "u", "d", "f", "g", "G"))
+// listPagingKeys are the bubbles list's own paging keys, which the list
+// consumes even though no bt map binds them.
+var listPagingKeys = key.NewBinding(key.WithKeys("pgup", "pgdown"))
 
 // pluginActionResultMsg carries the outcome of a plugin action back onto the
 // event loop. started identifies the pending entry the action created.
@@ -116,18 +116,11 @@ func btBindsKeyIn(ks keys.AppKeys, view, k string) bool {
 			return true
 		}
 	}
-	switch view {
-	case "list":
-		return bindingsMatch(k, listPagingKeys)
-	case "board":
-		// handleBoardKeys reuses the list's status filter keys.
-		ln := ks.ListNormal
-		return bindingsMatch(k, ln.FilterOpen, ln.FilterClosed, ln.FilterReady, ln.CycleStatusFilter)
-	}
-	return false
+	return view == "list" && bindingsMatch(k, listPagingKeys)
 }
 
-// bindingsMatch is key.Matches for a key string.
+// bindingsMatch is key.Matches for a key string. The g of a gg sequence
+// counts as bound: the sequence router takes it before plugin keys run.
 func bindingsMatch(k string, bs ...key.Binding) bool {
 	for _, b := range bs {
 		if !b.Enabled() {
@@ -135,6 +128,9 @@ func bindingsMatch(k string, bs ...key.Binding) bool {
 		}
 		for _, bk := range b.Keys() {
 			if bk == k {
+				return true
+			}
+			if p, _, ok := keys.ParseSeq(bk); ok && p == k {
 				return true
 			}
 		}

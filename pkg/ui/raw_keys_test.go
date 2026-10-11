@@ -7,7 +7,6 @@ import (
 
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/cass"
-	"github.com/seanmartinsmith/beadstui/pkg/plugin"
 )
 
 // rawKeyCase pins one key handler that used to compare msg.String() directly
@@ -23,7 +22,7 @@ type rawKeyCase struct {
 func rawKeyCases() []rawKeyCase {
 	alertsOpen := func(t *testing.T) Model {
 		m := seedModel()
-		m = pressRune(m, '!')
+		m = openAlerts(m)
 		if m.activeModal != ModalAlerts {
 			t.Fatalf("setup: modal = %v, want ModalAlerts", m.activeModal)
 		}
@@ -31,7 +30,7 @@ func rawKeyCases() []rawKeyCase {
 	}
 	notifsOpen := func(t *testing.T) Model {
 		m := alertsOpen(t)
-		m = pressRune(m, '1')
+		m = pressRune(m, '1') // the tab key inside the modal
 		if m.activeTab != TabNotifications {
 			t.Fatalf("setup: tab = %v, want TabNotifications", m.activeTab)
 		}
@@ -47,7 +46,7 @@ func rawKeyCases() []rawKeyCase {
 		{
 			name:  "alerts close",
 			setup: alertsOpen,
-			key:   keyRune('q'), id: "alerts.close",
+			key:   tea.KeyPressMsg{Code: tea.KeyEscape}, id: "alerts.close",
 			want: func(m Model) bool { return m.activeModal == ModalNone },
 		},
 		{
@@ -57,8 +56,18 @@ func rawKeyCases() []rawKeyCase {
 			want: func(m Model) bool { return m.notifShowDismissed },
 		},
 		{
-			// 'h' (Health) is shadowed by Global.History before the label
-			// dashboard handler runs, so Drilldown is the live pin.
+			name: "label dashboard health",
+			setup: func(t *testing.T) Model {
+				m := seedModel()
+				m.mode = ViewLabelDashboard
+				m.focused = focusLabelDashboard
+				m.labelDashboard.SetData([]analysis.LabelHealth{{Label: "alpha"}})
+				return m
+			},
+			key: keyRune('i'), id: "label_dashboard.health",
+			want: func(m Model) bool { return m.activeModal == ModalLabelHealthDetail },
+		},
+		{
 			name: "label dashboard drilldown",
 			setup: func(t *testing.T) Model {
 				m := seedModel()
@@ -88,7 +97,7 @@ func rawKeyCases() []rawKeyCase {
 				m.mode = ViewAttention
 				return m
 			},
-			key: keyRune('q'), id: "attention.close",
+			key: tea.KeyPressMsg{Code: tea.KeyEscape}, id: "attention.close",
 			want: func(m Model) bool { return m.mode == ViewList },
 		},
 		{
@@ -110,7 +119,7 @@ func rawKeyCases() []rawKeyCase {
 				m.focused = focusHelp
 				return m
 			},
-			key: keyRune('q'), id: "help.close",
+			key: tea.KeyPressMsg{Code: tea.KeyEscape}, id: "help.close",
 			want: func(m Model) bool { return m.activeModal == ModalNone },
 		},
 		{
@@ -133,7 +142,7 @@ func rawKeyCases() []rawKeyCase {
 				m.openModal(ModalCassSession)
 				return m
 			},
-			key: keyRune('V'), id: "cass.close",
+			key: tea.KeyPressMsg{Code: tea.KeyEscape}, id: "cass.close",
 			want: func(m Model) bool { return m.activeModal == ModalNone },
 		},
 		{
@@ -147,20 +156,6 @@ func rawKeyCases() []rawKeyCase {
 			},
 			key: keyRune('n'), id: "agent_prompt.no",
 			want: func(m Model) bool { return m.activeModal == ModalNone },
-		},
-		{
-			name:  "debug dims toggle",
-			setup: func(t *testing.T) Model { return seedModel() },
-			key:   tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl}, id: "window.debug_dims",
-			want: func(m Model) bool { return m.showDebugDims },
-		},
-		{
-			name: "plugin menu",
-			setup: func(t *testing.T) Model {
-				return newPluginActionModel(t, &fakePluginActions{actions: []plugin.Action{dispatchAction}})
-			},
-			key: keyRune('P'), id: "plugin.menu",
-			want: func(m Model) bool { return m.activeModal == ModalPluginPrompt },
 		},
 	}
 }

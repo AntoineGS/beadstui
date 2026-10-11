@@ -52,9 +52,8 @@ func (m *Model) focusPaneLeftOfDetail() {
 // — bubbles list owns dispatch there, so this handler does not consult it
 // (Decision 7).
 //
-// History (h) is intentionally absent — it lives on GlobalKeys.History
-// because handleListKeys cannot return tea.Cmd and the history switch
-// dispatches an async LoadHistoryCmd (bt-uizm).
+// The status filters live on GlobalKeys and are dispatched in
+// handleKeyPress, so they work from every view (bt-i4k).
 func (m Model) handleListKeys(msg tea.KeyMsg) Model {
 	k := m.keys.ListNormal
 	switch {
@@ -111,39 +110,6 @@ func (m Model) handleListKeys(msg tea.KeyMsg) Model {
 			}
 			m.list.Select(newIdx)
 		}
-	// o/c/r toggle a single status; # cycles the full status set. None emit a
-	// "Filter: X" toast anymore — the footer lens status chip already shows the
-	// active filter, so an echo would duplicate it (bt-2vshd).
-	case key.Matches(msg, k.FilterOpen):
-		m.filter.activeBQLExpr = nil
-		if m.filter.currentFilter == "open" {
-			m.filter.currentFilter = "all"
-		} else {
-			m.filter.currentFilter = "open"
-		}
-		m.applyFilter()
-	case key.Matches(msg, k.FilterClosed):
-		m.filter.activeBQLExpr = nil
-		if m.filter.currentFilter == "closed" {
-			m.filter.currentFilter = "all"
-		} else {
-			m.filter.currentFilter = "closed"
-		}
-		m.applyFilter()
-	case key.Matches(msg, k.FilterReady):
-		m.filter.activeBQLExpr = nil
-		if m.filter.currentFilter == "ready" {
-			m.filter.currentFilter = "all"
-		} else {
-			m.filter.currentFilter = "ready"
-		}
-		m.applyFilter()
-	case key.Matches(msg, k.CycleStatusFilter):
-		m.cycleStatusFilter()
-	// No FilterAll case: 'a' is GlobalKeys.Actionable and shadowed by the
-	// global view-switch before this handler runs. The pre-.2 `case "a"`
-	// here was dead. Reset-to-all is reachable via toggling the active
-	// filter key (o/c/r each toggle to "all" on second press).
 	case key.Matches(msg, k.TimeTravelInput):
 		// Toggle time-travel mode off, or show prompt for custom revision
 		if m.timeTravelMode {
@@ -236,8 +202,8 @@ func (m Model) handleListKeys(msg tea.KeyMsg) Model {
 	case key.Matches(msg, k.PaneFullscreenIssues):
 		// Two-stage per-pane focus/fullscreen (bt-566fk, refining bt-530vn):
 		// in split view first press focuses the pane, second maximizes it,
-		// third exits; at narrow width it's a direct btop-style toggle. Esc/q
-		// also exit (dispatcher cascade, model_update_input.go).
+		// third exits; at narrow width it's a direct btop-style toggle. Esc
+		// also exits (dispatcher cascade, model_update_input.go).
 		m.toggleFullscreenPane(fullscreenIssues)
 	case key.Matches(msg, k.PaneFullscreenDetails):
 		m.toggleFullscreenPane(fullscreenDetails)

@@ -794,19 +794,13 @@ func TestTutorialMarkdownWithTables(t *testing.T) {
 // Tests for Keyboard Navigation (bv-wdsd)
 
 func TestTutorialExitKeys(t *testing.T) {
-	// Test 'q' key closes
+	// q quits the app before the tutorial sees it (bt-i4k); esc closes.
 	m := newTestTutorialModel()
 	if m.ShouldClose() {
 		t.Error("Should not close initially")
 	}
 
-	m, _ = m.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
-	if !m.ShouldClose() {
-		t.Error("'q' should trigger close")
-	}
-
-	// Test Esc key closes
-	m = newTestTutorialModel()
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if !m.ShouldClose() {
 		t.Error("Esc should trigger close")

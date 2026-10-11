@@ -11,10 +11,9 @@ import "charm.land/bubbles/v2/key"
 // arrows-primary, vim-keys-as-alternate. WithKeys lists arrow first, vim
 // second; help text shows arrow first ("↑/k", not "k/↑").
 //
-// The exit binding uses field name Close, not Back, to avoid the universal-nav
-// consistency test: flow matrix exits with f/q/esc while Tree.Back uses "E/esc"
-// and the test requires matching Help.Key strings across views that share a
-// field name. See history.go ExitHistory/ExitFileTree for the same pattern.
+// The exit binding uses field name Close, not Back, to keep it outside the
+// universal-nav consistency test. See history.go ExitHistory/ExitFileTree for
+// the same pattern.
 type FlowMatrixKeys struct {
 	Up          key.Binding `action:"nav.up"`
 	Down        key.Binding `action:"nav.down"`
@@ -39,8 +38,8 @@ func NewFlowMatrixKeys() FlowMatrixKeys {
 			key.WithHelp("↓/j", "move down"),
 		),
 		JumpTop: key.NewBinding(
-			key.WithKeys("home", "g"),
-			key.WithHelp("home/g", "jump to top"),
+			key.WithKeys("home", "gg"),
+			key.WithHelp("gg/home", "jump to top"),
 		),
 		JumpBottom: key.NewBinding(
 			key.WithKeys("end", "G"),
@@ -63,8 +62,8 @@ func NewFlowMatrixKeys() FlowMatrixKeys {
 			key.WithHelp("⏎", "open drilldown / jump to issue"),
 		),
 		Close: key.NewBinding(
-			key.WithKeys("f", "q", "esc"),
-			key.WithHelp("f/q/esc", "close flow matrix"),
+			key.WithKeys("esc"),
+			key.WithHelp("esc", "close flow matrix"),
 		),
 	}
 }

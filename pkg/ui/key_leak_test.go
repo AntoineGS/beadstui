@@ -65,10 +65,10 @@ func TestBoardSearchModeNoGlobalLeak(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 180, Height: 50})
 	m = updated.(Model)
 
-	updated, _ = m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	updated, _ = m.Update(tokenMsg("view.board"))
 	m = updated.(Model)
 	if m.mode != ViewBoard {
-		t.Fatalf("setup failed: expected ViewBoard after 'b', got %v", m.mode)
+		t.Fatalf("setup failed: expected ViewBoard after SPC v b, got %v", m.mode)
 	}
 
 	updated, _ = m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})

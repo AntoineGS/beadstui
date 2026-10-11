@@ -2,6 +2,7 @@ package ui_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -63,7 +64,7 @@ func TestViewTransitionListToTree(t *testing.T) {
 	}
 
 	// Press 'T' to toggle tree view
-	newM, _ := m.Update(integrationKeyMsg("T"))
+	newM, _ := m.Update(integrationKeyMsg("@view.tree"))
 	m = newM.(ui.Model)
 
 	if m.FocusState() != "tree" {
@@ -71,7 +72,7 @@ func TestViewTransitionListToTree(t *testing.T) {
 	}
 
 	// Press 'T' again to toggle back to list
-	newM, _ = m.Update(integrationKeyMsg("T"))
+	newM, _ = m.Update(integrationKeyMsg("@view.tree"))
 	m = newM.(ui.Model)
 
 	if m.FocusState() != "list" {
@@ -85,7 +86,7 @@ func TestViewTransitionListToBoard(t *testing.T) {
 	m := ui.NewModel(issues, nil, "", nil, nil)
 
 	// Press 'b' to toggle board view
-	newM, _ := m.Update(integrationKeyMsg("b"))
+	newM, _ := m.Update(integrationKeyMsg("@view.board"))
 	m = newM.(ui.Model)
 
 	if !m.IsBoardView() {
@@ -93,7 +94,7 @@ func TestViewTransitionListToBoard(t *testing.T) {
 	}
 
 	// Press 'b' again to toggle back
-	newM, _ = m.Update(integrationKeyMsg("b"))
+	newM, _ = m.Update(integrationKeyMsg("@view.board"))
 	m = newM.(ui.Model)
 
 	if m.IsBoardView() {
@@ -110,7 +111,7 @@ func TestViewTransitionListToGraph(t *testing.T) {
 	m := ui.NewModel(issues, nil, "", nil, nil)
 
 	// Press 'g' to toggle graph view
-	newM, _ := m.Update(integrationKeyMsg("g"))
+	newM, _ := m.Update(integrationKeyMsg("@view.graph"))
 	m = newM.(ui.Model)
 
 	if !m.IsGraphView() {
@@ -118,7 +119,7 @@ func TestViewTransitionListToGraph(t *testing.T) {
 	}
 
 	// Press 'g' again to toggle back
-	newM, _ = m.Update(integrationKeyMsg("g"))
+	newM, _ = m.Update(integrationKeyMsg("@view.graph"))
 	m = newM.(ui.Model)
 
 	if m.IsGraphView() {
@@ -132,7 +133,7 @@ func TestViewTransitionFullCycle(t *testing.T) {
 	m := ui.NewModel(issues, nil, "", nil, nil)
 
 	// Enter board view
-	newM, _ := m.Update(integrationKeyMsg("b"))
+	newM, _ := m.Update(integrationKeyMsg("@view.board"))
 	m = newM.(ui.Model)
 	if !m.IsBoardView() {
 		t.Error("Should be in board view")
@@ -147,14 +148,14 @@ func TestViewTransitionFullCycle(t *testing.T) {
 	}
 
 	// Enter tree view (clears graph)
-	newM, _ = m.Update(integrationKeyMsg("T"))
+	newM, _ = m.Update(integrationKeyMsg("@view.tree"))
 	m = newM.(ui.Model)
 	if m.FocusState() != "tree" {
 		t.Errorf("Should be in tree view, got %q", m.FocusState())
 	}
 
 	// Return to list via 'T' toggle (tree specific exit key)
-	newM, _ = m.Update(integrationKeyMsg("T"))
+	newM, _ = m.Update(integrationKeyMsg("@view.tree"))
 	m = newM.(ui.Model)
 
 	if m.FocusState() != "list" {
@@ -172,7 +173,7 @@ func TestViewTransitionClearsOtherViews(t *testing.T) {
 	m := ui.NewModel(issues, nil, "", nil, nil)
 
 	// Enter board view
-	newM, _ := m.Update(integrationKeyMsg("b"))
+	newM, _ := m.Update(integrationKeyMsg("@view.board"))
 	m = newM.(ui.Model)
 
 	if !m.IsBoardView() {
@@ -192,7 +193,7 @@ func TestViewTransitionClearsOtherViews(t *testing.T) {
 	}
 
 	// Enter tree view (should clear graph)
-	newM, _ = m.Update(integrationKeyMsg("T"))
+	newM, _ = m.Update(integrationKeyMsg("@view.tree"))
 	m = newM.(ui.Model)
 
 	if m.IsGraphView() {
@@ -213,10 +214,10 @@ func TestViewTransitionFilterPreserved(t *testing.T) {
 	initialCount := len(m.FilteredIssues())
 
 	// Switch to board and back
-	newM, _ := m.Update(integrationKeyMsg("b"))
+	newM, _ := m.Update(integrationKeyMsg("@view.board"))
 	m = newM.(ui.Model)
 
-	newM, _ = m.Update(integrationKeyMsg("b"))
+	newM, _ = m.Update(integrationKeyMsg("@view.board"))
 	m = newM.(ui.Model)
 
 	// Filter should still be active
@@ -235,7 +236,7 @@ func TestViewTransitionEmptyIssues(t *testing.T) {
 	m := ui.NewModel([]model.Issue{}, nil, "", nil, nil)
 
 	// Should not panic on any view transition
-	keys := []string{"T", "b", "g", "a", "i", "?"}
+	keys := []string{"@view.tree", "@view.board", "@view.graph", "@view.actionable", "@view.insights", "?"}
 	for _, k := range keys {
 		newM, _ := m.Update(integrationKeyMsg(k))
 		m = newM.(ui.Model)
@@ -254,11 +255,11 @@ func TestViewTransitionEscBehavior(t *testing.T) {
 	// Note: In tree view, 'T' is the toggle key; 'esc' may trigger quit confirm
 	t.Run("tree_T_returns_to_list", func(t *testing.T) {
 		m := ui.NewModel(issues, nil, "", nil, nil)
-		newM, _ := m.Update(integrationKeyMsg("T"))
+		newM, _ := m.Update(integrationKeyMsg("@view.tree"))
 		m = newM.(ui.Model)
 
 		// 'T' from tree should return to list (toggle behavior)
-		newM, _ = m.Update(integrationKeyMsg("T"))
+		newM, _ = m.Update(integrationKeyMsg("@view.tree"))
 		m = newM.(ui.Model)
 
 		if m.FocusState() != "list" {
@@ -268,11 +269,11 @@ func TestViewTransitionEscBehavior(t *testing.T) {
 
 	t.Run("board_toggle_exits_board", func(t *testing.T) {
 		m := ui.NewModel(issues, nil, "", nil, nil)
-		newM, _ := m.Update(integrationKeyMsg("b"))
+		newM, _ := m.Update(integrationKeyMsg("@view.board"))
 		m = newM.(ui.Model)
 
 		// Press 'b' again to toggle off board
-		newM, _ = m.Update(integrationKeyMsg("b"))
+		newM, _ = m.Update(integrationKeyMsg("@view.board"))
 		m = newM.(ui.Model)
 
 		if m.IsBoardView() {
@@ -282,11 +283,11 @@ func TestViewTransitionEscBehavior(t *testing.T) {
 
 	t.Run("graph_toggle_exits_graph", func(t *testing.T) {
 		m := ui.NewModel(issues, nil, "", nil, nil)
-		newM, _ := m.Update(integrationKeyMsg("g"))
+		newM, _ := m.Update(integrationKeyMsg("@view.graph"))
 		m = newM.(ui.Model)
 
 		// Press 'g' again to toggle off graph
-		newM, _ = m.Update(integrationKeyMsg("g"))
+		newM, _ = m.Update(integrationKeyMsg("@view.graph"))
 		m = newM.(ui.Model)
 
 		if m.IsGraphView() {
@@ -296,11 +297,11 @@ func TestViewTransitionEscBehavior(t *testing.T) {
 
 	t.Run("actionable_toggle_exits", func(t *testing.T) {
 		m := ui.NewModel(issues, nil, "", nil, nil)
-		newM, _ := m.Update(integrationKeyMsg("a"))
+		newM, _ := m.Update(integrationKeyMsg("@view.actionable"))
 		m = newM.(ui.Model)
 
 		// Press 'a' again to toggle off
-		newM, _ = m.Update(integrationKeyMsg("a"))
+		newM, _ = m.Update(integrationKeyMsg("@view.actionable"))
 		m = newM.(ui.Model)
 
 		if m.IsActionableView() {
@@ -317,13 +318,13 @@ func TestViewToggleExitBehavior(t *testing.T) {
 	t.Run("tree_T_toggle", func(t *testing.T) {
 		m := ui.NewModel(issues, nil, "", nil, nil)
 		// Enter tree
-		newM, _ := m.Update(integrationKeyMsg("T"))
+		newM, _ := m.Update(integrationKeyMsg("@view.tree"))
 		m = newM.(ui.Model)
 		if m.FocusState() != "tree" {
 			t.Errorf("Expected tree, got %q", m.FocusState())
 		}
 		// Exit with T
-		newM, _ = m.Update(integrationKeyMsg("T"))
+		newM, _ = m.Update(integrationKeyMsg("@view.tree"))
 		m = newM.(ui.Model)
 		if m.FocusState() != "list" {
 			t.Errorf("'T' should toggle back to list, got %q", m.FocusState())
@@ -333,12 +334,12 @@ func TestViewToggleExitBehavior(t *testing.T) {
 	// Board view uses 'b' to toggle
 	t.Run("board_b_toggle", func(t *testing.T) {
 		m := ui.NewModel(issues, nil, "", nil, nil)
-		newM, _ := m.Update(integrationKeyMsg("b"))
+		newM, _ := m.Update(integrationKeyMsg("@view.board"))
 		m = newM.(ui.Model)
 		if !m.IsBoardView() {
 			t.Error("Should be in board view")
 		}
-		newM, _ = m.Update(integrationKeyMsg("b"))
+		newM, _ = m.Update(integrationKeyMsg("@view.board"))
 		m = newM.(ui.Model)
 		if m.IsBoardView() {
 			t.Error("'b' should toggle off board")
@@ -348,12 +349,12 @@ func TestViewToggleExitBehavior(t *testing.T) {
 	// Graph view uses 'g' to toggle
 	t.Run("graph_g_toggle", func(t *testing.T) {
 		m := ui.NewModel(issues, nil, "", nil, nil)
-		newM, _ := m.Update(integrationKeyMsg("g"))
+		newM, _ := m.Update(integrationKeyMsg("@view.graph"))
 		m = newM.(ui.Model)
 		if !m.IsGraphView() {
 			t.Error("Should be in graph view")
 		}
-		newM, _ = m.Update(integrationKeyMsg("g"))
+		newM, _ = m.Update(integrationKeyMsg("@view.graph"))
 		m = newM.(ui.Model)
 		if m.IsGraphView() {
 			t.Error("'g' should toggle off graph")
@@ -370,7 +371,7 @@ func TestRapidViewSwitching(t *testing.T) {
 	issues := createTestIssues(50)
 	m := ui.NewModel(issues, nil, "", nil, nil)
 
-	keys := []string{"T", "b", "g", "a", "i", "T", "b", "g"}
+	keys := []string{"@view.tree", "@view.board", "@view.graph", "@view.actionable", "@view.insights", "@view.tree", "@view.board", "@view.graph"}
 
 	// Perform 100 iterations of view switching
 	for i := 0; i < 100; i++ {
@@ -391,12 +392,12 @@ func TestRapidViewSwitchingWithNavigation(t *testing.T) {
 
 	// Mix view switches with navigation
 	actions := []tea.KeyPressMsg{
-		integrationKeyMsg("T"),            // Enter tree
+		integrationKeyMsg("@view.tree"),            // Enter tree
 		integrationKeyMsg("j"),            // Move down
 		integrationKeyMsg("j"),            // Move down
-		integrationKeyMsg("b"),            // Enter board (from tree)
+		integrationKeyMsg("@view.board"),            // Enter board (from tree)
 		integrationKeyMsg("l"),            // Move right in board
-		integrationKeyMsg("g"),            // Enter graph
+		integrationKeyMsg("@view.graph"),            // Enter graph
 		integrationKeyMsg("j"),            // Move down in graph
 		integrationSpecialKey(tea.KeyEsc), // Exit to list
 		integrationKeyMsg("j"),            // Move down in list
@@ -421,7 +422,7 @@ func TestViewSwitchingPerformance(t *testing.T) {
 	issues := createTestIssues(100)
 	m := ui.NewModel(issues, nil, "", nil, nil)
 
-	keys := []string{"T", "b", "g", "T", "b", "g"}
+	keys := []string{"@view.tree", "@view.board", "@view.graph", "@view.tree", "@view.board", "@view.graph"}
 
 	start := time.Now()
 
@@ -455,9 +456,9 @@ func TestHelpViewTransition(t *testing.T) {
 		enterKey string
 	}{
 		{"list", ""},
-		{"tree", "T"},
-		{"board", "b"},
-		{"graph", "g"},
+		{"tree", "@view.tree"},
+		{"board", "@view.board"},
+		{"graph", "@view.graph"},
 	}
 
 	for _, v := range views {
@@ -502,11 +503,11 @@ func TestAllViewsRenderWithoutPanic(t *testing.T) {
 		enterKey string
 	}{
 		{"list", ""},
-		{"tree", "T"},
-		{"board", "b"},
-		{"graph", "g"},
-		{"actionable", "a"},
-		{"insights", "i"},
+		{"tree", "@view.tree"},
+		{"board", "@view.board"},
+		{"graph", "@view.graph"},
+		{"actionable", "@view.actionable"},
+		{"insights", "@view.insights"},
 		{"help", "?"},
 	}
 
@@ -543,13 +544,13 @@ func TestViewRenderingAtDifferentSizes(t *testing.T) {
 		{200, 50}, // Wide
 	}
 
-	views := []string{"", "T", "b", "g"}
+	views := []string{"", "@view.tree", "@view.board", "@view.graph"}
 
 	for _, size := range sizes {
 		for _, viewKey := range views {
 			name := "list"
 			if viewKey != "" {
-				name = viewKey
+				name = strings.TrimPrefix(viewKey, "@view.")
 			}
 
 			t.Run(fmt.Sprintf("%s_%dx%d", name, size.width, size.height), func(t *testing.T) {

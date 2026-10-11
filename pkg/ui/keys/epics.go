@@ -12,13 +12,14 @@ import "charm.land/bubbles/v2/key"
 // Right/Left/Enter so they sit outside the universal-nav consistency contract
 // (their key sets are tree-specific: enter is the context-sensitive Open).
 //
-// The exit binding is named Exit (not Back) to avoid triggering the
-// universal-nav consistency check; TreeKeys.Back uses "T/esc" whereas the
-// epics overview exit is plain "esc" only.
+// The exit binding is named Exit (not Back) to keep it outside the
+// universal-nav consistency check.
 type EpicsKeys struct {
 	// Navigation
-	Up   key.Binding `action:"nav.up"`
-	Down key.Binding `action:"nav.down"`
+	Up         key.Binding `action:"nav.up"`
+	Down       key.Binding `action:"nav.down"`
+	JumpTop    key.Binding `action:"nav.top"`
+	JumpBottom key.Binding `action:"nav.bottom"`
 
 	// Tree
 	Expand      key.Binding `action:"epics.expand"`       // expand epic/lane (and focus subtree)
@@ -29,6 +30,7 @@ type EpicsKeys struct {
 	Open        key.Binding `action:"epics.open"` // enter: expand epic/header, or drill into a child
 	CycleStatus key.Binding `action:"epics.cycle_status"`
 	Card        key.Binding `action:"epics.card"` // open the single-epic focus card (zoom)
+	FieldEdit   key.Binding `action:"bead.edit"`  // e: edit the selected bead's fields
 	Exit        key.Binding `action:"epics.exit"`
 }
 
@@ -42,6 +44,14 @@ func NewEpicsKeys() EpicsKeys {
 		Down: key.NewBinding(
 			key.WithKeys("down", "j"),
 			key.WithHelp("↓/j", "move down"),
+		),
+		JumpTop: key.NewBinding(
+			key.WithKeys("home", "gg"),
+			key.WithHelp("gg/home", "jump to top"),
+		),
+		JumpBottom: key.NewBinding(
+			key.WithKeys("G", "end"),
+			key.WithHelp("G/end", "jump to bottom"),
 		),
 		Expand: key.NewBinding(
 			key.WithKeys("right", "l"),
@@ -67,6 +77,10 @@ func NewEpicsKeys() EpicsKeys {
 			key.WithKeys("v"),
 			key.WithHelp("v", "zoom card"),
 		),
+		FieldEdit: key.NewBinding(
+			key.WithKeys("e"),
+			key.WithHelp("e", "edit field"),
+		),
 		Exit: key.NewBinding(
 			key.WithKeys("esc"),
 			key.WithHelp("esc", "back to list"),
@@ -85,8 +99,8 @@ func (k EpicsKeys) ShortHelp() []key.Binding {
 // Columns: Navigate / Tree / Actions.
 func (k EpicsKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down},
+		{k.Up, k.Down, k.JumpTop, k.JumpBottom},
 		{k.Expand, k.Collapse, k.CollapseAll},
-		{k.Open, k.CycleStatus, k.Card, k.Exit},
+		{k.Open, k.CycleStatus, k.Card, k.FieldEdit, k.Exit},
 	}
 }

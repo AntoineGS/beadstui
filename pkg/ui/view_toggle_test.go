@@ -8,19 +8,19 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
 
-// TestViewSwitchKeysToggleBack (bt-yzfp2): the flow-matrix (f), attention (]),
-// and label-dashboard ([) view-switch keys must toggle back to the list on a
-// second press, matching Board/Graph/etc. Before the fix they stranded the
-// user (only Esc exited).
+// TestViewSwitchKeysToggleBack (bt-yzfp2): the flow-matrix (SPC v f),
+// attention (SPC v A), and label-dashboard (SPC v L) view switches must
+// toggle back to the list on a second press, matching Board/Graph/etc. Before
+// the fix they stranded the user (only Esc exited).
 func TestViewSwitchKeysToggleBack(t *testing.T) {
 	cases := []struct {
 		name string
-		key  rune
+		seq  []string
 		view ViewMode
 	}{
-		{"flow-matrix", 'f', ViewFlowMatrix},
-		{"attention", ']', ViewAttention},
-		{"label-dashboard", '[', ViewLabelDashboard},
+		{"flow-matrix", []string{"space", "v", "f"}, ViewFlowMatrix},
+		{"attention", []string{"space", "v", "A"}, ViewAttention},
+		{"label-dashboard", []string{"space", "v", "L"}, ViewLabelDashboard},
 	}
 
 	issues := []model.Issue{
@@ -34,16 +34,14 @@ func TestViewSwitchKeysToggleBack(t *testing.T) {
 			updated, _ := m.Update(tea.WindowSizeMsg{Width: 180, Height: 50})
 			m = updated.(Model)
 
-			updated, _ = m.Update(tea.KeyPressMsg{Code: tc.key, Text: string(tc.key)})
-			m = updated.(Model)
+			m = press(t, m, tc.seq...)
 			if m.mode != tc.view {
-				t.Fatalf("first press %q: expected %v, got %v", string(tc.key), tc.view, m.mode)
+				t.Fatalf("first %v: expected %v, got %v", tc.seq, tc.view, m.mode)
 			}
 
-			updated, _ = m.Update(tea.KeyPressMsg{Code: tc.key, Text: string(tc.key)})
-			m = updated.(Model)
+			m = press(t, m, tc.seq...)
 			if m.mode != ViewList {
-				t.Errorf("second press %q: expected ViewList (toggle back), got %v", string(tc.key), m.mode)
+				t.Errorf("second %v: expected ViewList (toggle back), got %v", tc.seq, m.mode)
 			}
 		})
 	}

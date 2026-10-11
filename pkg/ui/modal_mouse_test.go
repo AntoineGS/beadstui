@@ -31,7 +31,7 @@ func modalMouseModel(t *testing.T) Model {
 		{Type: drift.AlertStale, Severity: drift.SeverityWarning, Message: "stale c", IssueID: "bt-c"},
 		{Type: drift.AlertStale, Severity: drift.SeverityWarning, Message: "stale d", IssueID: "bt-d"},
 	}
-	m = pressRune(m, '!') // open alerts tab
+	m = openAlerts(m)
 	if m.activeModal != ModalAlerts {
 		t.Fatalf("setup: modal did not open")
 	}
@@ -128,7 +128,7 @@ func TestNotificationsModal_ClickRowMovesCursor(t *testing.T) {
 		{ID: "e2", Kind: events.EventCreated, BeadID: "bt-2", Repo: "bt", Title: "two", At: time.Now()},
 		{ID: "e3", Kind: events.EventCreated, BeadID: "bt-3", Repo: "bt", Title: "three", At: time.Now()},
 	})
-	m = pressRune(m, '1') // open notifications tab
+	m = openNotifications(m)
 	if m.activeModal != ModalAlerts || m.activeTab != TabNotifications {
 		t.Fatalf("setup: modal/tab not as expected (%v/%v)", m.activeModal, m.activeTab)
 	}
@@ -227,7 +227,7 @@ func summaryClickModel(t *testing.T) Model {
 		{Type: drift.AlertStale, Severity: drift.SeverityWarning, Message: "warn b", IssueID: "bt-b"},
 		{Type: drift.AlertStale, Severity: drift.SeverityWarning, Message: "warn c", IssueID: "bt-c"},
 	}
-	m = pressRune(m, '!')
+	m = openAlerts(m)
 	if m.activeModal != ModalAlerts || m.activeTab != TabAlerts {
 		t.Fatalf("setup: modal/tab not as expected (%v/%v)", m.activeModal, m.activeTab)
 	}
@@ -306,7 +306,7 @@ func TestNotificationsModal_ClickKindChipTogglesFilter(t *testing.T) {
 		{ID: "e2", Kind: events.EventClosed, BeadID: "bt-2", Repo: "bt", Title: "two", At: time.Now()},
 		{ID: "e3", Kind: events.EventCreated, BeadID: "bt-3", Repo: "bt", Title: "three", At: time.Now()},
 	})
-	m = pressRune(m, '1')
+	m = openNotifications(m)
 	if m.activeModal != ModalAlerts || m.activeTab != TabNotifications {
 		t.Fatalf("setup: modal/tab not as expected (%v/%v)", m.activeModal, m.activeTab)
 	}
@@ -373,7 +373,7 @@ func TestNotificationsModal_MouseWheelMovesCursor(t *testing.T) {
 		{ID: "e2", Kind: events.EventCreated, BeadID: "bt-2", Repo: "bt", Title: "two", At: time.Now()},
 		{ID: "e3", Kind: events.EventCreated, BeadID: "bt-3", Repo: "bt", Title: "three", At: time.Now()},
 	})
-	m = pressRune(m, '1') // open notifications tab
+	m = openNotifications(m)
 	if m.activeModal != ModalAlerts || m.activeTab != TabNotifications {
 		t.Fatalf("setup: modal/tab not as expected (%v/%v)", m.activeModal, m.activeTab)
 	}

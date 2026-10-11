@@ -458,8 +458,10 @@ func TestClaimKeypath_Teatest(t *testing.T) {
 		return bytes.Contains(b, []byte("zz-target"))
 	}, teatest.WithDuration(8*time.Second))
 
-	// Open the confirm modal.
-	tm.Send(tea.KeyPressMsg{Code: 'm', Text: "m"})
+	// Open the confirm modal (SPC b m).
+	tm.Send(keySpace)
+	tm.Send(runeKey('b'))
+	tm.Send(runeKey('m'))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
 		return bytes.Contains(b, []byte("Claim?"))
 	}, teatest.WithDuration(5*time.Second))
@@ -504,7 +506,9 @@ func TestClaimKeypath_RefusalTeatest(t *testing.T) {
 		return bytes.Contains(b, []byte("zz-target"))
 	}, teatest.WithDuration(8*time.Second))
 
-	tm.Send(tea.KeyPressMsg{Code: 'm', Text: "m"})
+	tm.Send(keySpace)
+	tm.Send(runeKey('b'))
+	tm.Send(runeKey('m'))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
 		return bytes.Contains(b, []byte("Claim?"))
 	}, teatest.WithDuration(5*time.Second))
