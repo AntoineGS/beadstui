@@ -332,7 +332,9 @@ existing duplicates benchmark owner (add a focused benchmark file only if none).
 
 **Interfaces:**
 - Consumes/produces the existing `DetectDuplicates([]model.Issue, DuplicateConfig) []Suggestion`.
-- No wire changes; preserve full explanation contents, tie ordering, and filters.
+- Preserve full explanation contents, source-oriented action/issue fields, and
+  filters. Per the recorded implementation ruling, unique-ID ties use canonical
+  ID comparison keys without reorienting output; old ties were unspecified.
 
 - [ ] **Step 1: Add a test-only full-sort oracle from the current implementation.**
   Cover dense/sparse fixtures, deterministic random input, repeated IDs with

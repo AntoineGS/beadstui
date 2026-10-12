@@ -237,9 +237,6 @@ func DetectDuplicates(issues []model.Issue, config DuplicateConfig) []Suggestion
 	suggestions := make([]Suggestion, 0, len(pairs))
 	for _, candidate := range pairs {
 		issue1ID, issue2ID := issues[candidate.left].ID, issues[candidate.right].ID
-		if !repeatedIDs && issue2ID < issue1ID {
-			issue1ID, issue2ID = issue2ID, issue1ID
-		}
 		pair := DuplicatePair{
 			Issue1: issue1ID, Issue2: issue2ID, Similarity: candidate.similarity,
 			Method: "jaccard", Keywords: intersectKeywords(keywords[candidate.left], keywords[candidate.right]),
