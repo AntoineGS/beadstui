@@ -372,16 +372,19 @@ func truncate(s string, maxRunes int) string {
 
 // DependencyNode represents a visual node in the dependency tree
 type DependencyNode struct {
-	ID       string
-	Title    string
-	Status   string
-	Type     string // "root", "blocks", "related", etc.
-	Children []*DependencyNode
+	ID        string
+	Title     string
+	Status    string
+	Type      string // "root", "blocks", "related", etc.
+	Children  []*DependencyNode
+	Reference bool // The target is also shown at its canonical occurrence.
+	Cycle     bool // This edge closes a directed DFS cycle in the displayed graph.
 }
 
 // BuildDependencyTree constructs a tree from dependencies for visualization.
-// maxDepth limits recursion to prevent infinite loops and performance issues.
-// Set maxDepth to 0 for unlimited depth (use with caution).
+// Every reachable issue is expanded once at its shortest distance from the
+// root. Edges within maxDepth remain visible, including references. Set
+// maxDepth to 0 for unlimited depth (use with caution).
 //
 // Direction: outgoing dependencies are walked recursively (X -> things X
 // depends on). In addition, immediate inverse children (issues whose
@@ -392,9 +395,115 @@ type DependencyNode struct {
 // inflate large epics). Drilling into a child node shows that child's own
 // subtree.
 func BuildDependencyTree(rootID string, issueMap map[string]*model.Issue, maxDepth int) *DependencyNode {
-	visited := make(map[string]bool)
+	depths := map[string]int{rootID: 0}
+	order := []string{rootID}
+	for i := 0; i < len(order); i++ {
+		id := order[i]
+		issue := issueMap[id]
+		if issue == nil || (maxDepth > 0 && depths[id] >= maxDepth) {
+			continue
+		}
+		for _, dep := range issue.Dependencies {
+			if dep == nil {
+				continue
+			}
+			if _, seen := depths[dep.DependsOnID]; !seen {
+				depths[dep.DependsOnID] = depths[id] + 1
+				order = append(order, dep.DependsOnID)
+			}
+		}
+	}
+
+	// A reference can also close a cycle, so identify DFS backedges separately.
+	state := make(map[string]uint8, len(order))
+	cycleEdges := make(map[string]map[string]bool)
+	var visit func(string)
+	visit = func(id string) {
+		state[id] = 1
+		issue := issueMap[id]
+		if issue != nil && (maxDepth <= 0 || depths[id] < maxDepth) {
+			for _, dep := range issue.Dependencies {
+				if dep == nil {
+					continue
+				}
+				switch state[dep.DependsOnID] {
+				case 0:
+					visit(dep.DependsOnID)
+				case 1:
+					if cycleEdges[id] == nil {
+						cycleEdges[id] = make(map[string]bool)
+					}
+					cycleEdges[id][dep.DependsOnID] = true
+				}
+			}
+		}
+		state[id] = 2
+	}
+	visit(rootID)
+
+	makeNode := func(id, depType string) *DependencyNode {
+		node := &DependencyNode{ID: id, Title: "(not found)", Status: "?", Type: depType}
+		if issue := issueMap[id]; issue != nil {
+			node.ID, node.Title, node.Status = issue.ID, issue.Title, string(issue.Status)
+		}
+		return node
+	}
+	root := makeNode(rootID, "root")
+	expanded := map[string]*DependencyNode{rootID: root}
+	canonicalParent := make(map[string]string, len(order))
+	for _, id := range order {
+		issue := issueMap[id]
+		if issue == nil || (maxDepth > 0 && depths[id] >= maxDepth) {
+			continue
+		}
+		for _, dep := range issue.Dependencies {
+			if dep == nil {
+				continue
+			}
+			child := makeNode(dep.DependsOnID, string(dep.Type))
+			child.Cycle = cycleEdges[id][dep.DependsOnID]
+			if _, seen := expanded[dep.DependsOnID]; seen {
+				child.Reference = true
+			} else {
+				expanded[dep.DependsOnID] = child
+				canonicalParent[dep.DependsOnID] = id
+			}
+			expanded[id].Children = append(expanded[id].Children, child)
+		}
+	}
+
 	childrenOf := buildChildrenOfMap(issueMap)
-	return buildTreeRecursive(rootID, issueMap, childrenOf, "root", visited, 0, maxDepth)
+	for _, id := range order {
+		parent := expanded[id]
+		if parent == nil || issueMap[id] == nil {
+			continue
+		}
+		seenChildren := make(map[string]bool)
+		for _, childID := range childrenOf[id] {
+			if seenChildren[childID] || childID == id {
+				continue
+			}
+			seenChildren[childID] = true
+			isAncestor := false
+			for ancestor := id; ancestor != ""; ancestor = canonicalParent[ancestor] {
+				if ancestor == childID {
+					isAncestor = true
+					break
+				}
+			}
+			if isAncestor {
+				continue
+			}
+			child := issueMap[childID]
+			if child == nil {
+				continue
+			}
+			parent.Children = append(parent.Children, &DependencyNode{
+				ID: child.ID, Title: child.Title, Status: string(child.Status), Type: "child",
+			})
+		}
+	}
+	return root
 }
 
 // buildChildrenOfMap returns parentID -> sorted slice of child IDs, derived
@@ -407,8 +516,8 @@ func buildChildrenOfMap(issueMap map[string]*model.Issue) map[string][]string {
 		if issue == nil {
 			continue
 		}
-		for _, dep := range issue.Dependencies {
-			if dep != nil && dep.Type == model.DepParentChild {
+		for i, dep := range issue.Dependencies {
+			if dep != nil && dep.Type == model.DepParentChild && !parentSeen(issue.Dependencies[:i], dep.DependsOnID) {
 				out[dep.DependsOnID] = append(out[dep.DependsOnID], id)
 			}
 		}
@@ -419,72 +528,6 @@ func buildChildrenOfMap(issueMap map[string]*model.Issue) map[string][]string {
 		})
 	}
 	return out
-}
-
-func buildTreeRecursive(id string, issueMap map[string]*model.Issue, childrenOf map[string][]string, depType string, visited map[string]bool, depth, maxDepth int) *DependencyNode {
-	// Check depth limit (0 = unlimited)
-	if maxDepth > 0 && depth > maxDepth {
-		return nil
-	}
-
-	// Cycle detection
-	if visited[id] {
-		return &DependencyNode{
-			ID:     id,
-			Title:  "(cycle)",
-			Status: "?",
-			Type:   depType,
-		}
-	}
-
-	issue, exists := issueMap[id]
-	if !exists {
-		return &DependencyNode{
-			ID:     id,
-			Title:  "(not found)",
-			Status: "?",
-			Type:   depType,
-		}
-	}
-
-	visited[id] = true
-	defer func() { visited[id] = false }() // Allow revisiting in different branches
-
-	node := &DependencyNode{
-		ID:     issue.ID,
-		Title:  issue.Title,
-		Status: string(issue.Status),
-		Type:   depType,
-	}
-
-	// Outgoing edges: things this issue depends on.
-	for _, dep := range issue.Dependencies {
-		childNode := buildTreeRecursive(dep.DependsOnID, issueMap, childrenOf, string(dep.Type), visited, depth+1, maxDepth)
-		if childNode != nil {
-			node.Children = append(node.Children, childNode)
-		}
-	}
-
-	// Inverse children: appended as leaves (no recursion) so an epic with N
-	// children renders as a flat list of N rows under the parent without
-	// looping back through their parent_child edges. (bt-cuyiz)
-	for _, childID := range childrenOf[id] {
-		if visited[childID] {
-			continue
-		}
-		child, ok := issueMap[childID]
-		if !ok || child == nil {
-			continue
-		}
-		node.Children = append(node.Children, &DependencyNode{
-			ID:     child.ID,
-			Title:  child.Title,
-			Status: string(child.Status),
-			Type:   "child",
-		})
-	}
-
-	return node
 }
 
 // RenderDependencyTree renders a dependency tree as a formatted string.
@@ -512,14 +555,23 @@ func formatTreeNode(node *DependencyNode) string {
 	title := truncateRunesHelper(node.Title, 40, "...")
 
 	style := statusTreeStyle(node.Status)
-	rowBody := style.Render(fmt.Sprintf("%s %s %s (%s) [%s]",
+	rowBody := style.Render(fmt.Sprintf("%s %s %s (%s) [%s]%s%s",
 		node.ID,
 		title,
 		statusIcon,
 		node.Status,
 		node.Type,
+		dependencyTreeAnnotation(node.Cycle, "cycle"),
+		dependencyTreeAnnotation(node.Reference, "reference"),
 	))
 	return typeIcon + " " + rowBody
+}
+
+func dependencyTreeAnnotation(enabled bool, text string) string {
+	if !enabled {
+		return ""
+	}
+	return " (" + text + ")"
 }
 
 // addTreeChild appends a DependencyNode (and its descendants) to a lipgloss
