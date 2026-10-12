@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/list"
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/recipe"
@@ -821,36 +822,105 @@ func TestFlowMatrixRespectsActiveRepos(t *testing.T) {
 
 func TestFlowMatrixEndpointInspectionIgnoresListFilter(t *testing.T) {
 	issues := []model.Issue{
-		{ID: "bt-blocker", Title: "Blocker detail", Labels: []string{"api"}, Status: model.StatusOpen},
+		{ID: "bt-blocker", Title: "Blocker detail", Labels: []string{"api"}, Status: model.StatusOpen,
+			Description: strings.Repeat("blocker detail line\n\n", 120)},
 		{ID: "bt-blocked", Title: "Blocked detail", Labels: []string{"web"}, Status: model.StatusOpen,
-			Dependencies: []*model.Dependency{{DependsOnID: "bt-blocker", Type: model.DepBlocks}}},
+			Dependencies: []*model.Dependency{{DependsOnID: "bt-blocker", Type: model.DepBlocks}},
+			Description:  strings.Repeat("blocked detail line\n\n", 120)},
 		{ID: "bt-unrelated", Title: "Unrelated", Labels: []string{"api"}, Status: model.StatusOpen},
 	}
 	m := NewModel(issues, nil, "", nil, nil)
-	m.mode = ViewFlowMatrix
+	update := func(msg tea.Msg) {
+		t.Helper()
+		next, _ := m.Update(msg)
+		m = next.(Model)
+	}
+	update(tea.WindowSizeMsg{Width: 140, Height: 36})
+	update(resizeSettledMsg{gen: m.resizeGen})
 	m.list.SetFilterText("bt-unrelated")
+	m.list.SetFilterState(list.FilterApplied)
+	m.list.Select(0)
+	m.viewport.SetContent(strings.Repeat("origin detail line\n", 100))
+	m.viewport.SetYOffset(7)
+	originOffset := m.viewport.YOffset()
+	m.mode = ViewFlowMatrix
+	m.focused = focusFlowMatrix
 	m.refreshFlowMatrix()
-	m.flowMatrix.SetSize(48, 12)
 	if selected := m.list.SelectedItem(); selected == nil || selected.(IssueItem).Issue.ID != "bt-unrelated" {
 		t.Fatalf("fixture list filter did not select unrelated issue: %v", selected)
 	}
-	m.flowMatrix.OpenDrilldown()
-	if got := ansi.Strip(m.flowMatrix.View()); !strings.Contains(got, "bt-blocker") || !strings.Contains(got, "bt-blocked") || strings.Contains(got, "bt-unrelated") {
+	press := func(msg tea.KeyPressMsg) {
+		t.Helper()
+		update(msg)
+	}
+	press(tea.KeyPressMsg{Code: tea.KeyEnter}) // matrix -> relationship
+	if got := ansi.Strip(m.View().Content); !strings.Contains(got, "bt-blocker") || !strings.Contains(got, "bt-blocked") || strings.Contains(got, "bt-unrelated") {
 		t.Fatalf("flow drilldown should contain only the actual pair:\n%s", got)
 	}
-	m.flowMatrix.MoveDown() // select blocked endpoint
-	m.updateViewportContent()
-	m.flowMatrix.BeginInspection(m.viewport.View())
-	if got := ansi.Strip(m.viewport.View()); !strings.Contains(got, "Blocked detail") {
-		t.Fatalf("hidden endpoint detail not rendered:\n%s", got)
+	press(tea.KeyPressMsg{Code: tea.KeyDown}) // select blocked endpoint
+	press(tea.KeyPressMsg{Code: tea.KeyEnter})
+	view := ansi.Strip(m.View().Content)
+	if !strings.Contains(view, "blocked detail line") {
+		t.Fatalf("Model.Update did not render endpoint detail:\n%s", view)
 	}
-	if selected := m.list.SelectedItem(); selected == nil || selected.(IssueItem).Issue.ID != "bt-unrelated" {
-		t.Fatalf("inspection changed the filtered selection: %v", selected)
+	if m.viewport.YOffset() != originOffset {
+		t.Fatalf("inspection changed originating detail offset: got %d want %d", m.viewport.YOffset(), originOffset)
 	}
-	m.flowMatrix.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+	press(tea.KeyPressMsg{Code: tea.KeyPgDown})
+	pageDownView := ansi.Strip(m.View().Content)
+	if pageDownView == view {
+		t.Fatal("page-down did not update live inspection view")
+	}
+	press(tea.KeyPressMsg{Code: tea.KeyHome})
+	wheelStart := ansi.Strip(m.View().Content)
+	update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
+	wheelView := ansi.Strip(m.View().Content)
+	if wheelView == wheelStart {
+		t.Fatal("mouse wheel did not scroll live inspection view")
+	}
+	update(tea.WindowSizeMsg{Width: 72, Height: 18})
+	update(resizeSettledMsg{gen: m.resizeGen})
+	resizedView := ansi.Strip(m.flowMatrix.View())
+	if !strings.Contains(resizedView, "blocked detail line") || !boundedFlowView(resizedView, m.bodyWidth(), m.height-1) {
+		t.Fatalf("resized inspection was stale or outside terminal bounds:\n%s", resizedView)
+	}
+	press(tea.KeyPressMsg{Code: tea.KeyEsc}) // inspection -> relationship
 	if got := ansi.Strip(m.flowMatrix.View()); !strings.Contains(got, "BLOCKER → BLOCKED") {
 		t.Fatalf("return from inspection did not restore relationship:\n%s", got)
 	}
+	press(tea.KeyPressMsg{Code: tea.KeyEsc}) // relationship -> matrix
+	if m.flowMatrix.showDrilldown || m.mode != ViewFlowMatrix {
+		t.Fatal("second Escape did not return to the matrix")
+	}
+	press(tea.KeyPressMsg{Code: tea.KeyEsc}) // matrix -> list
+	if m.mode != ViewList || m.list.FilterState() != list.FilterApplied || m.list.FilterValue() != "bt-unrelated" {
+		t.Fatalf("final Escape lost applied list search: mode=%v state=%v value=%q", m.mode, m.list.FilterState(), m.list.FilterValue())
+	}
+	if selected := m.list.SelectedItem(); selected == nil || selected.(IssueItem).Issue.ID != "bt-unrelated" {
+		t.Fatalf("return did not restore list selection: %v", selected)
+	}
+	if m.viewport.YOffset() != originOffset {
+		t.Fatalf("flow inspection changed original detail scroll: got %d want %d", m.viewport.YOffset(), originOffset)
+	}
+}
+
+func boundedFlowView(view string, width, height int) bool {
+	if width < 0 || height < 0 {
+		return false
+	}
+	lines := strings.Split(view, "\n")
+	if view == "" {
+		lines = nil
+	}
+	if len(lines) > height {
+		return false
+	}
+	for _, line := range lines {
+		if ansi.StringWidth(line) > width {
+			return false
+		}
+	}
+	return true
 }
 
 // buildSharedLabelFlowFixture returns a bug-blocks-feature dependency pair

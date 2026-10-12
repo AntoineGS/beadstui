@@ -10,6 +10,10 @@ import (
 // Dispatches via key.Matches against m.keys.FlowMatrix per ADR-004 Decision 1.
 // Converted from switch msg.String() in bt-ift6.8.
 func (m Model) handleFlowMatrixKeys(msg tea.KeyMsg) Model {
+	if m.flowMatrix.Inspecting() {
+		m.flowMatrix.UpdateInspection(msg)
+		return m
+	}
 	k := m.keys.FlowMatrix
 	switch {
 	case key.Matches(msg, k.Close):
@@ -34,10 +38,8 @@ func (m Model) handleFlowMatrixKeys(msg tea.KeyMsg) Model {
 	case key.Matches(msg, k.Enter):
 		// Inspect the selected endpoint in place, preserving flow and list state.
 		if m.flowMatrix.showDrilldown {
-			if selectedIssue := m.flowMatrix.SelectedDrilldownIssue(); selectedIssue != nil {
-				m.updateViewportContent()
-				m.viewport.GotoTop()
-				m.flowMatrix.BeginInspection(m.viewport.View())
+			if m.flowMatrix.SelectedDrilldownIssue() != nil {
+				m.renderFlowInspection()
 			}
 		} else {
 			// Open drilldown for selected label

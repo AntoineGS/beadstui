@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/viewport"
 	"charm.land/lipgloss/v2"
 	"fmt"
 	"github.com/charmbracelet/x/ansi"
@@ -395,7 +396,9 @@ func TestFlowMatrixDrilldownRefreshRetainsPairAndEndpoint(t *testing.T) {
 	}
 	m.SetData(flow, issues)
 	m.MoveDown()
-	m.BeginInspection("detail")
+	inspectionVP := viewport.New(viewport.WithWidth(80), viewport.WithHeight(12))
+	inspectionVP.SetContent("detail")
+	m.BeginInspection(inspectionVP)
 	m.SetData(flow, issues[:1]) // blocked endpoint disappeared; clamp to blocker and unwind detail
 	if m.Inspecting() || m.SelectedDrilldownIssue() == nil || m.SelectedDrilldownIssue().ID != "a" {
 		t.Fatalf("deleted endpoint did not clamp and unwind inspection: selected=%v inspecting=%t", m.SelectedDrilldownIssue(), m.Inspecting())
@@ -404,6 +407,56 @@ func TestFlowMatrixDrilldownRefreshRetainsPairAndEndpoint(t *testing.T) {
 	if got := ansi.Strip(m.View()); strings.Contains(got, "Blocking relationships for") {
 		t.Fatalf("vanished selected label left drilldown active:\n%s", got)
 	}
+}
+
+func TestFlowMatrixDrilldownBoundsEveryLineAndRow(t *testing.T) {
+	longLabel := strings.Repeat("cross-label-", 8)
+	flow := &analysis.CrossLabelFlow{
+		Labels:       []string{longLabel, "destination"},
+		FlowMatrix:   [][]int{{0, 1}, {0, 0}},
+		Dependencies: []analysis.LabelDependency{{FromLabel: longLabel, ToLabel: "destination", BlockingPairs: []analysis.BlockingPair{{BlockerID: "blocker", BlockedID: "blocked"}}}},
+	}
+	issues := []model.Issue{{ID: "blocker", Title: strings.Repeat("blocker title ", 8)}, {ID: "blocked", Title: strings.Repeat("blocked title ", 8)}}
+	for _, tc := range []struct {
+		name   string
+		width  int
+		height int
+		flow   *analysis.CrossLabelFlow
+		rows   []model.Issue
+	}{
+		{name: "populated tiny", width: 20, height: 5, flow: flow, rows: issues},
+		{name: "populated narrow", width: 8, height: 3, flow: flow, rows: issues},
+		{name: "empty tiny", width: 20, height: 2, flow: flow, rows: issues},
+		{name: "zero height", width: 20, height: 0, flow: flow, rows: issues},
+		{name: "empty relationship set", width: 20, height: 5, flow: &analysis.CrossLabelFlow{Labels: []string{longLabel, "destination"}, FlowMatrix: [][]int{{0, 0}, {0, 0}}}, rows: issues},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := ui.NewFlowMatrixModel(testFlowTheme())
+			m.SetData(tc.flow, tc.rows)
+			m.SetSize(tc.width, tc.height)
+			m.OpenDrilldown()
+			view := ansi.Strip(m.View())
+			if !flowOutputWithinBounds(view, tc.width, tc.height) {
+				t.Fatalf("drilldown exceeded %dx%d bounds:\n%s", tc.width, tc.height, view)
+			}
+		})
+	}
+}
+
+func flowOutputWithinBounds(view string, width, height int) bool {
+	if view == "" {
+		return height >= 0 && width >= 0
+	}
+	lines := strings.Split(view, "\n")
+	if len(lines) > height {
+		return false
+	}
+	for _, line := range lines {
+		if ansi.StringWidth(line) > width {
+			return false
+		}
+	}
+	return true
 }
 
 func TestFlowMatrixModelViewRendersContent(t *testing.T) {
