@@ -96,7 +96,7 @@ func (a *Analyzer) computeUnblocks(issueID string) []string {
 	var unblocks []string
 	if a.readiness != nil {
 		completed := map[string]bool{issueID: true}
-		for dependentID := range a.issueMap {
+		for _, dependentID := range a.unblockCandidates(issueID) {
 			if dependentID == issueID || a.readiness.Ready(dependentID, a.evaluatedAt) {
 				continue
 			}
@@ -163,6 +163,23 @@ func (a *Analyzer) computeUnblocks(issueID string) []string {
 	// Sort for determinism
 	sort.Strings(unblocks)
 	return unblocks
+}
+
+// unblockCandidates intersects the full-source readiness impact frontier with
+// this analyzer's selected candidate graph. Hidden references remain evidence
+// in readiness, but unrelated source issues never become plan candidates.
+func (a *Analyzer) unblockCandidates(issueID string) []string {
+	if a == nil || a.readiness == nil {
+		return nil
+	}
+	affected := a.readiness.AffectedByCompletion(issueID)
+	candidates := make([]string, 0, len(affected))
+	for _, candidateID := range affected {
+		if _, selected := a.issueMap[candidateID]; selected {
+			candidates = append(candidates, candidateID)
+		}
+	}
+	return candidates
 }
 
 // ComputeUnblocks is an exported wrapper for computeUnblocks for consumers outside analysis.

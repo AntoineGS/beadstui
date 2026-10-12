@@ -12,6 +12,7 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/bql"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/recipe"
 	"github.com/seanmartinsmith/beadstui/pkg/view"
 )
 
@@ -73,6 +74,18 @@ var robotListCmd = &cobra.Command{
 			}
 			baseIssues = selected
 		}
+		if robotFlagRecipe != "" {
+			recipeLoader, err := recipe.LoadDefault()
+			if err != nil {
+				return fmt.Errorf("loading recipes: %w", err)
+			}
+			selectedRecipe := recipeLoader.Get(robotFlagRecipe)
+			if selectedRecipe == nil {
+				return fmt.Errorf("unknown recipe '%s'", robotFlagRecipe)
+			}
+			baseIssues = applyRecipeFiltersWithReadiness(baseIssues, selectedRecipe, readiness, evaluatedAt)
+			baseIssues = applyRecipeSort(baseIssues, selectedRecipe)
+		}
 		issues := filterIssuesForList(baseIssues, statusFilter, priorityFilter, typeFilter, hasLabelFilter)
 
 		total := len(issues)
@@ -123,6 +136,7 @@ var robotListCmd = &cobra.Command{
 				Repo:     flagRepo,
 				Source:   robotFlagSource,
 				BQL:      robotFlagBQL,
+				Recipe:   robotFlagRecipe,
 				Global:   flagGlobal,
 				Limit:    limit,
 			},
@@ -150,6 +164,7 @@ type listQuery struct {
 	Repo     string `json:"repo"`
 	Source   string `json:"source"`
 	BQL      string `json:"bql"`
+	Recipe   string `json:"recipe"`
 	Global   bool   `json:"global"`
 	Limit    int    `json:"limit"`
 }

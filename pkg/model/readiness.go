@@ -18,9 +18,11 @@ const (
 // ReadinessIndex is an immutable snapshot of issue fields used for eligibility.
 // Build one from the complete loaded corpus before applying candidate filters.
 type ReadinessIndex struct {
-	issues    map[string]readinessIssue
-	states    map[string]DependencyState
-	openChild map[string]bool
+	issues          map[string]readinessIssue
+	states          map[string]DependencyState
+	openChild       map[string]bool
+	reverseBlocking map[string][]string
+	children        map[string][]string
 }
 
 type readinessIssue struct {
@@ -35,9 +37,11 @@ type readinessIssue struct {
 // NewReadinessIndex copies relevant issue data and precomputes dependency state.
 func NewReadinessIndex(issues []Issue) *ReadinessIndex {
 	r := &ReadinessIndex{
-		issues:    make(map[string]readinessIssue, len(issues)),
-		states:    make(map[string]DependencyState, len(issues)),
-		openChild: make(map[string]bool, len(issues)),
+		issues:          make(map[string]readinessIssue, len(issues)),
+		states:          make(map[string]DependencyState, len(issues)),
+		openChild:       make(map[string]bool, len(issues)),
+		reverseBlocking: make(map[string][]string),
+		children:        make(map[string][]string),
 	}
 	for _, issue := range issues {
 		item := readinessIssue{status: issue.Status, typeName: issue.IssueType, assignee: issue.Assignee}
@@ -51,8 +55,10 @@ func NewReadinessIndex(issues []Issue) *ReadinessIndex {
 			}
 			if dep.Type == DepParentChild {
 				item.parents = append(item.parents, dep.DependsOnID)
+				r.children[dep.DependsOnID] = append(r.children[dep.DependsOnID], issue.ID)
 			} else if blockingReadinessType(dep.Type) {
 				item.blocking = append(item.blocking, dep.DependsOnID)
+				r.reverseBlocking[dep.DependsOnID] = append(r.reverseBlocking[dep.DependsOnID], issue.ID)
 			}
 		}
 		r.issues[issue.ID] = item
@@ -115,6 +121,49 @@ func NewReadinessIndex(issues []Issue) *ReadinessIndex {
 		state(id)
 	}
 	return r
+}
+
+// AffectedByCompletion returns the sorted issue IDs whose readiness could
+// change after completing id. It follows reverse blocking references from id
+// and propagates only through descendants whose readiness inherits a parent.
+// Callers still evaluate each result with ReadyAfter against the full index.
+func (r *ReadinessIndex) AffectedByCompletion(id string) []string {
+	if r == nil {
+		return nil
+	}
+	if _, ok := r.issues[id]; !ok {
+		return nil
+	}
+	affected := make(map[string]struct{})
+	parents := []string{id}
+	for _, dependent := range r.reverseBlocking[id] {
+		if dependent != id {
+			affected[dependent] = struct{}{}
+			parents = append(parents, dependent)
+		}
+	}
+	visited := make(map[string]bool, len(parents))
+	for len(parents) > 0 {
+		parent := parents[0]
+		parents = parents[1:]
+		if visited[parent] {
+			continue
+		}
+		visited[parent] = true
+		for _, child := range r.children[parent] {
+			if child == id {
+				continue
+			}
+			affected[child] = struct{}{}
+			parents = append(parents, child)
+		}
+	}
+	out := make([]string, 0, len(affected))
+	for affectedID := range affected {
+		out = append(out, affectedID)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func blockingReadinessType(kind DependencyType) bool {
