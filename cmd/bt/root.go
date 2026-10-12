@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"go.yaml.in/yaml/v4"
 	"golang.org/x/term"
-	"gopkg.in/yaml.v3"
 
 	"github.com/seanmartinsmith/beadstui/internal/bdroute"
 	"github.com/seanmartinsmith/beadstui/internal/datasource"

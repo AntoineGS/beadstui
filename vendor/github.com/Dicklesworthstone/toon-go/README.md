@@ -218,4 +218,4 @@ The library wraps the `tru` CLI binary via subprocess. Typical overhead is 5-10m
 
 ## License
 
-MIT License - see [LICENSE](LICENSE)
+MIT License (with OpenAI/Anthropic Rider) — see [LICENSE](LICENSE)

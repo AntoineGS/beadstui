@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	json "github.com/goccy/go-json"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // DoltConfig holds the connection parameters for a running Dolt SQL server.

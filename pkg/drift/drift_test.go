@@ -10,7 +10,7 @@ import (
 
 	"github.com/seanmartinsmith/beadstui/pkg/baseline"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 func TestCalculatorNoDrift(t *testing.T) {

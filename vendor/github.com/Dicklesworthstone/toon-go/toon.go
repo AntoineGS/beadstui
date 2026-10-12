@@ -115,10 +115,12 @@ func findTruBinary() (string, error) {
 		}
 	}
 
-	// Check PATH
-	if path, err := exec.LookPath("tru"); err == nil {
-		if isToonRustBinary(path) {
-			return path, nil
+	// Check PATH: try "tru" first, fall back to "toon"
+	for _, name := range []string{"tru", "toon"} {
+		if path, err := exec.LookPath(name); err == nil {
+			if isToonRustBinary(path) {
+				return path, nil
+			}
 		}
 	}
 
@@ -162,12 +164,6 @@ func resolveTruCandidate(raw string) (string, error) {
 }
 
 func isToonRustBinary(path string) bool {
-	base := strings.ToLower(filepath.Base(path))
-	// Hard ban: Node.js `toon` CLI wrapper names.
-	if base == "toon" || base == "toon.exe" {
-		return false
-	}
-
 	helpOut, _ := exec.Command(path, "--help").CombinedOutput()
 	helpLower := strings.ToLower(string(helpOut))
 	if strings.Contains(helpLower, "reference implementation in rust") {
@@ -365,11 +361,7 @@ func DetectFormat(input string) Format {
 		return FormatJSON
 	}
 
-	// TOON has key: value or array[N] patterns
-	if strings.Contains(trimmed, ": ") || strings.Contains(trimmed, "[") && strings.Contains(trimmed, "]:") {
-		return FormatTOON
-	}
-
+	// Not valid JSON - treat as TOON (decode will fail if invalid)
 	return FormatTOON
 }
 
