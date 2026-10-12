@@ -180,6 +180,54 @@ func TestSnapshotBuilder_WithDependencies(t *testing.T) {
 	}
 }
 
+func TestSnapshotBuilder_CountReadyUsesSharedReadiness(t *testing.T) {
+	deferUntil := time.Now().Add(time.Hour)
+	issues := []model.Issue{
+		{ID: "plain", Status: model.StatusOpen},
+		{ID: "deferred", Status: model.StatusOpen, DeferUntil: &deferUntil},
+		{ID: "missing", Status: model.StatusOpen, Dependencies: []*model.Dependency{{DependsOnID: "absent", Type: model.DepBlocks}}},
+		{ID: "child", Status: model.StatusOpen, Dependencies: []*model.Dependency{{DependsOnID: "parent", Type: model.DepParentChild}}},
+		{ID: "parent", Status: model.StatusOpen, Dependencies: []*model.Dependency{{DependsOnID: "gate", Type: model.DepBlocks}}},
+		{ID: "gate", Status: model.StatusOpen},
+	}
+	snapshot := NewSnapshotBuilder(issues).Build()
+	if snapshot.CountReady != 2 {
+		t.Fatalf("CountReady = %d, want only plain and gate", snapshot.CountReady)
+	}
+}
+
+func TestSnapshotBuilderReadinessResolvesExternalPrerequisites(t *testing.T) {
+	tests := []struct {
+		name   string
+		target *model.Issue
+		state  model.DependencyState
+		ready  bool
+	}{
+		{name: "closed target", target: &model.Issue{ID: "cass-x", Status: model.StatusClosed}, state: model.DependenciesSatisfied, ready: true},
+		{name: "open target refresh", target: &model.Issue{ID: "cass-x", Status: model.StatusOpen}, state: model.DependenciesUnsatisfied},
+		{name: "missing target", state: model.DependenciesUnknown},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			candidate := model.Issue{ID: "bt-a", Status: model.StatusOpen, Dependencies: []*model.Dependency{{DependsOnID: "external:cass:x", Type: model.DepBlocks}}}
+			issues := []model.Issue{candidate}
+			if tt.target != nil {
+				issues = append(issues, *tt.target)
+			}
+			snapshot := NewSnapshotBuilder(issues).Build()
+			if got := snapshot.Readiness.DependencyState("bt-a"); got != tt.state {
+				t.Fatalf("snapshot dependency state = %s, want %s", got, tt.state)
+			}
+			if got := snapshot.Readiness.Ready("bt-a", snapshot.EvaluatedAt); got != tt.ready {
+				t.Fatalf("snapshot ready = %v, want %v", got, tt.ready)
+			}
+			if snapshot.Issues[0].Dependencies[0].DependsOnID != "external:cass:x" {
+				t.Fatal("snapshot rewrote the raw dependency wire data")
+			}
+		})
+	}
+}
+
 func TestSnapshotBuilder_TombstoneCounts(t *testing.T) {
 	issues := []model.Issue{
 		{ID: "open-1", Title: "Open", Status: model.StatusOpen},

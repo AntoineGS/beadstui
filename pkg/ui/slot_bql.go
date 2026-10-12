@@ -19,5 +19,8 @@ func (m Model) bqlFields() map[string]bql.FieldType {
 
 // bqlExecuteOpts returns the options every TUI BQL execution uses.
 func (m Model) bqlExecuteOpts() bql.ExecuteOpts {
-	return bql.ExecuteOpts{IssueMap: m.data.issueMap, Fields: m.slotRegistry.FieldValue}
+	return bql.ExecuteOpts{
+		IssueMap: m.data.issueMap, Readiness: m.data.readiness,
+		EvaluatedAt: m.readinessNow(), Fields: m.slotRegistry.FieldValue,
+	}
 }

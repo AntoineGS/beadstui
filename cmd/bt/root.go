@@ -407,12 +407,13 @@ func runRootTUI(cmd *cobra.Command) {
 			fmt.Fprintf(os.Stderr, "BQL validation error: %v\n", err)
 			os.Exit(1)
 		}
-		issueMap := make(map[string]*model.Issue, len(appCtx.issues))
-		for i := range appCtx.issues {
-			issueMap[appCtx.issues[i].ID] = &appCtx.issues[i]
+		issueMap := make(map[string]*model.Issue, len(appCtx.issuesCorpus))
+		for i := range appCtx.issuesCorpus {
+			issueMap[appCtx.issuesCorpus[i].ID] = &appCtx.issuesCorpus[i]
 		}
 		executor := bql.NewMemoryExecutor()
-		appCtx.issues = executor.Execute(parsed, appCtx.issues, bql.ExecuteOpts{IssueMap: issueMap})
+		evaluatedAt := time.Now()
+		appCtx.issues = executor.Execute(parsed, appCtx.issues, bql.ExecuteOpts{IssueMap: issueMap, Readiness: appCtx.readiness, EvaluatedAt: evaluatedAt})
 	}
 
 	// Handle --search.
@@ -458,11 +459,9 @@ func runRootTUI(cmd *cobra.Command) {
 		return
 	}
 
-	// Apply recipe filters and sorting.
-	if activeRecipe != nil {
-		appCtx.issues = applyRecipeFilters(appCtx.issues, activeRecipe)
-		appCtx.issues = applyRecipeSort(appCtx.issues, activeRecipe)
-	}
+	// Keep the full loaded corpus for the TUI. NewModel applies the active
+	// recipe with the shared readiness authority so time-dependent deferrals
+	// can enter the visible set after expiry without a source reload.
 
 	// Background mode rollout.
 	if flagBackgroundMode && flagNoBackgroundMode {

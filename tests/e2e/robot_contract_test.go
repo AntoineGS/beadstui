@@ -243,13 +243,14 @@ func TestRobotTriageByTrackContract(t *testing.T) {
 		if g.TrackID == "" {
 			t.Fatalf("track group missing track_id")
 		}
-		if g.TopPick == nil || g.TopPick.ID == "" {
-			t.Fatalf("track group %q missing top_pick", g.TrackID)
+		topID := ""
+		if g.TopPick != nil {
+			topID = g.TopPick.ID
 		}
 		byID[g.TrackID] = struct {
 			topID string
 			claim string
-		}{topID: g.TopPick.ID, claim: g.ClaimCommand}
+		}{topID: topID, claim: g.ClaimCommand}
 	}
 
 	for _, want := range []string{"track-A", "track-B"} {
@@ -257,11 +258,12 @@ func TestRobotTriageByTrackContract(t *testing.T) {
 		if !ok {
 			t.Fatalf("missing track group %q", want)
 		}
-		if g.topID == "" {
-			t.Fatalf("track group %q missing top_pick.id", want)
+		wantClaim := "(cd " + shellQuoteForTest(env) + " && 'bd' 'update' 'A' '--status=in_progress')"
+		if want == "track-A" && (g.topID != "A" || g.claim != wantClaim) {
+			t.Fatalf("claimable group track-A pick=%q command=%q", g.topID, g.claim)
 		}
-		if g.claim == "" {
-			t.Fatalf("track group %q missing claim_command", want)
+		if want == "track-B" && (g.topID != "" || g.claim != "") {
+			t.Fatalf("blocked-only group emitted claim pick=%q command=%q", g.topID, g.claim)
 		}
 	}
 }
@@ -496,12 +498,18 @@ func TestRobotNextContractActionable(t *testing.T) {
 	if len(payload.Reasons) == 0 {
 		t.Fatalf("robot-next missing reasons")
 	}
-	if payload.ClaimCmd != "bd update A --status=in_progress" {
+	wantClaim := "(cd " + shellQuoteForTest(env) + " && 'bd' 'update' 'A' '--status=in_progress')"
+	if payload.ClaimCmd != wantClaim {
 		t.Fatalf("unexpected claim_command: %q", payload.ClaimCmd)
 	}
-	if payload.ShowCmd != "bd show A" {
+	wantShow := "(cd " + shellQuoteForTest(env) + " && 'bd' 'show' 'A')"
+	if payload.ShowCmd != wantShow {
 		t.Fatalf("unexpected show_command: %q", payload.ShowCmd)
 	}
+}
+
+func shellQuoteForTest(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 // TestRobotEnvelopeConsistency verifies all robot commands include the

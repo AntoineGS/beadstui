@@ -332,11 +332,10 @@ func TestExecute_NilIssueMap(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 	e := NewMemoryExecutor()
-	// With nil IssueMap, blocked check can't find blockers
+	// Missing full-corpus evidence is unknown and therefore not eligible.
 	result := e.Execute(query, testIssues, ExecuteOpts{})
-	// Should return 0 since we can't verify blocking without issueMap
-	if len(result) != 0 {
-		t.Errorf("got %d results with nil IssueMap, want 0", len(result))
+	if got := ids(result); !equalStrings(got, []string{"bt-001", "bt-002", "bt-004"}) {
+		t.Errorf("blocked results with missing authority = %v, want all non-closed candidates", got)
 	}
 }
 
@@ -452,7 +451,7 @@ func blockedFixture() []model.Issue {
 	}
 }
 
-var wantBlockedFixture = []string{"bt-cycle-a", "bt-cycle-b", "bt-epic", "bt-story", "bt-subtask", "bt-xproj"}
+var wantBlockedFixture = []string{"bt-cycle-a", "bt-cycle-b", "bt-epic", "bt-orphan", "bt-story", "bt-subtask", "bt-xproj"}
 
 func issueMapOf(issues []model.Issue) map[string]*model.Issue {
 	m := make(map[string]*model.Issue, len(issues))
@@ -468,7 +467,8 @@ func runBlocked(t *testing.T, issues, corpus []model.Issue) []string {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	got := ids(NewMemoryExecutor().Execute(query, issues, ExecuteOpts{IssueMap: issueMapOf(corpus)}))
+	combined := append(append([]model.Issue(nil), corpus...), issues...)
+	got := ids(NewMemoryExecutor().Execute(query, issues, ExecuteOpts{IssueMap: issueMapOf(corpus), Readiness: model.NewReadinessIndex(combined), EvaluatedAt: time.Now()}))
 	sort.Strings(got)
 	return got
 }
@@ -529,6 +529,24 @@ func TestBlocked_ParityWithAnalyzer(t *testing.T) {
 
 	if got := runBlocked(t, issues, issues); !equalStrings(got, want) {
 		t.Fatalf("BQL blocked = true %v != analyzer non-actionable %v", got, want)
+	}
+}
+
+func TestBlockedFalseUsesSharedReadinessForUnknownAndDeferral(t *testing.T) {
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	deferUntil := now.Add(time.Hour)
+	issues := []model.Issue{
+		{ID: "ready", Status: model.StatusOpen},
+		{ID: "unknown", Status: model.StatusOpen, Dependencies: []*model.Dependency{{DependsOnID: "missing", Type: model.DepBlocks}}},
+		{ID: "deferred", Status: model.StatusOpen, DeferUntil: &deferUntil},
+	}
+	query, err := Parse("blocked = false")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := NewMemoryExecutor().Execute(query, issues, ExecuteOpts{IssueMap: issueMapOf(issues), Readiness: model.NewReadinessIndex(issues), EvaluatedAt: now})
+	if len(got) != 1 || got[0].ID != "ready" {
+		t.Fatalf("blocked=false selected %+v, want only ready", ids(got))
 	}
 }
 

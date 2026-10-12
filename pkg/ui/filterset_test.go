@@ -130,21 +130,105 @@ func TestReadyFilterUsesFullCorpusAndDeferralExpiry(t *testing.T) {
 	}
 }
 
-func TestStatusTickRefreshesExpiredReadiness(t *testing.T) {
-	expiry := time.Now().Add(500 * time.Millisecond)
-	issues := []model.Issue{{ID: "a", Title: "deferred until tick", Status: model.StatusOpen, IssueType: model.TypeTask, DeferUntil: &expiry}}
-	m := newSizedModel(t, issues, 140, 40)
+func TestReplaceIssuesRebuildsReadinessAuthority(t *testing.T) {
+	issues := []model.Issue{
+		{ID: "candidate", Status: model.StatusOpen, Dependencies: []*model.Dependency{{DependsOnID: "gate", Type: model.DepBlocks}}},
+		{ID: "gate", Status: model.StatusOpen},
+	}
+	m := newSizedModel(t, issues, 100, 30)
 	m.SetFilter("ready")
 	m.applyFilter()
-	if len(m.filter.visible) != 0 {
-		t.Fatal("future-deferred item was visible before expiry")
+	if len(m.filter.visible) != 1 || m.filter.visible[0].ID != "gate" {
+		t.Fatalf("candidate with open gate was initially ready: %+v", m.filter.visible)
 	}
-	// Ensure the expiry is after the snapshot's evaluation timestamp and allow
-	// the one-shot status tick to cross the boundary.
-	time.Sleep(time.Until(expiry) + 10*time.Millisecond)
-	next, _ := m.handleStatusTick(statusTickMsg{})
+
+	closed := append([]model.Issue(nil), issues...)
+	closed[1].Status = model.StatusClosed
+	m.replaceIssues(closed)
+	if len(m.filter.visible) != 1 || m.filter.visible[0].ID != "candidate" {
+		t.Fatalf("ready filter retained stale blocker state after reload: %+v", m.filter.visible)
+	}
+	if m.ac.countReady != 1 {
+		t.Fatalf("footer ready count = %d after gate closure, want 1", m.ac.countReady)
+	}
+
+	deferredUntil := time.Now().Add(time.Hour)
+	deferred := []model.Issue{{ID: "new", Status: model.StatusOpen, DeferUntil: &deferredUntil}}
+	m.replaceIssues(deferred)
+	if len(m.filter.visible) != 0 {
+		t.Fatalf("new deferred issue was not filtered: %+v", m.filter.visible)
+	}
+	if m.ac.countReady != 0 {
+		t.Fatalf("footer counted a future-deferred issue ready: %d", m.ac.countReady)
+	}
+	m.ac.triageWaitPhase2 = false
+	m.ensureTriageForVisible(true)
+	if len(m.ac.triage.QuickRef.TopPicks) != 0 {
+		t.Fatalf("triage recommended a future-deferred issue: %+v", m.ac.triage.QuickRef.TopPicks)
+	}
+	deferredUntil = time.Now().Add(-time.Hour)
+	m.replaceIssues(deferred)
+	if len(m.filter.visible) != 1 || m.filter.visible[0].ID != "new" {
+		t.Fatalf("deferral edit/new ID not reflected after reload: %+v", m.filter.visible)
+	}
+	if m.ac.countReady != 1 {
+		t.Fatalf("footer did not reflect edited deferral: ready count %d", m.ac.countReady)
+	}
+	m.ensureTriageForVisible(true)
+	if len(m.ac.triage.QuickRef.TopPicks) != 1 || m.ac.triage.QuickRef.TopPicks[0].ID != "new" {
+		t.Fatalf("triage did not reflect edited deferral: %+v", m.ac.triage.QuickRef.TopPicks)
+	}
+}
+
+func TestStatusTickRefreshesExpiredReadiness(t *testing.T) {
+	evaluatedAt := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	expiry := evaluatedAt.Add(time.Hour)
+	issues := []model.Issue{{ID: "a", Title: "deferred until tick", Status: model.StatusOpen, IssueType: model.TypeTask, DeferUntil: &expiry}}
+	m := newSizedModel(t, issues, 140, 40)
+	m.data.readinessEvaluatedAt = evaluatedAt
+	m.data.analyzer = analysis.NewAnalyzerWithReadiness(m.data.issues, m.data.readiness, evaluatedAt)
+	m.ac.triageWaitPhase2 = false
+	m.SetFilter("all")
+	m.applyFilter()
+	m.ensureTriageForVisible(true)
+	if len(m.ac.triage.QuickRef.TopPicks) != 0 {
+		t.Fatal("future-deferred item was initially claimable")
+	}
+	m.mode = ViewActionable
+	m.refreshActionableView()
+	if len(m.actionableView.plan.Tracks) != 0 {
+		t.Fatalf("future-deferred issue unexpectedly actionable: %+v", m.actionableView.plan)
+	}
+	next, _ := m.handleStatusTickAt(expiry)
 	if len(next.filter.visible) != 1 || next.filter.visible[0].ID != "a" {
 		t.Fatalf("expired item not visible after status tick: %+v", next.filter.visible)
+	}
+	if len(next.ac.triage.QuickRef.TopPicks) != 1 || next.ac.triage.QuickRef.TopPicks[0].ID != "a" {
+		t.Fatalf("triage cache not refreshed at expiry: %+v", next.ac.triage.QuickRef.TopPicks)
+	}
+	if len(next.actionableView.plan.Tracks) != 1 || next.actionableView.plan.Tracks[0].Items[0].ID != "a" {
+		t.Fatalf("open actionable view not refreshed at expiry: %+v", next.actionableView.plan)
+	}
+}
+
+func TestExpiredActionableRecipeCandidateAppearsWithoutReload(t *testing.T) {
+	evaluatedAt := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	expiry := evaluatedAt.Add(time.Hour)
+	issue := model.Issue{ID: "recipe-deferred", Status: model.StatusOpen, DeferUntil: &expiry}
+	actionable := true
+	activeRecipe := &recipe.Recipe{Filters: recipe.FilterConfig{Actionable: &actionable}}
+	m := newSizedModel(t, []model.Issue{issue}, 100, 30)
+	m.filter.activeRecipe = activeRecipe
+	m.filter.currentFilter = "all"
+	m.data.readinessEvaluatedAt = evaluatedAt
+	m.data.analyzer = analysis.NewAnalyzerWithReadiness(m.data.issues, m.data.readiness, evaluatedAt)
+	m.applyFilter()
+	if len(m.filter.visible) != 0 {
+		t.Fatalf("future-deferred recipe issue visible before expiry: %+v", m.filter.visible)
+	}
+	next, _ := m.handleStatusTickAt(expiry)
+	if len(next.filter.visible) != 1 || next.filter.visible[0].ID != issue.ID {
+		t.Fatalf("expired recipe candidate was lost without source reload: %+v", next.filter.visible)
 	}
 }
 

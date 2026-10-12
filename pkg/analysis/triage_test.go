@@ -37,6 +37,66 @@ func TestTriageTopPicksRequireClaimableAndEmptySelectionStaysEmpty(t *testing.T)
 	}
 }
 
+func TestTriageClaimablePickIsNotLimitedByRecommendationTopN(t *testing.T) {
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	issues := []model.Issue{
+		{ID: "assigned", Title: "Assigned", Status: model.StatusInProgress, Assignee: "worker", IssueType: model.TypeTask, Priority: 0},
+		{ID: "claimable", Title: "Claimable", Status: model.StatusOpen, IssueType: model.TypeTask, Priority: 4},
+	}
+	got := ComputeTriageWithOptionsAndTime(issues, TriageOptions{TopN: 1, EvaluatedAt: now}, now)
+	if len(got.Recommendations) != 1 {
+		t.Fatalf("recommendations = %d, want TopN 1", len(got.Recommendations))
+	}
+	if len(got.QuickRef.TopPicks) == 0 || got.QuickRef.TopPicks[0].ID != "claimable" {
+		t.Fatalf("top picks = %+v; claimable candidate beyond display TopN was lost", got.QuickRef.TopPicks)
+	}
+}
+
+func TestTriageAllNonclaimableRecommendationsHaveNoPicks(t *testing.T) {
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	issues := []model.Issue{
+		{ID: "flight", Status: model.StatusInProgress, Assignee: "worker", Labels: []string{"area:analysis"}},
+		{ID: "assigned", Status: model.StatusOpen, Assignee: "worker", Labels: []string{"area:analysis"}},
+	}
+	got := ComputeTriageWithOptionsAndTime(issues, TriageOptions{GroupByLabel: true, EvaluatedAt: now}, now)
+	if len(got.QuickRef.TopPicks) != 0 {
+		t.Fatalf("all-nonclaimable corpus produced picks: %+v", got.QuickRef.TopPicks)
+	}
+	if len(got.RecommendationsByLabel) != 1 {
+		t.Fatalf("grouped recommendations = %d, want one label group", len(got.RecommendationsByLabel))
+	}
+	group := got.RecommendationsByLabel[0]
+	if group.TopPick != nil || group.ClaimCommand != "" {
+		t.Fatalf("all-nonclaimable group produced claim output: pick=%+v command=%q", group.TopPick, group.ClaimCommand)
+	}
+}
+
+func TestClaimableGroupPickLeavesRoutingToCaller(t *testing.T) {
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	issues := []model.Issue{
+		{ID: "flight", Status: model.StatusInProgress, Assignee: "worker"},
+		{ID: "ready", Status: model.StatusOpen},
+	}
+	recommendations := []Recommendation{{ID: "flight", Score: 2}, {ID: "ready", Score: 1}}
+	pick, command := claimableGroupPick(recommendations, model.NewReadinessIndex(issues), now, nil)
+	if pick == nil || pick.ID != "ready" {
+		t.Fatalf("group pick = %+v, want ready", pick)
+	}
+	if command != "" {
+		t.Fatalf("unrouted group claim command = %q", command)
+	}
+	if pick, command := claimableGroupPick(recommendations[:1], model.NewReadinessIndex(issues), now, nil); pick != nil || command != "" {
+		t.Fatalf("nonclaimable-only group returned pick=%+v command=%q", pick, command)
+	}
+}
+
+func TestBuildCommandsDoesNotEmitUnroutedWrites(t *testing.T) {
+	commands := buildCommands("bt-ready")
+	if commands.ClaimTop != "" || commands.ShowTop != "" {
+		t.Fatalf("analysis emitted unrouted commands: claim=%q show=%q", commands.ClaimTop, commands.ShowTop)
+	}
+}
+
 func TestScopedTriageUsesHiddenPrerequisiteEvidence(t *testing.T) {
 	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
 	candidate := model.Issue{ID: "bt-a", Title: "Candidate", Status: model.StatusOpen, IssueType: model.TypeTask, Dependencies: []*model.Dependency{{DependsOnID: "bt-b", Type: model.DepBlocks}}}

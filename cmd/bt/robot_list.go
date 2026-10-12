@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -40,6 +41,15 @@ var robotListCmd = &cobra.Command{
 		// the input set), then BQL (filters within the scoped set), then
 		// the simple flag filters. bt-111w.
 		baseIssues := filterBySource(appCtx.issues, robotFlagSource)
+		readiness := appCtx.readiness
+		if readiness == nil {
+			corpus := appCtx.issuesForSearch
+			if corpus == nil {
+				corpus = appCtx.issues
+			}
+			readiness = model.NewReadinessIndex(analysis.ResolveExternalDeps(corpus))
+		}
+		evaluatedAt := time.Now()
 		if robotFlagBQL != "" {
 			parsed, err := bql.Parse(robotFlagBQL)
 			if err != nil {
@@ -49,7 +59,19 @@ var robotListCmd = &cobra.Command{
 				return fmt.Errorf("BQL validation error: %w", err)
 			}
 			executor := bql.NewMemoryExecutor()
-			baseIssues = executor.Execute(parsed, baseIssues, bql.ExecuteOpts{IssueMap: loadedIssueMap()})
+			baseIssues = executor.Execute(parsed, baseIssues, bql.ExecuteOpts{IssueMap: loadedIssueMap(), Readiness: readiness, EvaluatedAt: evaluatedAt})
+		}
+		if robotFlagLabelScope != "" {
+			selected := make([]model.Issue, 0)
+			for _, issue := range baseIssues {
+				for _, label := range issue.Labels {
+					if label == robotFlagLabelScope {
+						selected = append(selected, issue)
+						break
+					}
+				}
+			}
+			baseIssues = selected
 		}
 		issues := filterIssuesForList(baseIssues, statusFilter, priorityFilter, typeFilter, hasLabelFilter)
 

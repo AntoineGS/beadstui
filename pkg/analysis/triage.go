@@ -278,8 +278,8 @@ type Alert struct {
 
 // CommandHelpers provides copy-paste commands for common actions
 type CommandHelpers struct {
-	ClaimTop      string `json:"claim_top"`      // CI=1 br update <id> --status in_progress --json
-	ShowTop       string `json:"show_top"`       // CI=1 br show <id> --json
+	ClaimTop      string `json:"claim_top"`      // Populated only by callers with verified write-routing context
+	ShowTop       string `json:"show_top"`       // Populated only by callers with verified write-routing context
 	ListReady     string `json:"list_ready"`     // CI=1 bd ready --json
 	ListBlocked   string `json:"list_blocked"`   // CI=1 bd blocked --json
 	RefreshTriage string `json:"refresh_triage"` // bt --robot-triage
@@ -318,7 +318,7 @@ type TrackRecommendationGroup struct {
 	Reason          string           `json:"reason"`                  // Why these are grouped (e.g., "Independent work stream")
 	Recommendations []Recommendation `json:"recommendations"`         // Recommendations in this track
 	TopPick         *TopPick         `json:"top_pick,omitempty"`      // Best item in this track
-	ClaimCommand    string           `json:"claim_command,omitempty"` // CI=1 br update <top_pick_id> --status in_progress --json
+	ClaimCommand    string           `json:"claim_command,omitempty"` // Set by a caller with verified write-routing context
 	TotalUnblocks   int              `json:"total_unblocks"`          // Sum of unblocks in this track
 }
 
@@ -327,7 +327,7 @@ type LabelRecommendationGroup struct {
 	Label           string           `json:"label"`
 	Recommendations []Recommendation `json:"recommendations"`         // Recommendations with this label
 	TopPick         *TopPick         `json:"top_pick,omitempty"`      // Best item with this label
-	ClaimCommand    string           `json:"claim_command,omitempty"` // CI=1 br update <top_pick_id> --status in_progress --json
+	ClaimCommand    string           `json:"claim_command,omitempty"` // Set by a caller with verified write-routing context
 	TotalUnblocks   int              `json:"total_unblocks"`          // Sum of unblocks for this label
 }
 
@@ -467,12 +467,13 @@ func ComputeTriageFromAnalyzer(analyzer *Analyzer, stats *GraphStats, issues []m
 
 	// Immediate picks are stricter than general priority recommendations:
 	// they must be claimable as a new item, not merely ready or in flight.
-	claimableRecs := make([]Recommendation, 0, len(recommendations))
-	for _, rec := range recommendations {
-		if readiness.Claimable(rec.ID, now) {
-			claimableRecs = append(claimableRecs, rec)
+	claimableScores := make([]TriageScore, 0)
+	for _, score := range triageScores {
+		if readiness.Claimable(score.IssueID, now) {
+			claimableScores = append(claimableScores, score)
 		}
 	}
+	claimableRecs := buildRecommendationsFromTriageScores(claimableScores, triageCtx, len(claimableScores))
 	topPicks := buildTopPicks(claimableRecs, 3)
 
 	// Determine top issue for commands
@@ -487,14 +488,19 @@ func ComputeTriageFromAnalyzer(analyzer *Analyzer, stats *GraphStats, issues []m
 	// bv-87: Build grouped recommendations if requested
 	var recsByTrack []TrackRecommendationGroup
 	var recsByLabel []LabelRecommendationGroup
+	var groupedRecommendations []Recommendation
 	if opts.GroupByTrack {
-		recsByTrack = buildRecommendationsByTrack(recommendations, analyzer, unblocksMap)
+		groupedRecommendations = buildRecommendationsFromTriageScores(triageScores, triageCtx, len(triageScores))
+		recsByTrack = buildRecommendationsByTrack(groupedRecommendations, analyzer, unblocksMap)
 		for i := range recsByTrack {
 			recsByTrack[i].TopPick, recsByTrack[i].ClaimCommand = claimableGroupPick(recsByTrack[i].Recommendations, readiness, now, unblocksMap)
 		}
 	}
 	if opts.GroupByLabel {
-		recsByLabel = buildRecommendationsByLabel(recommendations, unblocksMap)
+		if groupedRecommendations == nil {
+			groupedRecommendations = buildRecommendationsFromTriageScores(triageScores, triageCtx, len(triageScores))
+		}
+		recsByLabel = buildRecommendationsByLabel(groupedRecommendations, unblocksMap)
 		for i := range recsByLabel {
 			recsByLabel[i].TopPick, recsByLabel[i].ClaimCommand = claimableGroupPick(recsByLabel[i].Recommendations, readiness, now, unblocksMap)
 		}
@@ -549,8 +555,7 @@ func claimableGroupPick(recs []Recommendation, readiness *model.ReadinessIndex, 
 	if best == nil {
 		return nil, ""
 	}
-	return &TopPick{ID: best.ID, Title: best.Title, Score: best.Score, Reasons: best.Reasons, Unblocks: len(unblocks[best.ID])},
-		fmt.Sprintf("CI=1 br update %s --status in_progress --json", best.ID)
+	return &TopPick{ID: best.ID, Title: best.Title, Score: best.Score, Reasons: best.Reasons, Unblocks: len(unblocks[best.ID])}, ""
 }
 
 // ComputeStaleness calculates staleness metrics from history
@@ -947,8 +952,11 @@ func buildCommands(topID string) CommandHelpers {
 	claimTop := listReady + "  # No top pick available"
 	showTop := listReady + "  # No top pick available"
 	if topID != "" {
-		claimTop = fmt.Sprintf("%sbr update %s --status in_progress --json", base, topID)
-		showTop = fmt.Sprintf("%sbr show %s --json", base, topID)
+		// A standalone analysis result has no launch routing table, so it must
+		// not emit a write command that could target the wrong project. CLI
+		// callers add a route-checked command once they have source context.
+		claimTop = ""
+		showTop = ""
 	}
 
 	return CommandHelpers{
@@ -1518,7 +1526,6 @@ func buildRecommendationsByTrack(recs []Recommendation, analyzer *Analyzer, unbl
 				Reasons:  rec.Reasons,
 				Unblocks: len(unblocksMap[rec.ID]),
 			}
-			group.ClaimCommand = fmt.Sprintf("CI=1 br update %s --status in_progress --json", rec.ID)
 		}
 	}
 
@@ -1578,7 +1585,6 @@ func buildRecommendationsByLabel(recs []Recommendation, unblocksMap map[string][
 				Reasons:  rec.Reasons,
 				Unblocks: len(unblocksMap[rec.ID]),
 			}
-			group.ClaimCommand = fmt.Sprintf("CI=1 br update %s --status in_progress --json", rec.ID)
 		}
 	}
 

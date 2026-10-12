@@ -85,11 +85,18 @@ func (m *Model) filterEnv() FilterEnv {
 	return FilterEnv{
 		IssueMap:    m.data.issueMap,
 		Readiness:   m.data.readiness,
-		EvaluatedAt: time.Now(),
+		EvaluatedAt: m.readinessNow(),
 		BQL:         m.filter.bqlEngine,
 		BQLOpts:     m.bqlExecuteOpts(),
 		Stats:       m.data.analysis,
 	}
+}
+
+func (m *Model) readinessNow() time.Time {
+	if m.data != nil && !m.data.readinessEvaluatedAt.IsZero() {
+		return m.data.readinessEvaluatedAt
+	}
+	return time.Now()
 }
 
 // applySpec evaluates a variant of the active filter (facet counts, scope
@@ -173,7 +180,7 @@ func (m *Model) ensureTriageForVisible(force bool) {
 	if m.ac.triageWaitPhase2 && !force {
 		return
 	}
-	triage := analysis.ComputeTriageWithOptions(m.filter.visible, analysis.TriageOptions{WaitForPhase2: true, Readiness: m.data.readiness, EvaluatedAt: time.Now()})
+	triage := analysis.ComputeTriageWithOptions(m.filter.visible, analysis.TriageOptions{WaitForPhase2: true, Readiness: m.data.readiness, EvaluatedAt: m.readinessNow()})
 	m.setTriage(&triage)
 	m.ac.triageKey = m.filter.visibleKey
 }
@@ -292,7 +299,7 @@ func (m *Model) refreshFlowMatrix() {
 
 // refreshActionableView builds the execution plan from the visible set.
 func (m *Model) refreshActionableView() {
-	plan := analysis.NewAnalyzerWithReadiness(m.filter.visible, m.data.readiness, time.Now()).GetExecutionPlan()
+	plan := analysis.NewAnalyzerWithReadiness(m.filter.visible, m.data.readiness, m.readinessNow()).GetExecutionPlan()
 	m.actionableView = NewActionableModel(plan, m.theme)
 	m.actionableView.SetSize(m.width, m.height-2)
 }

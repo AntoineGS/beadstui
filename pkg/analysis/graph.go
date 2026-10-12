@@ -1177,6 +1177,19 @@ type Analyzer struct {
 	evaluatedAt      time.Time
 }
 
+// ReevaluateReadiness returns an analyzer over the same owned issue corpus and
+// readiness authority, evaluated at a new wall-clock instant.
+func (a *Analyzer) ReevaluateReadiness(at time.Time) *Analyzer {
+	if a == nil {
+		return nil
+	}
+	issues := make([]model.Issue, 0, len(a.issueMap))
+	for _, issue := range a.issueMap {
+		issues = append(issues, issue)
+	}
+	return NewAnalyzerWithReadiness(issues, a.readiness, at)
+}
+
 // SetConfig sets a custom analysis configuration.
 // Pass nil to use size-based automatic configuration.
 func (a *Analyzer) SetConfig(config *AnalysisConfig) {

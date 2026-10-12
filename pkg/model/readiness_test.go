@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -107,6 +108,37 @@ func TestReadinessDepthBeyondFifty(t *testing.T) {
 	}
 }
 
+func TestReadinessDefersInheritedBlockerExpansionUntilQuery(t *testing.T) {
+	const depth = 800
+	issues := make([]Issue, 0, depth*2)
+	for i := 0; i < depth; i++ {
+		id := fmt.Sprintf("node-%04d", i)
+		issue := Issue{ID: id, Status: StatusOpen, Dependencies: []*Dependency{{DependsOnID: fmt.Sprintf("gate-%04d", i), Type: DepBlocks}}}
+		if i > 0 {
+			issue.Dependencies = append(issue.Dependencies, &Dependency{DependsOnID: fmt.Sprintf("node-%04d", i-1), Type: DepParentChild})
+		}
+		issues = append(issues, issue)
+	}
+	r := NewReadinessIndex(issues)
+	storedReferences := 0
+	for _, issue := range r.issues {
+		storedReferences += len(issue.blocking) + len(issue.parents)
+	}
+	if storedReferences != 2*depth-1 {
+		t.Fatalf("stored direct references = %d, want %d", storedReferences, 2*depth-1)
+	}
+	got := r.Blockers("node-0799")
+	if len(got) != depth {
+		t.Fatalf("deep inherited blockers = %d, want %d", len(got), depth)
+	}
+	if got[0] != "gate-0000" || got[len(got)-1] != "gate-0799" {
+		t.Fatalf("blockers not sorted: first=%q last=%q", got[0], got[len(got)-1])
+	}
+	if got := r.Blockers("not-indexed"); len(got) != 0 {
+		t.Fatalf("unknown issue blockers = %v, want none", got)
+	}
+}
+
 func TestReadinessAllStatusesAreExplicitlyEligible(t *testing.T) {
 	now := time.Now()
 	for _, status := range []Status{StatusOpen, StatusInProgress, StatusBlocked, StatusDeferred, StatusPinned, StatusHooked, StatusReview, StatusClosed, StatusTombstone, Status("custom-state")} {
@@ -131,6 +163,16 @@ func TestReadinessDirectCycleIsUnsatisfiedAndMissingParentUnknown(t *testing.T) 
 	missingParent := NewReadinessIndex([]Issue{{ID: "child", Status: StatusOpen, Dependencies: []*Dependency{{DependsOnID: "missing-parent", Type: DepParentChild}}}})
 	if got := missingParent.DependencyState("child"); got != DependenciesUnknown {
 		t.Fatalf("missing parent = %s", got)
+	}
+}
+
+func TestReadinessBlockersReportsParentCycleLazily(t *testing.T) {
+	r := NewReadinessIndex([]Issue{
+		{ID: "a", Status: StatusOpen, Dependencies: []*Dependency{{DependsOnID: "b", Type: DepParentChild}}},
+		{ID: "b", Status: StatusOpen, Dependencies: []*Dependency{{DependsOnID: "a", Type: DepParentChild}}},
+	})
+	if got := r.Blockers("a"); len(got) != 1 || got[0] != "a" {
+		t.Fatalf("cycle blockers = %v, want [a]", got)
 	}
 }
 

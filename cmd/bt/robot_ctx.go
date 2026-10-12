@@ -2,8 +2,10 @@ package main
 
 import (
 	"os"
+	"strings"
 	"time"
 
+	"github.com/seanmartinsmith/beadstui/internal/bdroute"
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
@@ -23,6 +25,7 @@ type robotCtx struct {
 	dataHash          string                // stable hash of issue data
 	labelScopeContext *analysis.LabelHealth // label health context when --label is used
 	projectDir        string                // project root (for baselines)
+	routeTable        *bdroute.Table
 }
 
 // newRobotCtx constructs a robotCtx from loaded/computed state.
@@ -43,6 +46,7 @@ func newRobotCtx(issues, issuesForSearch []model.Issue, dataHash, cwd, beadsPath
 		dataHash:          dataHash,
 		labelScopeContext: labelScopeContext,
 		projectDir:        projectDir,
+		routeTable:        appCtx.routeTable,
 	}
 }
 
@@ -97,4 +101,48 @@ func (rc *robotCtx) triageOptions(opts analysis.TriageOptions) analysis.TriageOp
 	opts.SelectedIDs = rc.selectedIDs()
 	opts.EvaluatedAt = rc.evaluatedAt
 	return opts
+}
+
+func claimableRecommendations(recommendations []analysis.Recommendation, readiness *model.ReadinessIndex, evaluatedAt time.Time) []analysis.Recommendation {
+	if readiness == nil {
+		return nil
+	}
+	out := make([]analysis.Recommendation, 0, len(recommendations))
+	for _, recommendation := range recommendations {
+		if readiness.Claimable(recommendation.ID, evaluatedAt) {
+			out = append(out, recommendation)
+		}
+	}
+	return out
+}
+
+func (rc *robotCtx) routedBDCommand(issueID string, args ...string) string {
+	if rc == nil || rc.routeTable == nil {
+		return ""
+	}
+	corpus := rc.issuesForSearch
+	if corpus == nil {
+		corpus = rc.issues
+	}
+	for _, issue := range corpus {
+		if issue.ID != issueID {
+			continue
+		}
+		target, err := rc.routeTable.Resolve(issue)
+		if err != nil || target.Global || target.Dir == "" {
+			return ""
+		}
+		parts := make([]string, 0, len(args)+1)
+		parts = append(parts, "bd")
+		parts = append(parts, args...)
+		for i := range parts {
+			parts[i] = shellQuote(parts[i])
+		}
+		return "(cd " + shellQuote(target.Dir) + " && " + strings.Join(parts, " ") + ")"
+	}
+	return ""
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }

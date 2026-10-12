@@ -1774,8 +1774,11 @@ func (m *Model) replaceIssues(newIssues []model.Issue) {
 
 	// Recompute analysis
 	m.data.issues = newIssues
-	cachedAnalyzer := analysis.NewCachedAnalyzer(newIssues, nil)
-	m.data.analyzer = cachedAnalyzer.Analyzer
+	resolvedIssues := analysis.ResolveExternalDeps(newIssues)
+	m.data.readinessEvaluatedAt = time.Now()
+	m.data.readiness = model.NewReadinessIndex(resolvedIssues)
+	cachedAnalyzer := analysis.NewCachedAnalyzer(resolvedIssues, nil)
+	m.data.analyzer = analysis.NewAnalyzerWithReadiness(resolvedIssues, m.data.readiness, m.data.readinessEvaluatedAt)
 	m.data.analysis = cachedAnalyzer.AnalyzeAsync(context.Background())
 	m.labelHealthCached = false
 	m.attentionCached = false

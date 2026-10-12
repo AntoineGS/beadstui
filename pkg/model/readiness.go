@@ -20,7 +20,6 @@ const (
 type ReadinessIndex struct {
 	issues    map[string]readinessIssue
 	states    map[string]DependencyState
-	blockers  map[string][]string
 	openChild map[string]bool
 }
 
@@ -38,7 +37,6 @@ func NewReadinessIndex(issues []Issue) *ReadinessIndex {
 	r := &ReadinessIndex{
 		issues:    make(map[string]readinessIssue, len(issues)),
 		states:    make(map[string]DependencyState, len(issues)),
-		blockers:  make(map[string][]string, len(issues)),
 		openChild: make(map[string]bool, len(issues)),
 	}
 	for _, issue := range issues {
@@ -57,8 +55,6 @@ func NewReadinessIndex(issues []Issue) *ReadinessIndex {
 				item.blocking = append(item.blocking, dep.DependsOnID)
 			}
 		}
-		sort.Strings(item.blocking)
-		sort.Strings(item.parents)
 		r.issues[issue.ID] = item
 	}
 	for _, issue := range r.issues {
@@ -69,9 +65,7 @@ func NewReadinessIndex(issues []Issue) *ReadinessIndex {
 		}
 	}
 	visiting := make(map[string]bool, len(issues))
-	blockerMemo := make(map[string][]string, len(issues))
 	var state func(string) DependencyState
-	var refs func(string, map[string]bool) []string
 	state = func(id string) DependencyState {
 		if v, ok := r.states[id]; ok {
 			return v
@@ -115,49 +109,7 @@ func NewReadinessIndex(issues []Issue) *ReadinessIndex {
 		}
 		delete(visiting, id)
 		r.states[id] = result
-		r.blockers[id] = refs(id, make(map[string]bool))
 		return result
-	}
-	refs = func(id string, seen map[string]bool) []string {
-		if cached, ok := blockerMemo[id]; ok {
-			return cached
-		}
-		if seen[id] {
-			return []string{id}
-		}
-		seen[id] = true
-		issue, ok := r.issues[id]
-		if !ok {
-			return []string{id}
-		}
-		set := make(map[string]struct{})
-		for _, target := range issue.blocking {
-			other, exists := r.issues[target]
-			if !exists || !resolvedReadinessStatus(other.status) {
-				set[target] = struct{}{}
-			}
-		}
-		for _, parent := range issue.parents {
-			other, exists := r.issues[parent]
-			if !exists {
-				set[parent] = struct{}{}
-				continue
-			}
-			if resolvedReadinessStatus(other.status) {
-				continue
-			}
-			for _, ref := range refs(parent, seen) {
-				set[ref] = struct{}{}
-			}
-		}
-		delete(seen, id)
-		out := make([]string, 0, len(set))
-		for ref := range set {
-			out = append(out, ref)
-		}
-		sort.Strings(out)
-		blockerMemo[id] = out
-		return out
 	}
 	for id := range r.issues {
 		state(id)
@@ -206,6 +158,20 @@ func (r *ReadinessIndex) Claimable(id string, now time.Time) bool {
 		issue.typeName != TypeEpic && !r.openChild[id]
 }
 
+// HasDeferralExpiryBetween reports whether any indexed deferral crossed its
+// inclusive expiry boundary after start and no later than end.
+func (r *ReadinessIndex) HasDeferralExpiryBetween(start, end time.Time) bool {
+	if r == nil || !end.After(start) {
+		return false
+	}
+	for _, issue := range r.issues {
+		if issue.deferUntil != nil && issue.deferUntil.After(start) && !issue.deferUntil.After(end) {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *ReadinessIndex) issue(id string) (readinessIssue, bool) {
 	if r == nil {
 		return readinessIssue{}, false
@@ -219,7 +185,62 @@ func (r *ReadinessIndex) Blockers(id string) []string {
 	if r == nil {
 		return nil
 	}
-	return append([]string(nil), r.blockers[id]...)
+	if _, ok := r.issues[id]; !ok {
+		return nil
+	}
+	set := make(map[string]struct{})
+	visited := make(map[string]bool)
+	visiting := make(map[string]bool)
+	type visit struct {
+		id   string
+		exit bool
+	}
+	stack := []visit{{id: id}}
+	for len(stack) > 0 {
+		last := len(stack) - 1
+		step := stack[last]
+		stack = stack[:last]
+		current := step.id
+		if step.exit {
+			delete(visiting, current)
+			continue
+		}
+		if visiting[current] {
+			set[current] = struct{}{}
+			continue
+		}
+		if visited[current] {
+			continue
+		}
+		visited[current] = true
+		visiting[current] = true
+		stack = append(stack, visit{id: current, exit: true})
+		issue, ok := r.issues[current]
+		if !ok {
+			set[current] = struct{}{}
+			continue
+		}
+		for _, target := range issue.blocking {
+			other, exists := r.issues[target]
+			if !exists || !resolvedReadinessStatus(other.status) {
+				set[target] = struct{}{}
+			}
+		}
+		for _, parent := range issue.parents {
+			other, exists := r.issues[parent]
+			if !exists {
+				set[parent] = struct{}{}
+			} else if !resolvedReadinessStatus(other.status) {
+				stack = append(stack, visit{id: parent})
+			}
+		}
+	}
+	out := make([]string, 0, len(set))
+	for blocker := range set {
+		out = append(out, blocker)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // ReadyAfter evaluates readiness under a hypothetical completion set without mutating the index.

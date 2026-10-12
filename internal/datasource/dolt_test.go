@@ -1,11 +1,92 @@
 package datasource
 
 import (
+	"context"
+	"database/sql"
+	"database/sql/driver"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
+
+var registerDeferSQLDriver sync.Once
+
+type deferSQLDriver struct{}
+
+func (deferSQLDriver) Open(string) (driver.Conn, error) { return deferSQLConn{}, nil }
+
+type deferSQLConn struct{}
+
+func (deferSQLConn) Prepare(string) (driver.Stmt, error) {
+	return nil, fmt.Errorf("prepare unsupported")
+}
+func (deferSQLConn) Close() error              { return nil }
+func (deferSQLConn) Begin() (driver.Tx, error) { return nil, fmt.Errorf("transactions unsupported") }
+func (deferSQLConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
+	if strings.Contains(query, "information_schema.columns") {
+		values := make([][]driver.Value, 0, len(IssuesColumnList))
+		for _, column := range IssuesColumnList {
+			values = append(values, []driver.Value{"beads_project", column})
+		}
+		return &deferSQLRows{columns: []string{"TABLE_SCHEMA", "COLUMN_NAME"}, values: values}, nil
+	}
+	if strings.Contains(query, "FROM issues") || strings.Contains(query, "_global_source") {
+		values := deferIssueRow()
+		if strings.Contains(query, "_global_source") {
+			values = append(values, "beads_project")
+		}
+		columns := append([]string(nil), IssuesColumnList...)
+		if strings.Contains(query, "_global_source") {
+			columns = append(columns, "_global_source")
+		}
+		return &deferSQLRows{columns: columns, values: [][]driver.Value{values}}, nil
+	}
+	return &deferSQLRows{columns: []string{"empty"}}, nil
+}
+
+func deferIssueRow() []driver.Value {
+	values := make([]driver.Value, len(IssuesColumnList))
+	values[0], values[1], values[3], values[4], values[5] = "bt-sql", "deferred SQL issue", "open", int64(1), "task"
+	values[11] = time.Date(2026, 10, 11, 13, 0, 0, 0, time.UTC)
+	return values
+}
+
+type deferSQLRows struct {
+	columns []string
+	values  [][]driver.Value
+	index   int
+}
+
+func (r *deferSQLRows) Columns() []string { return r.columns }
+func (r *deferSQLRows) Close() error      { return nil }
+func (r *deferSQLRows) Next(dest []driver.Value) error {
+	if r.index >= len(r.values) {
+		return io.EOF
+	}
+	copy(dest, r.values[r.index])
+	r.index++
+	return nil
+}
+
+func openDeferSQLTestDB(t *testing.T) *sql.DB {
+	t.Helper()
+	const driverName = "beadstui_defer_sql_test"
+	// sql.Register panics on duplicate names, so register once per process.
+	registerDeferSQLDriver.Do(func() { sql.Register(driverName, deferSQLDriver{}) })
+	db, err := sql.Open(driverName, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
 
 // bt-edi: schema-drift tolerance. When a column on the issues table is
 // absent (e.g. upstream beads drops closed_by_session for the events-table
@@ -48,6 +129,30 @@ func TestBuildSingleDBIssuesQuery_AllPresent(t *testing.T) {
 	for _, col := range IssuesColumnList {
 		if !strings.Contains(query, col) {
 			t.Errorf("expected column %q in SELECT list.\nquery:\n%s", col, query)
+		}
+	}
+}
+
+func TestSQLReadersScanNonNullDeferUntil(t *testing.T) {
+	want := time.Date(2026, 10, 11, 13, 0, 0, 0, time.UTC)
+	db := openDeferSQLTestDB(t)
+	available := make(map[string]bool, len(IssuesColumnList))
+	for _, column := range IssuesColumnList {
+		available[column] = true
+	}
+	projectReader := &DoltReader{db: db, availableCols: available}
+	projectIssues, err := projectReader.LoadIssues()
+	if err != nil {
+		t.Fatalf("project reader LoadIssues: %v", err)
+	}
+	globalReader := &GlobalDoltReader{db: db, databases: []string{"beads_project"}}
+	globalIssues, err := globalReader.LoadIssues()
+	if err != nil {
+		t.Fatalf("global reader LoadIssues: %v", err)
+	}
+	for name, issues := range map[string][]model.Issue{"project": projectIssues, "global": globalIssues} {
+		if len(issues) != 1 || issues[0].DeferUntil == nil || !issues[0].DeferUntil.Equal(want) {
+			t.Errorf("%s reader defer_until = %+v, want %s", name, issues, want)
 		}
 	}
 }

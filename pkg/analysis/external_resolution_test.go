@@ -124,6 +124,18 @@ func TestResolveExternalDeps_RetainsUnresolvedAndMalformed(t *testing.T) {
 	}
 }
 
+func TestResolveExternalDepsDuplicateCanonicalIdentityIsNotAmbiguous(t *testing.T) {
+	issues := []model.Issue{
+		{ID: "bt-a", Status: model.StatusOpen, Dependencies: []*model.Dependency{{DependsOnID: "external:cass:x", Type: model.DepBlocks}}},
+		{ID: "cass-x", Status: model.StatusClosed},
+		{ID: "cass-x", Status: model.StatusClosed},
+	}
+	got := ResolveExternalDeps(issues)
+	if target := got[0].Dependencies[0].DependsOnID; target != "cass-x" {
+		t.Fatalf("duplicate same-ID targets made alias ambiguous: got %q", target)
+	}
+}
+
 func TestResolveExternalDeps_DoesNotMutateInput(t *testing.T) {
 	issues := loadExternalFixture(t, "two_project_chain.json")
 

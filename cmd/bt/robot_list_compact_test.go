@@ -92,6 +92,144 @@ func TestRobotListCompactDefault(t *testing.T) {
 	}
 }
 
+func TestRobotLabelScopeKeepsCandidatesNarrowAndEmpty(t *testing.T) {
+	dir := t.TempDir()
+	beadsDir := filepath.Join(dir, ".beads")
+	if err := os.MkdirAll(beadsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture := `{"id":"bt-a","title":"Labeled candidate","status":"open","priority":1,"issue_type":"task","labels":["area:cli"],"dependencies":[{"depends_on_id":"bt-b","type":"blocks"}]}
+{"id":"bt-b","title":"Unlabeled blocker","status":"open","priority":1,"issue_type":"task"}
+`
+	if err := os.WriteFile(filepath.Join(beadsDir, "beads.jsonl"), []byte(fixture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := buildTestBinary(t)
+	cmd := exec.Command(exe, "robot", "next", "--label", "area:cli")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "BT_TEST_MODE=1", "BT_NO_BROWSER=1")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("robot next label scope failed: %v\n%s", err, out)
+	}
+	var next struct {
+		Message string `json:"message"`
+		ID      string `json:"id"`
+	}
+	if err := json.Unmarshal(out, &next); err != nil {
+		t.Fatalf("decode robot next: %v\n%s", err, out)
+	}
+	if next.Message != "No actionable items available" {
+		t.Fatalf("label scope expanded to hidden blocker candidate: %s", out)
+	}
+	list := exec.Command(exe, "robot", "list", "--label", "area:cli")
+	list.Dir = dir
+	list.Env = cmd.Env
+	listOut, err := list.Output()
+	if err != nil {
+		t.Fatalf("robot list label scope failed: %v\n%s", err, listOut)
+	}
+	var scoped struct {
+		Issues []struct {
+			ID string `json:"id"`
+		} `json:"issues"`
+	}
+	if err := json.Unmarshal(listOut, &scoped); err != nil {
+		t.Fatalf("decode scoped list: %v\n%s", err, listOut)
+	}
+	if len(scoped.Issues) != 1 || scoped.Issues[0].ID != "bt-a" {
+		t.Fatalf("list label scope expanded candidates: %+v", scoped.Issues)
+	}
+	bqlList := exec.Command(exe, "robot", "list", "--bql", "blocked = false")
+	bqlList.Dir = dir
+	bqlList.Env = cmd.Env
+	bqlOut, err := bqlList.Output()
+	if err != nil {
+		t.Fatalf("robot list computed BQL failed: %v\n%s", err, bqlOut)
+	}
+	var bqlPayload struct {
+		Issues []struct {
+			ID string `json:"id"`
+		} `json:"issues"`
+	}
+	if err := json.Unmarshal(bqlOut, &bqlPayload); err != nil {
+		t.Fatalf("decode computed BQL list: %v\n%s", err, bqlOut)
+	}
+	if len(bqlPayload.Issues) != 1 || bqlPayload.Issues[0].ID != "bt-b" {
+		t.Fatalf("computed blocked=false selected %+v; want only ready hidden dependency", bqlPayload.Issues)
+	}
+	recipeNext := exec.Command(exe, "robot", "next", "--recipe", "actionable")
+	recipeNext.Dir = dir
+	recipeNext.Env = cmd.Env
+	recipeOut, err := recipeNext.Output()
+	if err != nil {
+		t.Fatalf("robot next actionable recipe failed: %v\n%s", err, recipeOut)
+	}
+	if err := json.Unmarshal(recipeOut, &next); err != nil {
+		t.Fatalf("decode actionable recipe next: %v\n%s", err, recipeOut)
+	}
+	if next.ID != "bt-b" {
+		t.Fatalf("actionable recipe pick = %q, want bt-b: %s", next.ID, recipeOut)
+	}
+
+	empty := exec.Command(exe, "robot", "next", "--label", "nonexistent")
+	empty.Dir = dir
+	empty.Env = cmd.Env
+	emptyOut, err := empty.Output()
+	if err != nil {
+		t.Fatalf("robot next empty label scope failed: %v\n%s", err, emptyOut)
+	}
+	if err := json.Unmarshal(emptyOut, &next); err != nil {
+		t.Fatalf("decode empty scoped next: %v\n%s", err, emptyOut)
+	}
+	if next.Message != "No actionable items available" {
+		t.Fatalf("empty label scope fell back to full corpus: %s", emptyOut)
+	}
+	emptyList := exec.Command(exe, "robot", "list", "--label", "nonexistent")
+	emptyList.Dir = dir
+	emptyList.Env = cmd.Env
+	listOut, err = emptyList.Output()
+	if err != nil {
+		t.Fatalf("robot list empty label scope failed: %v\n%s", err, listOut)
+	}
+	var listPayload struct {
+		Count int `json:"count"`
+	}
+	if err := json.Unmarshal(listOut, &listPayload); err != nil {
+		t.Fatalf("decode empty scoped list: %v\n%s", err, listOut)
+	}
+	if listPayload.Count != 0 {
+		t.Fatalf("robot list empty label scope returned %d candidates", listPayload.Count)
+	}
+}
+
+func TestEmitScriptDoesNotSuggestClaimsForNonclaimableIssues(t *testing.T) {
+	dir := t.TempDir()
+	beadsDir := filepath.Join(dir, ".beads")
+	if err := os.MkdirAll(beadsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture := `{"id":"bt-flight","title":"Already assigned","status":"in_progress","assignee":"worker","priority":1,"issue_type":"task"}
+{"id":"bt-unknown","title":"Unknown gate","status":"open","priority":1,"issue_type":"task","dependencies":[{"depends_on_id":"bt-missing","type":"blocks"}]}
+`
+	if err := os.WriteFile(filepath.Join(beadsDir, "beads.jsonl"), []byte(fixture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(buildTestBinary(t), "emit-script")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "BT_TEST_MODE=1", "BT_NO_BROWSER=1")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("emit-script failed: %v\n%s", err, out)
+	}
+	if strings.Contains(string(out), "bd update") || strings.Contains(string(out), "# To claim:") {
+		t.Fatalf("emit-script suggested an unclaimable item:\n%s", out)
+	}
+	if !strings.Contains(string(out), "No actionable recommendations available") {
+		t.Fatalf("emit-script omitted no-pick output:\n%s", out)
+	}
+}
+
 // TestRobotListFullPreservesBodies verifies --full restores the pre-compact
 // shape: body fields present, envelope.schema omitted (omitempty).
 func TestRobotListFullPreservesBodies(t *testing.T) {

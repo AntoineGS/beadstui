@@ -72,6 +72,25 @@ func (rc *robotCtx) runTriage(robotNext, robotTriageByTrack, robotTriageByLabel 
 		History:       historyReport,
 	}
 	triage := analysis.ComputeTriageWithOptions(rc.analysisIssues(), rc.triageOptions(opts))
+	if len(triage.QuickRef.TopPicks) > 0 {
+		topID := triage.QuickRef.TopPicks[0].ID
+		triage.Commands.ClaimTop = rc.routedBDCommand(topID, "update", topID, "--status=in_progress")
+		triage.Commands.ShowTop = rc.routedBDCommand(topID, "show", topID)
+	}
+	for i := range triage.RecommendationsByTrack {
+		group := &triage.RecommendationsByTrack[i]
+		group.ClaimCommand = ""
+		if group.TopPick != nil {
+			group.ClaimCommand = rc.routedBDCommand(group.TopPick.ID, "update", group.TopPick.ID, "--status=in_progress")
+		}
+	}
+	for i := range triage.RecommendationsByLabel {
+		group := &triage.RecommendationsByLabel[i]
+		group.ClaimCommand = ""
+		if group.TopPick != nil {
+			group.ClaimCommand = rc.routedBDCommand(group.TopPick.ID, "update", group.TopPick.ID, "--status=in_progress")
+		}
+	}
 
 	// bv-90: Load feedback data for output
 	var feedbackInfo *analysis.FeedbackJSON
@@ -126,8 +145,8 @@ func (rc *robotCtx) runTriage(robotNext, robotTriageByTrack, robotTriageByLabel 
 			Score:         top.Score,
 			Reasons:       top.Reasons,
 			Unblocks:      top.Unblocks,
-			ClaimCmd:      fmt.Sprintf("bd update %s --status=in_progress", top.ID),
-			ShowCmd:       fmt.Sprintf("bd show %s", top.ID),
+			ClaimCmd:      rc.routedBDCommand(top.ID, "update", top.ID, "--status=in_progress"),
+			ShowCmd:       rc.routedBDCommand(top.ID, "show", top.ID),
 		}
 
 		encoder := rc.newEncoder()

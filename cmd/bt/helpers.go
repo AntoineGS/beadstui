@@ -44,8 +44,10 @@ func loadedIssueMap() map[string]*model.Issue {
 // --source, not an error condition).
 //
 // Matching rule per project <p>: keep the issue iff
-//   (a) SplitID(issue.ID) == (<p>, _), OR
-//   (b) issue.SourceRepo == <p>.
+//
+//	(a) SplitID(issue.ID) == (<p>, _), OR
+//	(b) issue.SourceRepo == <p>.
+//
 // Case-insensitive on both sides.
 func filterBySource(issues []model.Issue, sourceFilter string) []model.Issue {
 	if sourceFilter == "" {
@@ -379,6 +381,35 @@ func applyRecipeFilters(issues []model.Issue, r *recipe.Recipe) []model.Issue {
 	}
 
 	return result
+}
+
+func applyRecipeFiltersWithReadiness(issues []model.Issue, r *recipe.Recipe, readiness *model.ReadinessIndex, evaluatedAt time.Time) []model.Issue {
+	if r == nil {
+		return issues
+	}
+	filters := r.Filters
+	actionable := filters.Actionable
+	hasBlockers := filters.HasBlockers
+	filters.Actionable = nil
+	filters.HasBlockers = nil
+	copyRecipe := *r
+	copyRecipe.Filters = filters
+	filtered := applyRecipeFilters(issues, &copyRecipe)
+	if readiness == nil || (actionable == nil && hasBlockers == nil) {
+		return filtered
+	}
+	out := make([]model.Issue, 0, len(filtered))
+	for _, issue := range filtered {
+		ready := readiness.Ready(issue.ID, evaluatedAt)
+		if actionable != nil && *actionable && !ready {
+			continue
+		}
+		if hasBlockers != nil && *hasBlockers == ready {
+			continue
+		}
+		out = append(out, issue)
+	}
+	return out
 }
 
 // applyRecipeSort sorts issues based on recipe configuration

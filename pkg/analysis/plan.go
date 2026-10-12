@@ -94,6 +94,19 @@ func hasBlockingDep(issue model.Issue, targetID string) bool {
 // computeUnblocks finds issues that would become actionable if the given issue is closed
 func (a *Analyzer) computeUnblocks(issueID string) []string {
 	var unblocks []string
+	if a.readiness != nil {
+		completed := map[string]bool{issueID: true}
+		for dependentID := range a.issueMap {
+			if dependentID == issueID || a.readiness.Ready(dependentID, a.evaluatedAt) {
+				continue
+			}
+			if a.readiness.ReadyAfter(dependentID, a.evaluatedAt, completed) {
+				unblocks = append(unblocks, dependentID)
+			}
+		}
+		sort.Strings(unblocks)
+		return unblocks
+	}
 
 	// Get the node ID for the issue being completed (the blocker)
 	blockerNodeID, ok := a.idToNode[issueID]
@@ -123,14 +136,6 @@ func (a *Analyzer) computeUnblocks(issueID string) []string {
 		if !hasBlockingDep(dependentIssue, issueID) {
 			continue
 		}
-		if a.readiness != nil {
-			if !a.readiness.ReadyAfter(dependentID, a.evaluatedAt, map[string]bool{issueID: true}) {
-				continue
-			}
-			unblocks = append(unblocks, dependentID)
-			continue
-		}
-
 		// Check if this dependent is still blocked by OTHER open blocking dependencies.
 		// We consult the issue's dependency list directly rather than graph edges,
 		// because the graph includes non-blocking edge types.
