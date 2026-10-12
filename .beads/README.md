@@ -49,6 +49,16 @@ If sync refuses to auto-commit pending internal configuration changes, inspect
 them with `bd sql "SELECT * FROM dolt_status"`. Once reviewed, explicitly commit
 them with `bd dolt commit` before retrying sync; do not discard them or force-push.
 
+### Standard Git hooks
+
+This clone has the native Beads Git hooks installed in `.git/hooks/`. Install
+them separately in each new clone with `bd hooks install`, and check their
+status with `bd hooks list`. The installer preserves existing user hook content.
+
+These are the standard Beads 1.3.1 hooks, not custom synchronization hooks.
+They do not automatically pull or push the Dolt database. No periodic sync
+timer is configured; continue using `bd sync --no-adopt` to publish issue changes.
+
 ## What is Beads?
 
 Beads is issue tracking that lives in your repo, making it perfect for AI coding agents and developers who want their issues close to their code. No web UI required - everything works through the CLI and integrates seamlessly with git.
