@@ -292,6 +292,7 @@ func TestRobotListActionableRecipeUsesFullReadinessAndScopesCandidates(t *testin
 		t.Fatalf("repo-scoped actionable list failed: %v\n%s", err, repoOut)
 	}
 	var repoPayload struct {
+		Count  int `json:"count"`
 		Issues []struct {
 			ID string `json:"id"`
 		} `json:"issues"`
@@ -299,13 +300,38 @@ func TestRobotListActionableRecipeUsesFullReadinessAndScopesCandidates(t *testin
 	if err := json.Unmarshal(repoOut, &repoPayload); err != nil {
 		t.Fatalf("decode repo-scoped list: %v\n%s", err, repoOut)
 	}
+	repoIDs := make([]string, 0, len(repoPayload.Issues))
 	for _, issue := range repoPayload.Issues {
-		if strings.HasPrefix(issue.ID, "cass-") || strings.HasPrefix(issue.ID, "other-") {
-			t.Fatalf("--repo bt leaked candidate %q: %s", issue.ID, repoOut)
-		}
+		repoIDs = append(repoIDs, issue.ID)
 	}
-	if len(repoPayload.Issues) == 0 {
-		t.Fatalf("--repo bt removed every actionable candidate: %s", repoOut)
+	sort.Strings(repoIDs)
+	wantRepoIDs := []string{"bt-alias-closed", "bt-closed-dep", "bt-open", "bt-parent-gate", "bt-ready", "bt-tomb-dep"}
+	if !reflect.DeepEqual(repoIDs, wantRepoIDs) || repoPayload.Count != len(wantRepoIDs) {
+		t.Fatalf("--repo bt actionable IDs=%v count=%d, want exact ready set %v", repoIDs, repoPayload.Count, wantRepoIDs)
+	}
+	bqlCommand := exec.Command(exe, "robot", "list", "--source", "bt", "--label", "area:cli", "--bql", "blocked=false")
+	bqlCommand.Dir = dir
+	bqlCommand.Env = cmd.Env
+	bqlOut, err := bqlCommand.Output()
+	if err != nil {
+		t.Fatalf("computed blocked=false list failed: %v\n%s", err, bqlOut)
+	}
+	var bqlPayload struct {
+		Issues []struct {
+			ID string `json:"id"`
+		} `json:"issues"`
+	}
+	if err := json.Unmarshal(bqlOut, &bqlPayload); err != nil {
+		t.Fatalf("decode computed blocked=false list: %v\n%s", err, bqlOut)
+	}
+	bqlIDs := make([]string, 0, len(bqlPayload.Issues))
+	for _, issue := range bqlPayload.Issues {
+		bqlIDs = append(bqlIDs, issue.ID)
+	}
+	sort.Strings(bqlIDs)
+	wantBQLIDs := []string{"bt-alias-closed", "bt-closed-dep", "bt-ready", "bt-tomb-dep"}
+	if !reflect.DeepEqual(bqlIDs, wantBQLIDs) {
+		t.Fatalf("computed blocked=false IDs=%v, want %v (closed gates satisfy; missing/open gates do not)", bqlIDs, wantBQLIDs)
 	}
 	triageCmd := exec.Command(exe, "robot", "triage", "--source", "bt", "--label", "area:cli")
 	triageCmd.Dir = dir
