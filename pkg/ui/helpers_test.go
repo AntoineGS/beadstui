@@ -118,6 +118,10 @@ func TestBuildDependencyTreeCycleDetection(t *testing.T) {
 	if !strings.Contains(rendered, "(cycle)") {
 		t.Errorf("Expected cycle marker '(cycle)' in rendered tree, got:\n%s", rendered)
 	}
+	cycle := tree.Children[0].Children[0].Children[0]
+	if !cycle.Cycle || !cycle.Reference {
+		t.Errorf("cycle-closing edge should carry separate cycle and reference annotations: %+v", cycle)
+	}
 }
 
 // TestBuildDependencyTreeDepthLimit tests max depth limiting
@@ -537,5 +541,117 @@ func TestBuildDependencyTreeUnlimitedDepth(t *testing.T) {
 	// Should traverse all 20 levels
 	if depth != 19 {
 		t.Errorf("Expected depth 19 with unlimited, got %d", depth)
+	}
+}
+
+func TestBuildDependencyTreeShortestPathReferences(t *testing.T) {
+	issues := []model.Issue{
+		{ID: "A", Title: "Root", Dependencies: []*model.Dependency{
+			{DependsOnID: "B", Type: model.DepBlocks},
+			{DependsOnID: "C", Type: model.DepRelated},
+		}},
+		{ID: "B", Title: "Long route", Dependencies: []*model.Dependency{{DependsOnID: "X", Type: model.DepBlocks}}},
+		{ID: "X", Title: "Intermediate", Dependencies: []*model.Dependency{{DependsOnID: "D", Type: model.DepRelated}}},
+		{ID: "C", Title: "Short route", Dependencies: []*model.Dependency{{DependsOnID: "D", Type: model.DepBlocks}}},
+		{ID: "D", Title: "Shared prerequisite", Dependencies: []*model.Dependency{{DependsOnID: "E", Type: model.DepBlocks}}},
+		{ID: "E", Title: "Descendant"},
+	}
+	issueMap := make(map[string]*model.Issue)
+	for i := range issues {
+		issueMap[issues[i].ID] = &issues[i]
+	}
+
+	got := ui.BuildDependencyTree("A", issueMap, 3)
+	longOccurrence := got.Children[0].Children[0].Children[0]
+	if longOccurrence.ID != "D" || longOccurrence.Title != "Shared prerequisite" || !longOccurrence.Reference || longOccurrence.Cycle {
+		t.Fatalf("long-route occurrence should reference shortest-path D with metadata: %+v", longOccurrence)
+	}
+	shortOccurrence := got.Children[1].Children[0]
+	if shortOccurrence.ID != "D" || shortOccurrence.Reference || shortOccurrence.Cycle {
+		t.Fatalf("shortest-path occurrence should expand canonically: %+v", shortOccurrence)
+	}
+	if len(shortOccurrence.Children) != 1 || shortOccurrence.Children[0].ID != "E" {
+		t.Fatalf("shortest-path descendants missing: %+v", shortOccurrence.Children)
+	}
+	if strings.Count(ui.RenderDependencyTree(got), "reference") == 0 {
+		t.Fatal("rendered tree should preserve reference annotation")
+	}
+}
+
+func TestBuildDependencyTreeDepthBoundaryAndNilRows(t *testing.T) {
+	issues := []model.Issue{
+		{ID: "A", Title: "Root", Dependencies: []*model.Dependency{nil, {DependsOnID: "B", Type: model.DepBlocks}}},
+		{ID: "B", Title: "At boundary", Dependencies: []*model.Dependency{{DependsOnID: "C", Type: model.DepRelated}}},
+	}
+	issueMap := map[string]*model.Issue{"A": &issues[0], "B": &issues[1], "nil-row": nil}
+	got := ui.BuildDependencyTree("A", issueMap, 1)
+	if len(got.Children) != 1 || got.Children[0].ID != "B" || len(got.Children[0].Children) != 0 {
+		t.Fatalf("depth boundary should include the edge target, not expand it: %+v", got)
+	}
+
+	issues[1].Dependencies = []*model.Dependency{{DependsOnID: "nil-row", Type: model.DepBlocks}, {DependsOnID: "missing", Type: model.DepRelated}}
+	got = ui.BuildDependencyTree("B", issueMap, 2)
+	if len(got.Children) != 2 {
+		t.Fatalf("nil/missing target rows should be safe and visible, got %+v", got.Children)
+	}
+	for _, child := range got.Children {
+		if child.Title != "(not found)" || child.Status != "?" {
+			t.Errorf("nil/missing target should have not-found metadata: %+v", child)
+		}
+	}
+}
+
+func TestBuildDependencyTreeInverseChildrenDeduplicateNaturally(t *testing.T) {
+	issues := []model.Issue{
+		{ID: "epic", Title: "Epic"},
+		{ID: "epic.10", Title: "Ten", Dependencies: []*model.Dependency{{DependsOnID: "epic", Type: model.DepParentChild}, {DependsOnID: "epic", Type: model.DepParentChild}}},
+		{ID: "epic.2", Title: "Two", Dependencies: []*model.Dependency{{DependsOnID: "epic", Type: model.DepParentChild}}},
+	}
+	issueMap := make(map[string]*model.Issue)
+	for i := range issues {
+		issueMap[issues[i].ID] = &issues[i]
+	}
+	got := ui.BuildDependencyTree("epic", issueMap, 3)
+	if len(got.Children) != 2 || got.Children[0].ID != "epic.2" || got.Children[1].ID != "epic.10" {
+		t.Fatalf("inverse children should be unique natural-order leaves: %+v", got.Children)
+	}
+	for _, child := range got.Children {
+		if child.Type != "child" || len(child.Children) != 0 || child.Cycle || child.Reference {
+			t.Errorf("inverse child should remain a non-traversal leaf: %+v", child)
+		}
+	}
+}
+
+func TestBuildDependencyTreePreservesOutgoingTypesToSameTarget(t *testing.T) {
+	issues := []model.Issue{
+		{ID: "root", Title: "Root", Dependencies: []*model.Dependency{
+			{DependsOnID: "target", Type: model.DepBlocks},
+			{DependsOnID: "target", Type: model.DepRelated},
+		}},
+		{ID: "target", Title: "Target"},
+	}
+	issueMap := make(map[string]*model.Issue)
+	for i := range issues {
+		issueMap[issues[i].ID] = &issues[i]
+	}
+	got := ui.BuildDependencyTree("root", issueMap, 3)
+	if len(got.Children) != 2 {
+		t.Fatalf("distinct outgoing relationship types should remain visible, got %+v", got.Children)
+	}
+	if got.Children[0].Type != "blocks" || got.Children[0].Reference || got.Children[1].Type != "related" || !got.Children[1].Reference {
+		t.Fatalf("same target should retain each outgoing type and mark the repeated row: %+v", got.Children)
+	}
+}
+
+func TestRenderDependencyTreeAnnotationsSurviveTitleTruncation(t *testing.T) {
+	root := &ui.DependencyNode{ID: "root", Title: "Root", Status: "open", Type: "root", Children: []*ui.DependencyNode{
+		{ID: "target", Title: strings.Repeat("A", 60), Status: "in_progress", Type: "blocks", Reference: true, Cycle: true},
+	}}
+	rendered := ui.RenderDependencyTree(root)
+	if !strings.Contains(rendered, "(reference)") || !strings.Contains(rendered, "(cycle)") {
+		t.Fatalf("annotations should render independently of truncated title:\n%s", rendered)
+	}
+	if strings.Contains(rendered, strings.Repeat("A", 60)) || !strings.Contains(rendered, "in_progress") {
+		t.Fatalf("title truncation or status rendering regressed:\n%s", rendered)
 	}
 }
