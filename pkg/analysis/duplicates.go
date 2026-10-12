@@ -77,7 +77,7 @@ type DuplicatePair struct {
 // DetectDuplicates finds potential duplicate issues using keyword-based Jaccard similarity
 // Optimized with an inverted index for performance on large repositories.
 func DetectDuplicates(issues []model.Issue, config DuplicateConfig) []Suggestion {
-	if len(issues) < 2 {
+	if len(issues) < 2 || config.MaxSuggestions <= 0 {
 		return nil
 	}
 
@@ -99,7 +99,73 @@ func DetectDuplicates(issues []model.Issue, config DuplicateConfig) []Suggestion
 		}
 	}
 
-	var pairs []DuplicatePair
+	type candidate struct {
+		left, right int
+		similarity  float64
+	}
+	pairs := make([]candidate, 0)
+	issueMap := make(map[string]*model.Issue, len(issues))
+	repeatedIDs := false
+	for i := range issues {
+		if _, exists := issueMap[issues[i].ID]; exists {
+			repeatedIDs = true
+		}
+		issueMap[issues[i].ID] = &issues[i]
+	}
+	better := func(a, b candidate) bool {
+		if a.similarity != b.similarity {
+			return a.similarity > b.similarity
+		}
+		a1, a2 := issues[a.left].ID, issues[a.right].ID
+		if a2 < a1 {
+			a1, a2 = a2, a1
+		}
+		b1, b2 := issues[b.left].ID, issues[b.right].ID
+		if b2 < b1 {
+			b1, b2 = b2, b1
+		}
+		if a1 != b1 {
+			return a1 < b1
+		}
+		return a2 < b2
+	}
+	retain := func(next candidate) {
+		if repeatedIDs {
+			pairs = append(pairs, next)
+			return
+		}
+		if len(pairs) < config.MaxSuggestions {
+			pairs = append(pairs, next)
+			for child := len(pairs) - 1; child > 0; {
+				parent := (child - 1) / 2
+				if !better(pairs[parent], pairs[child]) {
+					break
+				}
+				pairs[parent], pairs[child] = pairs[child], pairs[parent]
+				child = parent
+			}
+			return
+		}
+		if !better(next, pairs[0]) {
+			return
+		}
+		pairs[0] = next
+		for parent := 0; ; {
+			child := parent*2 + 1
+			if child >= len(pairs) {
+				break
+			}
+			if right := child + 1; right < len(pairs) && better(pairs[child], pairs[right]) {
+				child = right
+			}
+			if !better(pairs[parent], pairs[child]) {
+				break
+			}
+			pairs[parent], pairs[child] = pairs[child], pairs[parent]
+			parent = child
+		}
+	}
+	overlaps := make(map[int]int)
 
 	// 2. Iterate through issues and find candidates
 	for i := range issues {
@@ -108,9 +174,8 @@ func DetectDuplicates(issues []model.Issue, config DuplicateConfig) []Suggestion
 			continue
 		}
 
-		// Count overlaps with other issues
-		// candidateIdx -> intersection count
-		overlaps := make(map[int]int)
+		// Count overlaps with other issues. The map is reused for each source issue.
+		clear(overlaps)
 
 		for _, w := range keywords[i] {
 			for _, matchIdx := range index[w] {
@@ -151,34 +216,34 @@ func DetectDuplicates(issues []model.Issue, config DuplicateConfig) []Suggestion
 				}
 			}
 
-			// Reconstruct common keywords for display (only for passing pairs)
-			common := intersectKeywords(keywords[i], keywords[j])
-
-			pairs = append(pairs, DuplicatePair{
-				Issue1:     issue1.ID,
-				Issue2:     issue2.ID,
-				Similarity: similarity,
-				Method:     "jaccard",
-				Keywords:   common,
-			})
+			retain(candidate{left: i, right: j, similarity: similarity})
 		}
 	}
 
-	// Sort by similarity (highest first) and limit
-	sortPairsBySimilarity(pairs)
-	if len(pairs) > config.MaxSuggestions {
-		pairs = pairs[:config.MaxSuggestions]
-	}
-
-	// Issue lookup map for constructing suggestions
-	issueMap := make(map[string]*model.Issue, len(issues))
-	for i := range issues {
-		issueMap[issues[i].ID] = &issues[i]
+	if repeatedIDs {
+		// Keep the legacy full-sort behavior for ambiguous IDs. Source indices
+		// preserve which records supplied each pair's explanation.
+		sort.Slice(pairs, func(i, j int) bool {
+			return pairs[i].similarity > pairs[j].similarity
+		})
+		if len(pairs) > config.MaxSuggestions {
+			pairs = pairs[:config.MaxSuggestions]
+		}
+	} else {
+		sort.Slice(pairs, func(i, j int) bool { return better(pairs[i], pairs[j]) })
 	}
 
 	// Convert to suggestions
 	suggestions := make([]Suggestion, 0, len(pairs))
-	for _, pair := range pairs {
+	for _, candidate := range pairs {
+		issue1ID, issue2ID := issues[candidate.left].ID, issues[candidate.right].ID
+		if !repeatedIDs && issue2ID < issue1ID {
+			issue1ID, issue2ID = issue2ID, issue1ID
+		}
+		pair := DuplicatePair{
+			Issue1: issue1ID, Issue2: issue2ID, Similarity: candidate.similarity,
+			Method: "jaccard", Keywords: intersectKeywords(keywords[candidate.left], keywords[candidate.right]),
+		}
 		issue1 := issueMap[pair.Issue1]
 		issue2 := issueMap[pair.Issue2]
 
