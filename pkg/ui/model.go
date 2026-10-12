@@ -34,6 +34,7 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/version"
 	"github.com/seanmartinsmith/beadstui/pkg/watcher"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
@@ -846,6 +847,8 @@ type Model struct {
 	whichKeyDelay time.Duration // debounce before the which-key panel; 0 shows it at once
 	whichKeyOff   bool          // never show the which-key panel
 	swallowKey    bool          // the router consumed this key; Update skips forwarding it to the list
+	keyShadows    []keys.Shadow // resolved built-in binding conflicts, shown in the help surface
+	keyConfigErrs []error       // invalid user key config entries, retained for the help surface
 
 	// Actionable view
 	actionableView ActionableModel
@@ -1288,12 +1291,13 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 	// hook for "render filtering UI differently".
 	l.SetShowFilter(false)
 	l.DisableQuitKeybindings()
-	// Left/Right and h/l move between panes (bt-tg0), and letters belong to
-	// bt's layout (bt-i4k): the list pages on pgup/pgdown only, and gg (the
-	// sequence router) replaces its lone-g jump to the top.
-	l.KeyMap.PrevPage.SetKeys("pgup")
-	l.KeyMap.NextPage.SetKeys("pgdown")
-	l.KeyMap.GoToStart.SetKeys("home")
+	// The application owns page and top/bottom navigation; Bubbles only owns
+	// cursor movement and filter editing. This prevents one keypress from
+	// applying both the app's resolved action and Bubbles' built-in movement.
+	l.KeyMap.PrevPage.SetKeys()
+	l.KeyMap.NextPage.SetKeys()
+	l.KeyMap.GoToStart.SetKeys()
+	l.KeyMap.GoToEnd.SetKeys()
 	// Action tokens (bt-i4k) move the bubbles-owned cursor like the keys do.
 	l.KeyMap.CursorUp.SetKeys(append(l.KeyMap.CursorUp.Keys(), keys.Token("nav.up"))...)
 	l.KeyMap.CursorDown.SetKeys(append(l.KeyMap.CursorDown.Keys(), keys.Token("nav.down"))...)
@@ -1650,6 +1654,8 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 	}
 	m.labelDashboard.keys = m.keys.LabelDashboard
 	m.tutorialModel.keys = m.keys.Tutorial
+	m.syncBubblesKeyBindings(keys.Config{}, nil, nil)
+	m.syncDetailsViewportKeyBindings()
 	m.applyFilter()
 	m.filter.appliedKey = m.cursorKey()
 	m.refreshThemeConsumers()
@@ -2067,7 +2073,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// query feels like "I'm done here", not "match everything".
 			emptyFilterEnter := false
 			if kp, isKey := msg.(tea.KeyPressMsg); isKey &&
-				kp.String() == "enter" &&
+				key.Matches(kp, m.keys.ListSearch.Apply) &&
 				m.list.FilterState() == list.Filtering &&
 				strings.TrimSpace(m.list.FilterInput.Value()) == "" {
 				m.list.ResetFilter()
@@ -2080,7 +2086,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filterEntryCursor = -1
 			if !emptyFilterEnter {
 				if kp, isKey := msg.(tea.KeyPressMsg); isKey &&
-					kp.Code == '/' &&
+					key.Matches(kp, m.keys.Global.SearchBounce) &&
 					m.list.FilterState() != list.Filtering {
 					m.filterEntryCursor = m.list.Index()
 				}

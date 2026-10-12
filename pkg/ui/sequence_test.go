@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -43,6 +44,58 @@ func TestLeader_SequenceFiresAction(t *testing.T) {
 	}
 	if m.seq.prefix != "" {
 		t.Errorf("sequence still pending: %+v", m.seq)
+	}
+}
+
+func TestLeader_ConfiguredPhysicalKeyRoutesSequence(t *testing.T) {
+	m := leaderModel(t)
+	m.SetKeyConfig(keys.Config{Leader: ","}, nil)
+	m = runKeys(t, m, runeKey(','), runeKey('v'), runeKey('b'))
+	if m.mode != ViewBoard {
+		t.Errorf("mode = %v, want ViewBoard after , v b", m.mode)
+	}
+	if m.seq.pending() {
+		t.Errorf("sequence still pending: %+v", m.seq)
+	}
+}
+
+func TestLeaderConfiguredPrefixShadowsDescendantsAndHandlesMissingDimensions(t *testing.T) {
+	m := leaderModel(t)
+	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{"view.board": {"<leader>v"}}}, nil)
+	node := m.seqTree(keys.LeaderPrefix).Child("v")
+	if node == nil || node.IsGroup() || len(node.Children) != 0 {
+		t.Fatalf("leader v node = %+v, want a leaf with no dead descendants", node)
+	}
+
+	m.whichKeyDelay = 0
+	m.width = 0
+	m.height = 0
+	m = runKey(t, m, keySpace)
+	if panel := m.renderWhichKey(); panel != "" {
+		t.Fatalf("which-key panel rendered without terminal dimensions: %q", panel)
+	}
+	m = runKey(t, m, runeKey('v'))
+	if m.mode != ViewBoard || m.seq.pending() {
+		t.Fatalf("SPC v result: mode=%v sequence=%+v, want board with no pending sequence", m.mode, m.seq)
+	}
+}
+
+func TestConfiguredLeaderSequenceSurvivesMatchingDirectStepKey(t *testing.T) {
+	m := leaderModel(t)
+	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{
+		"filter.open": {"<leader>v"},
+		"view.graph":  {"v"},
+	}}, nil)
+	if !slices.Contains(m.keys.Global.FilterOpen.Keys(), "<leader>v") || !slices.Contains(m.keys.Global.Graph.Keys(), "v") {
+		t.Fatalf("config lost a distinct chord: filter.open=%v view.graph=%v", m.keys.Global.FilterOpen.Keys(), m.keys.Global.Graph.Keys())
+	}
+	m = runKeys(t, m, keySpace, runeKey('v'))
+	if m.filter.currentFilter != "open" || m.mode != ViewList {
+		t.Fatalf("SPC v: filter=%q mode=%v, want open filter in list", m.filter.currentFilter, m.mode)
+	}
+	m = runKey(t, m, runeKey('v'))
+	if m.mode != ViewGraph {
+		t.Fatalf("direct v mode=%v, want graph", m.mode)
 	}
 }
 

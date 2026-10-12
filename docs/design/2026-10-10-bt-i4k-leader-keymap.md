@@ -76,6 +76,11 @@ ID rules:
   `memories_search`, `help`, `cass`, `agent_prompt`, `tutorial`).
 - IDs are unique within a map. The same ID in two maps is allowed only for the
   shared `nav.*` IDs and for IDs a layout table assigns to several maps on purpose.
+- Actions whose target depends on an ordinal use one ID per target (for example,
+  `attention.pick_label_1` through `attention.pick_label_9` and
+  `tutorial.jump_page_1` through `tutorial.jump_page_9`). Dispatch determines
+  the ordinal by matching that binding, never by parsing the physical key or
+  synthetic token text. The former aggregate IDs are not registered.
 
 `(*AppKeys).Walk(fn func(Ref, *key.Binding))` visits every tagged binding by
 reflection (`Ref{Map, Field, ID}`), handing out a pointer into `AppKeys` so
@@ -175,6 +180,27 @@ keys:
   never fails to start over keys config.
 - Help keys (`Help().Key`) are regenerated from the resolved keys for every
   binding that config changed (arrow keys render as `↑ ↓ ← →`, ctrl as `⌃`).
+- Config fields and each `bind` value are decoded independently. A malformed
+  `leader`, `which_key_delay`, or binding value reports an error without
+  discarding valid sibling settings or bindings. A wrong-typed `bind` container
+  reports its own error while valid settings are retained.
+- Direct modified keys accept printable rune bases (`ctrl+d`, `ctrl+s`,
+  `alt+x`) as well as named keys. The same normalized form is valid inside a
+  leader sequence (`<leader><ctrl+x>`).
+- The sequence router is intentionally inactive in modal and text-input
+  contexts. Therefore a binding ID declared by any modal or text-input map may
+  not be configured with a leader or `gg` sequence: reject that whole config
+  entry and retain its default binding. Those actions accept direct keys only,
+  including IDs shared with such maps (for example `nav.up`).
+- Help keys (`Help().Key`) are regenerated from the resolved keys for every
+  binding that config changed (arrow keys render as `↑ ↓ ← →`, ctrl as `⌃`).
+- Synthetic action tokens are dispatched only when the active context owns the
+  matching binding. Consume unmatched tokens before forwarding input to a text
+  component or the Bubbles list so an `@action.id` can never become user text.
+- Reopening the list search row with the mouse sends the retained `@app.search`
+  token through the Bubbles filter binding. Empty-search Enter and search-entry
+  cursor restoration match the resolved `list_search.apply` and `app.search`
+  bindings rather than hard-coded physical keys.
 
 ### Conflict resolution (phase 5)
 
@@ -184,8 +210,8 @@ other is a non-modal view map. Sub-state siblings (`ListNormal` and
 states are exclusive. Modal maps overlap only themselves.
 
 When config binds key `K` (direct or leader sequence) to action A, every other
-binding in a map overlapping one of A's maps loses `K`. A `Shadow{Action,
-Key, By}` record is kept for each loss. Two config entries claiming the same key
+binding in a map overlapping one of A's maps loses `K`. A `Shadow{ID, Key, By}`
+record is kept for each loss. Two config entries claiming the same key
 in overlapping maps is a config error, and the first entry in sorted ID order
 wins. A config leader sequence that is a prefix of a default group makes that
 group's entries unreachable, and each one is recorded as shadowed.
@@ -198,6 +224,13 @@ Reporting: on startup, if config produced any shadows or errors, a status line
 reads `keys: 2 shadowed, 1 config error - see ?`. The `?` overlay has a
 "Shadowed / errors" group listing config shadows, config errors, and the
 current view's shadowed plugin keys, struck through.
+
+After conflict resolution, the model synchronizes Bubbles list bindings
+affected by valid config entries or shadow records from the final `AppKeys`
+bindings, including their action tokens. Leave unrelated Bubbles defaults
+untouched at startup (notably paging aliases that bt does not declare). Run the
+same sync after the shadow pass so Bubbles cannot retain a losing physical key;
+the sync source is always the resolved binding, never the raw config value.
 
 ## Default layout (phase 3)
 
@@ -343,6 +376,8 @@ Each phase is one child bead, lands on `task/bt-i4k`, and passes `go build ./...
   (stale gen ignored, delay 0, panel stays visible on descend).
 - Config tests: promote, move, unbind, unknown ID, bad duration, conflicts,
   shadow records, plugin shadowing.
+- Ordinal-action tests: physical keys and action tokens select the same configured
+  target, including remapped attention labels and tutorial pages.
 - `readme_keys_test.go` keeps guarding README tables against the new layout.
 
 ## Out of scope

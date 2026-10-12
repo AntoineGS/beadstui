@@ -10,6 +10,8 @@ type LabelDashboardKeys struct {
 	Down       key.Binding `action:"nav.down"`
 	JumpTop    key.Binding `action:"nav.top"`
 	JumpBottom key.Binding `action:"nav.bottom"`
+	PageDown   key.Binding `action:"nav.page_down"`
+	PageUp     key.Binding `action:"nav.page_up"`
 	Apply      key.Binding `action:"label_dashboard.apply"`
 	Health     key.Binding `action:"label_dashboard.health"`
 	Drilldown  key.Binding `action:"label_dashboard.drilldown"`
@@ -23,6 +25,8 @@ func NewLabelDashboardKeys() LabelDashboardKeys {
 		Down:       key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("↓/j", "move down")),
 		JumpTop:    key.NewBinding(key.WithKeys("home", "gg"), key.WithHelp("gg/home", "jump to top")),
 		JumpBottom: key.NewBinding(key.WithKeys("G", "end"), key.WithHelp("end/G", "jump to bottom")),
+		PageDown:   key.NewBinding(key.WithKeys("ctrl+d", "pgdown"), key.WithHelp("⌃d/pgdn", "page down")),
+		PageUp:     key.NewBinding(key.WithKeys("ctrl+u", "pgup"), key.WithHelp("⌃u/pgup", "page up")),
 		Apply:      key.NewBinding(key.WithKeys("enter"), key.WithHelp("⏎", "filter list by label")),
 		Health:     key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "health detail")),
 		Drilldown:  key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "drilldown")),
@@ -38,7 +42,7 @@ func (k LabelDashboardKeys) ShortHelp() []key.Binding {
 // FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k LabelDashboardKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.JumpTop, k.JumpBottom},
+		{k.Up, k.Down, k.JumpTop, k.JumpBottom, k.PageDown, k.PageUp},
 		{k.Apply, k.Health, k.Drilldown, k.Close},
 	}
 }
@@ -111,28 +115,44 @@ func (k LabelGraphKeys) ShortHelp() []key.Binding { return []key.Binding{k.Close
 // FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k LabelGraphKeys) FullHelp() [][]key.Binding { return [][]key.Binding{{k.Close}} }
 
-// AttentionKeys are the bindings for the attention view. PickLabel matches the
-// digits 1-9; the handler reads the digit from the key text, so dispatching
-// PickLabel by token is a no-op.
+// AttentionKeys are the bindings for the attention view. Each digit has its
+// own action ID so remapped and synthetic bindings retain their ordinal.
 type AttentionKeys struct {
-	Close     key.Binding `action:"attention.close"`
-	PickLabel key.Binding `action:"attention.pick_label"`
+	Close      key.Binding `action:"attention.close"`
+	PickLabel1 key.Binding `action:"attention.pick_label_1"`
+	PickLabel2 key.Binding `action:"attention.pick_label_2"`
+	PickLabel3 key.Binding `action:"attention.pick_label_3"`
+	PickLabel4 key.Binding `action:"attention.pick_label_4"`
+	PickLabel5 key.Binding `action:"attention.pick_label_5"`
+	PickLabel6 key.Binding `action:"attention.pick_label_6"`
+	PickLabel7 key.Binding `action:"attention.pick_label_7"`
+	PickLabel8 key.Binding `action:"attention.pick_label_8"`
+	PickLabel9 key.Binding `action:"attention.pick_label_9"`
 }
 
 // NewAttentionKeys returns the default attention view keymap.
 func NewAttentionKeys() AttentionKeys {
 	return AttentionKeys{
-		Close:     key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close attention")),
-		PickLabel: key.NewBinding(key.WithKeys("1", "2", "3", "4", "5", "6", "7", "8", "9"), key.WithHelp("1-9", "filter by label")),
+		Close:      key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close attention")),
+		PickLabel1: key.NewBinding(key.WithKeys("1"), key.WithHelp("1-9", "filter by label")),
+		PickLabel2: key.NewBinding(key.WithKeys("2"), key.WithHelp("2", "filter by label")),
+		PickLabel3: key.NewBinding(key.WithKeys("3"), key.WithHelp("3", "filter by label")),
+		PickLabel4: key.NewBinding(key.WithKeys("4"), key.WithHelp("4", "filter by label")),
+		PickLabel5: key.NewBinding(key.WithKeys("5"), key.WithHelp("5", "filter by label")),
+		PickLabel6: key.NewBinding(key.WithKeys("6"), key.WithHelp("6", "filter by label")),
+		PickLabel7: key.NewBinding(key.WithKeys("7"), key.WithHelp("7", "filter by label")),
+		PickLabel8: key.NewBinding(key.WithKeys("8"), key.WithHelp("8", "filter by label")),
+		PickLabel9: key.NewBinding(key.WithKeys("9"), key.WithHelp("9", "filter by label")),
 	}
 }
 
 // ShortHelp returns the bindings shown in the status-bar L1 hint slot.
 func (k AttentionKeys) ShortHelp() []key.Binding {
-	return []key.Binding{k.PickLabel, k.Close}
+	return []key.Binding{k.PickLabel1, k.Close}
 }
 
 // FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k AttentionKeys) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.PickLabel, k.Close}}
+	return [][]key.Binding{{k.PickLabel1, k.PickLabel2, k.PickLabel3, k.PickLabel4, k.PickLabel5,
+		k.PickLabel6, k.PickLabel7, k.PickLabel8, k.PickLabel9, k.Close}}
 }

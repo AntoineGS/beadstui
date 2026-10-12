@@ -8,6 +8,7 @@ import (
 
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
@@ -728,9 +729,10 @@ type helpRow struct{ left, right string }
 
 // helpGroup is a titled section of helpRows rendered in the ? overlay.
 type helpGroup struct {
-	title    string
-	rows     []helpRow
-	bindings []key.Binding
+	title             string
+	rows              []helpRow
+	bindings          []key.Binding
+	strikethroughRows map[int]bool
 }
 
 // helpOverlayColumns returns the task-panel column count for the ? overlay at the
@@ -795,8 +797,9 @@ func (m Model) helpGroups() []helpGroup {
 		}
 	}
 
-	if m.activeModal == ModalNone || (m.activeModal == ModalHelp && m.helpOriginModal == ModalNone) {
-		pluginModel := m
+	pluginModel := m
+	showPluginContext := m.activeModal == ModalNone || (m.activeModal == ModalHelp && m.helpOriginModal == ModalNone)
+	if showPluginContext {
 		if pluginModel.activeModal == ModalHelp {
 			pluginModel.activeModal = ModalNone
 			pluginModel.focused = pluginModel.focusBeforeHelp
@@ -811,7 +814,76 @@ func (m Model) helpGroups() []helpGroup {
 			groups = append(groups, helpGroup{title: m.helpViewTitle() + " PLUGINS", rows: rows, bindings: plugins})
 		}
 	}
+	if rows, strikethroughRows := keyDiagnosticRows(m, pluginModel, showPluginContext); len(rows) > 0 {
+		groups = append(groups, helpGroup{title: "SHADOWED / ERRORS", rows: rows, strikethroughRows: strikethroughRows})
+	}
 	return groups
+}
+
+func keyDiagnosticRows(m, pluginModel Model, showPluginContext bool) ([]helpRow, map[int]bool) {
+	var rows []helpRow
+	strikethroughRows := make(map[int]bool)
+	shadows := append([]keys.Shadow(nil), m.keyShadows...)
+	sort.SliceStable(shadows, func(i, j int) bool {
+		if shadows[i].ID != shadows[j].ID {
+			return shadows[i].ID < shadows[j].ID
+		}
+		if shadows[i].Key != shadows[j].Key {
+			return shadows[i].Key < shadows[j].Key
+		}
+		return shadows[i].By < shadows[j].By
+	})
+	for _, shadow := range shadows {
+		strikethroughRows[len(rows)] = true
+		rows = append(rows, helpRow{left: shadow.Key, right: fmt.Sprintf("%s shadowed by %s", shadow.ID, shadow.By)})
+	}
+	for _, err := range m.keyConfigErrs {
+		if err == nil {
+			continue
+		}
+		rows = append(rows, helpRow{left: "config error", right: pluginText(err.Error(), false)})
+	}
+
+	if !showPluginContext {
+		return rows, strikethroughRows
+	}
+	view := pluginModel.pluginView()
+	issue := pluginModel.selectedIssue()
+	if view == "" || issue == nil || pluginModel.pluginActions == nil {
+		return rows, strikethroughRows
+	}
+	actions := pluginModel.pluginActionsFor(issue)
+	sort.SliceStable(actions, func(i, j int) bool {
+		if actions[i].Key != actions[j].Key {
+			return actions[i].Key < actions[j].Key
+		}
+		if actions[i].Plugin != actions[j].Plugin {
+			return actions[i].Plugin < actions[j].Plugin
+		}
+		return actions[i].ID < actions[j].ID
+	})
+	seen := make(map[string]struct{})
+	for _, action := range actions {
+		if action.Key == "" || !btBindsKeyIn(pluginModel.keys, pluginModel.leaderKey, view, action.Key) {
+			continue
+		}
+		dedupeKey := action.Plugin + "\x00" + action.ID + "\x00" + action.Key
+		if _, ok := seen[dedupeKey]; ok {
+			continue
+		}
+		seen[dedupeKey] = struct{}{}
+		by := btBindingIDForKeyIn(pluginModel.keys, pluginModel.leaderKey, view, action.Key)
+		if by == "" {
+			by = "bt binding"
+		}
+		label := action.Label
+		if label == "" {
+			label = action.ID
+		}
+		strikethroughRows[len(rows)] = true
+		rows = append(rows, helpRow{left: pluginText(action.Key, false), right: fmt.Sprintf("%s/%s shadowed by %s", action.Plugin, label, by)})
+	}
+	return rows, strikethroughRows
 }
 
 func helpRows(bindings []key.Binding) []helpRow {
@@ -894,14 +966,19 @@ func renderHelpGroupColumn(groups []helpGroup, colWidth, keyW int, t Theme) []st
 		lines = append(lines, headerStyle.Render(div))
 
 		// Rows: rjust(key, keyW) + "  " + desc (yazi row shape)
-		for _, r := range g.rows {
+		for rowIndex, r := range g.rows {
 			kw := lipgloss.Width(r.left)
 			pad := keyW - kw
 			if pad < 0 {
 				pad = 0
 			}
-			row := keyStyle.Render(strings.Repeat(" ", pad)+r.left) +
-				descStyle.Render("  "+r.right)
+			rowKeyStyle, rowDescStyle := keyStyle, descStyle
+			if g.strikethroughRows[rowIndex] {
+				rowKeyStyle = rowKeyStyle.Strikethrough(true)
+				rowDescStyle = rowDescStyle.Strikethrough(true)
+			}
+			row := rowKeyStyle.Render(strings.Repeat(" ", pad)+r.left) +
+				rowDescStyle.Render("  "+r.right)
 			row = ansi.Truncate(row, colWidth, "")
 			lines = append(lines, row)
 		}

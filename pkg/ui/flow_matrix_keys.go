@@ -19,6 +19,7 @@ func (m Model) handleFlowMatrixKeys(msg tea.KeyMsg) Model {
 			return m
 		}
 		// Close flow matrix view
+		m.mode = ViewList
 		m.focused = focusList
 	case key.Matches(msg, k.Down):
 		m.flowMatrix.MoveDown()
@@ -55,6 +56,10 @@ func (m Model) handleFlowMatrixKeys(msg tea.KeyMsg) Model {
 		m.flowMatrix.GoToEnd()
 	case key.Matches(msg, k.JumpTop):
 		m.flowMatrix.GoToStart()
+	case key.Matches(msg, k.PageDown):
+		m.flowMatrix.PageDown()
+	case key.Matches(msg, k.PageUp):
+		m.flowMatrix.PageUp()
 	}
 	return m
 }

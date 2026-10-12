@@ -13,8 +13,8 @@ import (
 
 // Defaults for the leader key and the which-key debounce (bt-i4k).
 const (
-	defaultLeaderKey     = "space"
-	defaultWhichKeyDelay = 250 * time.Millisecond
+	defaultLeaderKey     = keys.DefaultLeaderKey
+	defaultWhichKeyDelay = keys.DefaultWhichKeyDelay
 )
 
 // seqState is a pending leader or gg sequence. prefix is "" when idle; node is
@@ -46,6 +46,12 @@ func (m Model) seqMaps() []any {
 // inTextInput reports whether typed keys belong to a text field, where the
 // leader and gg must stay inactive and q is typed rather than quitting.
 func (m Model) inTextInput() bool {
+	// Help replaces the active surface while preserving its origin. Only the
+	// active overlay owns key interpretation; a hidden search/input state must
+	// not suppress quit or other help actions.
+	if m.activeModal == ModalHelp {
+		return false
+	}
 	switch m.activeModal {
 	case ModalBQLQuery, ModalTimeTravelInput, ModalFieldInput, ModalLongformEdit:
 		return true
@@ -85,10 +91,7 @@ func (m Model) isGlobalToken(msg tea.KeyPressMsg) bool {
 
 // leaderLabel is the leader as shown to the user.
 func (m Model) leaderLabel() string {
-	if m.leaderKey == "space" {
-		return "SPC"
-	}
-	return m.leaderKey
+	return keys.LeaderLabel(m.leaderKey)
 }
 
 func (m Model) seqTree(prefix string) *keys.SeqNode {

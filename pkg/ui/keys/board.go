@@ -96,12 +96,12 @@ func NewBoardNormalKeys() BoardNormalKeys {
 			key.WithHelp("↑/k", "move up"),
 		),
 		PageDown: key.NewBinding(
-			key.WithKeys("ctrl+d"),
-			key.WithHelp("⌃d", "page down"),
+			key.WithKeys("ctrl+d", "pgdown"),
+			key.WithHelp("⌃d/pgdn", "page down"),
 		),
 		PageUp: key.NewBinding(
-			key.WithKeys("ctrl+u"),
-			key.WithHelp("⌃u", "page up"),
+			key.WithKeys("ctrl+u", "pgup"),
+			key.WithHelp("⌃u/pgup", "page up"),
 		),
 		JumpTop: key.NewBinding(
 			key.WithKeys("home", "0", "gg"),

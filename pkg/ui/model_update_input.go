@@ -7,6 +7,7 @@ package ui
 import (
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
@@ -65,7 +66,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// still belongs to that prompt: restore it first so its handler can answer
 	// outstanding confirm/select requests with nil before returning tea.Quit.
 	if m.activeModal == ModalHelp && m.helpOriginModal == ModalPluginPrompt && m.pluginPrompt != nil &&
-		key.Matches(msg, m.keys.Global.Quit, m.keys.PluginSelect.Close) {
+		key.Matches(msg, m.keys.Global.Back, m.keys.Global.Quit, m.keys.PluginSelect.Close) {
 		m.closeHelp()
 		return m.handlePluginPromptKeys(msg)
 	}
@@ -74,7 +75,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// at once from anywhere no text field has focus (bt-i4k). The plugin
 	// prompt answers its plugin first, so it handles both itself; a pending
 	// leader sequence owns q.
-	if key.Matches(msg, m.keys.Global.Quit) && m.activeModal != ModalPluginPrompt {
+	if key.Matches(msg, m.keys.Global.Quit) && !keys.IsToken(msg.Text) && m.activeModal != ModalPluginPrompt {
 		m.resetSeq()
 		return m, tea.Quit
 	}
@@ -94,6 +95,39 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.openModal(ModalHelp)
 			m.focused = focusHelp
 		}
+		return m, nil
+	}
+
+	// Synthetic action tokens are not terminal text. In text-input contexts,
+	// forward only tokens owned by the active modal/view map; swallow every
+	// other token before a text component or Bubbles can insert its @ spelling.
+	if keys.IsToken(msg.Text) && m.inTextInput() {
+		activeKeys := m.modalKeyMap()
+		if m.activeModal == ModalNone {
+			activeKeys = m.viewSpecificKeyMap()
+		}
+		if !keyMapMatches(msg, activeKeys) {
+			m.swallowKey = true
+			return m, nil
+		}
+	}
+	if m.activeModal == ModalNone && m.focused == focusList && m.mode == ViewList &&
+		m.list.FilterState() == list.Filtering &&
+		(keys.IsToken(msg.Text) || key.Matches(msg, m.keys.ListSearch.Up, m.keys.ListSearch.Down)) {
+		// Bubbles' filtering handler sends ordinary physical navigation keys to
+		// FilterInput. Route resolved search navigation and action tokens here so
+		// they move results without editing the query.
+		switch {
+		case key.Matches(msg, m.keys.ListSearch.Up):
+			m.list.CursorUp()
+		case key.Matches(msg, m.keys.ListSearch.Down):
+			m.list.CursorDown()
+		case key.Matches(msg, m.keys.ListSearch.Apply):
+			m.applyListSearchToken()
+		case key.Matches(msg, m.keys.ListSearch.Cancel):
+			m.list.ResetFilter()
+		}
+		m.swallowKey = true
 		return m, nil
 	}
 
@@ -231,18 +265,29 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.focused = focusList
 			m.insightsPanel.extraText = ""
 			return m, nil
-		case key.Matches(msg, m.keys.Attention.PickLabel):
-			// The digit is the label rank, read from the key text.
-			s := msg.String()
+		case key.Matches(msg,
+			m.keys.Attention.PickLabel1, m.keys.Attention.PickLabel2, m.keys.Attention.PickLabel3,
+			m.keys.Attention.PickLabel4, m.keys.Attention.PickLabel5, m.keys.Attention.PickLabel6,
+			m.keys.Attention.PickLabel7, m.keys.Attention.PickLabel8, m.keys.Attention.PickLabel9):
+			ordinal := -1
+			for i, binding := range [...]key.Binding{
+				m.keys.Attention.PickLabel1, m.keys.Attention.PickLabel2, m.keys.Attention.PickLabel3,
+				m.keys.Attention.PickLabel4, m.keys.Attention.PickLabel5, m.keys.Attention.PickLabel6,
+				m.keys.Attention.PickLabel7, m.keys.Attention.PickLabel8, m.keys.Attention.PickLabel9,
+			} {
+				if key.Matches(msg, binding) {
+					ordinal = i
+					break
+				}
+			}
 			if len(m.attentionCache.Labels) == 0 {
 				return m, nil
 			}
-			idx := int(s[0] - '1')
-			if idx >= 0 && idx < len(m.attentionCache.Labels) {
-				label := m.attentionCache.Labels[idx].Label
+			if ordinal >= 0 && ordinal < len(m.attentionCache.Labels) {
+				label := m.attentionCache.Labels[ordinal].Label
 				m.filter.labelFilter = label
 				m.applyFilter()
-				m.setStatus(fmt.Sprintf("Filtered to label %s (attention #%d)", label, idx+1))
+				m.setStatus(fmt.Sprintf("Filtered to label %s (attention #%d)", label, ordinal+1))
 			}
 			return m, nil
 		}
@@ -887,7 +932,8 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		// File-tree focus is not text entry, so the leader runs there and its
 		// completed Global actions (SPC f c, SPC v l, ...) pass through.
 		case m.mode == ViewHistory && (m.historyView.IsSearchActive() ||
-			m.historyView.FileTreeHasFocus() && !m.isGlobalToken(msg)):
+			m.historyView.FileTreeHasFocus() &&
+				(!keyMapMatches(msg, m.keys.Global) || keyMapMatches(msg, m.keys.HistoryFileTree))):
 			if key.Matches(msg, m.keys.Global.Quit) {
 				return m, tea.Quit
 			}
@@ -1535,6 +1581,12 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			// gate cannot drift from the per-view Map (bt-ift6.2).
 			ln := m.keys.ListNormal
 			switch {
+			case key.Matches(msg, ln.JumpTop):
+				m.viewport.GotoTop()
+				return m, nil
+			case key.Matches(msg, ln.JumpBottom):
+				m.viewport.GotoBottom()
+				return m, nil
 			case key.Matches(msg, ln.PaneLeft):
 				m.focusPaneLeftOfDetail()
 				return m, nil
@@ -1557,6 +1609,49 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 	}
 	return m, tea.Batch(cmds...)
+}
+
+func (m *Model) applyListSearchToken() {
+	if strings.TrimSpace(m.list.FilterInput.Value()) == "" {
+		m.list.ResetFilter()
+		return
+	}
+	if len(m.list.Items()) == 0 {
+		return
+	}
+	if len(m.list.VisibleItems()) == 0 {
+		m.list.ResetFilter()
+		return
+	}
+
+	selected := m.list.Index()
+	m.list.SetFilterState(list.FilterApplied)
+	m.list.FilterInput.Blur()
+	m.list.Select(selected)
+}
+
+func keyMapMatches(msg tea.KeyPressMsg, keyMap any) bool {
+	value := reflect.ValueOf(keyMap)
+	for value.IsValid() && value.Kind() == reflect.Pointer {
+		if value.IsNil() {
+			return false
+		}
+		value = value.Elem()
+	}
+	if !value.IsValid() || value.Kind() != reflect.Struct {
+		return false
+	}
+	for i := 0; i < value.NumField(); i++ {
+		field := value.Field(i)
+		if !field.CanInterface() {
+			continue
+		}
+		binding, ok := field.Interface().(key.Binding)
+		if ok && key.Matches(msg, binding) {
+			return true
+		}
+	}
+	return false
 }
 
 // splitViewListChromeHeight returns the Y coordinate of the first list
@@ -1711,12 +1806,12 @@ func (m Model) clickListPane(mouse tea.Mouse, rowOffset int) (Model, tea.Cmd) {
 	// (bt-jwo3): preserves any existing FilterValue and just flips state to
 	// Filtering.
 	//
-	// We forward a synthetic "/" keypress to the Bubbles list rather than
+	// We forward the app.search action token to the Bubbles list rather than
 	// calling SetFilterState directly. SetFilterState alone flips the state
 	// flag but skips Bubbles' filter-begin setup (populating filteredItems with
 	// all items when buffer is empty, GoToStart, FilterInput.Focus/CursorEnd,
-	// updateKeybindings) — without that, an empty buffer in Filtering state
-	// renders as "no matches" instead of "all visible". The keyboard `/` path
+	// updateKeybindings) - without that, an empty buffer in Filtering state
+	// renders as "no matches" instead of "all visible". The keyboard search path
 	// goes through Update naturally; the click path now matches it (bt-r2ev
 	// Bug A).
 	if m.showSearchRow() && mouse.Y == m.height-4 {
@@ -1727,7 +1822,7 @@ func (m Model) clickListPane(mouse tea.Mouse, rowOffset int) (Model, tea.Cmd) {
 			// After the synthetic keypress with an empty buffer, VisibleItems
 			// contains all items, so the captured index is still valid.
 			savedIdx := m.list.Index()
-			m.list, _ = m.list.Update(tea.KeyPressMsg{Code: '/'})
+			m.list, _ = m.list.Update(tea.KeyPressMsg{Text: keys.Token("app.search")})
 			// Restore cursor; clamp in case list somehow shrank.
 			if m.list.FilterState() == list.Filtering {
 				visible := m.list.VisibleItems()
@@ -2081,6 +2176,7 @@ func (m *Model) applyListDetailSizing(bodyW, bodyHeight int) {
 		}
 		m.list.SetSize(innerWidth, m.issueListHeight(bodyHeight))
 		m.viewport = viewport.New(viewport.WithWidth(innerWidth), viewport.WithHeight(bodyHeight-2))
+		m.syncDetailsViewportKeyBindings()
 		return
 	}
 
@@ -2093,6 +2189,7 @@ func (m *Model) applyListDetailSizing(bodyW, bodyHeight int) {
 	detailInnerWidth := availWidth - listInnerWidth
 	m.list.SetSize(listInnerWidth, m.issueListHeight(bodyHeight))
 	m.viewport = viewport.New(viewport.WithWidth(detailInnerWidth), viewport.WithHeight(bodyHeight-2))
+	m.syncDetailsViewportKeyBindings()
 }
 
 // handleWindowSize processes terminal resize events using a two-phase debounce

@@ -15,6 +15,14 @@ Plugins are listed in `~/.config/bt/config.yaml`. There are no project-level
 plugins.
 
 ```yaml
+keys:
+  leader: space
+  which_key_delay: 250ms
+  bind:
+    filter.open: o
+    view.board: "<leader>B"
+    app.refresh: none
+
 plugins:
   - name: example               # unique; prefixes BQL fields and action IDs
     command: ["example", "plugin"]  # argv, never run through a shell
@@ -26,6 +34,55 @@ plugins:
       dispatch: D
       jump: none
 ```
+
+The top-level `keys` section configures bt's built-in actions. `leader` defaults
+to `space`; `which_key_delay` accepts a Go duration such as `250ms`, `0` to show
+the sequence hint immediately, or `off` to disable it. `bind` maps stable action
+IDs to one key or a list of keys. A value of `none` removes all physical
+bindings (direct keys and leader sequences), retaining only its internal action
+token. Bind it again to make it reachable from the keyboard. Use `<leader>` in a
+sequence to refer to the configured leader. Invalid entries are reported while
+other valid entries are still applied.
+
+Built-in actions declared by modal or text-input maps accept direct keys only.
+A `<leader>` or `gg` sequence for one of those actions rejects that action's
+entire `keys.bind` entry; valid sibling entries still apply. Keep plugin action
+overrides under the plugin's own `keys` map.
+
+Plugin action overrides are separate: keep them under each plugin's `keys` map,
+keyed by plugin action ID. They do not belong in the top-level `keys.bind` map.
+
+### Binding conflicts
+
+bt resolves built-in conflicts after applying valid `keys.bind` entries. A
+configured binding wins over conflicting built-in bindings in the same map;
+global and ordinary view maps also conflict with each other. Search sub-states
+and modals are separate contexts and only conflict with bindings in their own
+map. For example, `filter.open: o` takes `o` from conflicting view actions such
+as tree expansion or opening a history commit.
+
+If two configured actions claim the same key in overlapping maps, action IDs
+are considered in sorted order: the first keeps the key and the later action
+loses it and is reported as a config error. A configured sequence that is a
+prefix of other sequences removes those unreachable descendants. A direct key
+and a leader sequence using the same step remain distinct chords (`v` versus
+`SPC v`).
+
+The resolved physical leader is reserved in Global and ordinary view maps. A
+direct binding on that key is removed and reported as shadowed by `keys.leader`;
+the leader remains inactive in modal and text-input contexts. An action's own
+configured key list cannot contain overlapping aliases, such as both
+`<leader>v` and `<leader>vb`; that whole override is rejected and its defaults
+remain in effect.
+
+When there are shadows or config errors, startup reports their counts, for
+example `keys: 3 shadowed, 1 config error - see ?`. The `?` overlay's
+`SHADOWED / ERRORS` group lists losing built-in bindings with the winning action
+ID, config errors, and (for the selected bead in the current view) plugin
+actions whose keys are already used by bt. Shadowed rows are struck through.
+Unshadowed plugin keys remain available, and the plugin action menu remains at
+`SPC x`. Plugin key overrides under each plugin's own `keys` map remain direct
+keys and are not reinterpreted as built-in action IDs.
 
 `name` must match `^[a-z][a-z0-9_]*$`. An entry with an invalid name or an empty
 command is ignored, and a duplicate name disables the later entry. `bt plugins`

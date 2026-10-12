@@ -186,7 +186,15 @@ type TutorialKeys struct {
 	PageUp       key.Binding `action:"nav.page_up"`
 	JumpTop      key.Binding `action:"nav.top"`
 	JumpBottom   key.Binding `action:"nav.bottom"`
-	JumpPage     key.Binding `action:"tutorial.jump_page"`
+	JumpPage1    key.Binding `action:"tutorial.jump_page_1"`
+	JumpPage2    key.Binding `action:"tutorial.jump_page_2"`
+	JumpPage3    key.Binding `action:"tutorial.jump_page_3"`
+	JumpPage4    key.Binding `action:"tutorial.jump_page_4"`
+	JumpPage5    key.Binding `action:"tutorial.jump_page_5"`
+	JumpPage6    key.Binding `action:"tutorial.jump_page_6"`
+	JumpPage7    key.Binding `action:"tutorial.jump_page_7"`
+	JumpPage8    key.Binding `action:"tutorial.jump_page_8"`
+	JumpPage9    key.Binding `action:"tutorial.jump_page_9"`
 	Select       key.Binding `action:"tutorial.select"`
 	FocusContent key.Binding `action:"tutorial.focus_content"`
 }
@@ -205,7 +213,15 @@ func NewTutorialKeys() TutorialKeys {
 		PageUp:       key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("⌃u", "half page up")),
 		JumpTop:      key.NewBinding(key.WithKeys("g", "home"), key.WithHelp("home/g", "jump to top")),
 		JumpBottom:   key.NewBinding(key.WithKeys("G", "end"), key.WithHelp("end/G", "jump to bottom")),
-		JumpPage:     key.NewBinding(key.WithKeys("1", "2", "3", "4", "5", "6", "7", "8", "9"), key.WithHelp("1-9", "jump to page")),
+		JumpPage1:    key.NewBinding(key.WithKeys("1"), key.WithHelp("1", "jump to page 1")),
+		JumpPage2:    key.NewBinding(key.WithKeys("2"), key.WithHelp("2", "jump to page 2")),
+		JumpPage3:    key.NewBinding(key.WithKeys("3"), key.WithHelp("3", "jump to page 3")),
+		JumpPage4:    key.NewBinding(key.WithKeys("4"), key.WithHelp("4", "jump to page 4")),
+		JumpPage5:    key.NewBinding(key.WithKeys("5"), key.WithHelp("5", "jump to page 5")),
+		JumpPage6:    key.NewBinding(key.WithKeys("6"), key.WithHelp("6", "jump to page 6")),
+		JumpPage7:    key.NewBinding(key.WithKeys("7"), key.WithHelp("7", "jump to page 7")),
+		JumpPage8:    key.NewBinding(key.WithKeys("8"), key.WithHelp("8", "jump to page 8")),
+		JumpPage9:    key.NewBinding(key.WithKeys("9"), key.WithHelp("9", "jump to page 9")),
 		Select:       key.NewBinding(key.WithKeys("enter", "space"), key.WithHelp("⏎", "open selected page")),
 		FocusContent: key.NewBinding(key.WithKeys("h", "left"), key.WithHelp("←/h", "back to content")),
 	}
@@ -220,7 +236,8 @@ func (k TutorialKeys) ShortHelp() []key.Binding {
 // Columns: Pages, Scroll, Contents, Exit.
 func (k TutorialKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.NextPage, k.PrevPage, k.JumpPage},
+		{k.NextPage, k.PrevPage, k.JumpPage1, k.JumpPage2, k.JumpPage3, k.JumpPage4, k.JumpPage5,
+			k.JumpPage6, k.JumpPage7, k.JumpPage8, k.JumpPage9},
 		{k.Up, k.Down, k.PageDown, k.PageUp, k.JumpTop, k.JumpBottom},
 		{k.ToggleTOC, k.SwitchFocus, k.Select, k.FocusContent},
 		{k.Close},

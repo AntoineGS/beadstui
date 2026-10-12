@@ -13,6 +13,7 @@ func (m Model) handleInsightsKeys(msg tea.KeyMsg) Model {
 	k := m.keys.Insights
 	switch {
 	case key.Matches(msg, k.Exit):
+		m.mode = ViewList
 		m.focused = focusList
 	case key.Matches(msg, k.Down):
 		m.insightsPanel.MoveDown()

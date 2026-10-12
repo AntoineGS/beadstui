@@ -174,13 +174,25 @@ func (m TutorialModel) handleContentKeys(msg tea.KeyMsg) TutorialModel {
 	case key.Matches(msg, k.JumpBottom):
 		m.scrollOffset = 9999 // Will be clamped in View()
 
-	// Jump to specific page (1-9)
-	case key.Matches(msg, k.JumpPage):
-		pageNum := int(msg.String()[0] - '0')
-		pages := m.visiblePages()
-		if pageNum > 0 && pageNum <= len(pages) {
-			m.JumpToPage(pageNum - 1)
-		}
+	// Jump to a numbered page using its ordinal-specific action token.
+	case key.Matches(msg, k.JumpPage1):
+		m.JumpToPage(0)
+	case key.Matches(msg, k.JumpPage2):
+		m.JumpToPage(1)
+	case key.Matches(msg, k.JumpPage3):
+		m.JumpToPage(2)
+	case key.Matches(msg, k.JumpPage4):
+		m.JumpToPage(3)
+	case key.Matches(msg, k.JumpPage5):
+		m.JumpToPage(4)
+	case key.Matches(msg, k.JumpPage6):
+		m.JumpToPage(5)
+	case key.Matches(msg, k.JumpPage7):
+		m.JumpToPage(6)
+	case key.Matches(msg, k.JumpPage8):
+		m.JumpToPage(7)
+	case key.Matches(msg, k.JumpPage9):
+		m.JumpToPage(8)
 	}
 	return m
 }

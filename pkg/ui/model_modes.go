@@ -2,10 +2,12 @@ package ui
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/seanmartinsmith/beadstui/internal/datasource"
@@ -15,6 +17,7 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/plugin"
 	"github.com/seanmartinsmith/beadstui/pkg/projects"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 )
 
 // enumerateDoltDatabasesFn opens a connection to the shared Dolt server at
@@ -209,6 +212,132 @@ func (m *Model) SetPluginHost(h *plugin.Host) {
 	m.pluginStatuses = h.Statuses
 	m.pluginLaneFields = h.LaneFields
 	h.Register(m.slotRegistry)
+}
+
+// SetKeyConfig applies user key overrides and refreshes every copied keymap
+// used by the model or its Bubbles list. Config errors are retained for the
+// help surface and summarized in the status line; they never prevent startup.
+func (m *Model) SetKeyConfig(cfg keys.Config, loadErr error) {
+	settings, shadows, applyErrs := m.keys.Apply(cfg)
+	errs := append([]error(nil), applyErrs...)
+	if loadErr != nil {
+		errs = append(errs, splitKeyConfigErrors(loadErr)...)
+	}
+	m.keyShadows = append([]keys.Shadow(nil), shadows...)
+	m.keyConfigErrs = errs
+	m.leaderKey = settings.Leader
+	m.whichKeyDelay = settings.WhichKeyDelay
+	m.whichKeyOff = settings.WhichKeyOff
+
+	m.labelDashboard.keys = m.keys.LabelDashboard
+	m.tutorialModel.keys = m.keys.Tutorial
+	m.flowMatrix.keys = m.keys.FlowMatrix
+	m.agentPromptModal.keys = m.keys.AgentPrompt
+	m.cassModal.keys = m.keys.Cass
+	m.updateModal.keys = m.keys.Update
+
+	m.syncBubblesKeyBindings(cfg, applyErrs, shadows)
+	m.syncDetailsViewportKeyBindings()
+
+	if len(shadows)+len(errs) > 0 {
+		errorLabel := "errors"
+		if len(errs) == 1 {
+			errorLabel = "error"
+		}
+		m.setStatus(fmt.Sprintf("keys: %d shadowed, %d config %s - see ?", len(shadows), len(errs), errorLabel))
+	}
+}
+
+func splitKeyConfigErrors(err error) []error {
+	var joined interface{ Unwrap() []error }
+	if errors.As(err, &joined) {
+		var errs []error
+		for _, child := range joined.Unwrap() {
+			errs = append(errs, splitKeyConfigErrors(child)...)
+		}
+		return errs
+	}
+	return []error{err}
+}
+
+func setListKeyBinding(target *key.Binding, source key.Binding) {
+	target.SetKeys(source.Keys()...)
+	help := source.Help()
+	target.SetHelp(help.Key, help.Desc)
+}
+
+func (m *Model) syncBubblesKeyBindings(cfg keys.Config, applyErrs []error, shadows []keys.Shadow) {
+	affected := make(map[string]struct{}, len(cfg.Bind)+len(shadows))
+	for id := range cfg.Bind {
+		if !hasBindingApplyError(applyErrs, id) {
+			affected[id] = struct{}{}
+		}
+	}
+	for _, shadow := range shadows {
+		affected[shadow.ID] = struct{}{}
+	}
+
+	// Filter is always synchronized because the mouse search-row path dispatches
+	// the stable app.search token even when its physical key is rebound or unset.
+	setListKeyBinding(&m.list.KeyMap.Filter, m.keys.Global.SearchBounce)
+
+	bindings := []struct {
+		id     string
+		target *key.Binding
+		source key.Binding
+	}{
+		{"nav.up", &m.list.KeyMap.CursorUp, m.keys.ListNormal.Up},
+		{"nav.down", &m.list.KeyMap.CursorDown, m.keys.ListNormal.Down},
+		{"app.cancel", &m.list.KeyMap.ClearFilter, m.keys.Global.Cancel},
+		{"list_search.cancel", &m.list.KeyMap.CancelWhileFiltering, m.keys.ListSearch.Cancel},
+		{"list_search.apply", &m.list.KeyMap.AcceptWhileFiltering, m.keys.ListSearch.Apply},
+	}
+	for _, binding := range bindings {
+		if _, ok := affected[binding.id]; ok {
+			setListKeyBinding(binding.target, binding.source)
+		}
+	}
+	appendListKeyTokens(&m.list.KeyMap.AcceptWhileFiltering, m.keys.ListSearch.Apply)
+	appendListKeyTokens(&m.list.KeyMap.CancelWhileFiltering, m.keys.ListSearch.Cancel)
+}
+
+func (m *Model) syncDetailsViewportKeyBindings() {
+	setListKeyBinding(&m.viewport.KeyMap.Up, m.keys.ListNormal.Up)
+	setListKeyBinding(&m.viewport.KeyMap.Down, m.keys.ListNormal.Down)
+	setListKeyBinding(&m.viewport.KeyMap.PageUp, m.keys.ListNormal.PageUp)
+	setListKeyBinding(&m.viewport.KeyMap.PageDown, m.keys.ListNormal.PageDown)
+	m.viewport.KeyMap.HalfPageUp.SetKeys()
+	m.viewport.KeyMap.HalfPageDown.SetKeys()
+}
+
+func appendListKeyTokens(target *key.Binding, source key.Binding) {
+	physicalKeys := target.Keys()
+	for _, actionKey := range source.Keys() {
+		if !keys.IsToken(actionKey) {
+			continue
+		}
+		found := false
+		for _, existing := range physicalKeys {
+			if existing == actionKey {
+				found = true
+				break
+			}
+		}
+		if !found {
+			physicalKeys = append(physicalKeys, actionKey)
+		}
+	}
+	target.SetKeys(physicalKeys...)
+}
+
+func hasBindingApplyError(errs []error, id string) bool {
+	prefix := fmt.Sprintf("keys.bind.%s:", id)
+	for _, err := range errs {
+		if err != nil && strings.HasPrefix(err.Error(), prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // PluginHost returns the plugin host, or nil when none is set.

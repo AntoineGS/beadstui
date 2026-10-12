@@ -25,6 +25,7 @@ import (
 	"github.com/seanmartinsmith/beadstui/internal/bdexec"
 	"github.com/seanmartinsmith/beadstui/internal/bdroute"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 )
 
 func TestFreshSupportingInputsTextRoles(t *testing.T) {
@@ -761,6 +762,68 @@ func TestFieldInputKeys_EscReturnsToFieldSelect(t *testing.T) {
 	m = m2
 	if m.activeModal != ModalFieldSelect {
 		t.Errorf("activeModal = %v, want ModalFieldSelect (esc steps back one level)", m.activeModal)
+	}
+}
+
+func TestFieldInputConsumesUnownedActionToken(t *testing.T) {
+	m := newSizedModel(t, fieldEditTestIssues(), 120, 32)
+	mustSelectTarget(t, &m)
+	m.requestFieldEdit()
+	m, _ = m.handleFieldSelectKeys(tea.KeyPressMsg{Code: 't', Text: "t"})
+	m.fieldInput.input.SetValue("Draft title")
+
+	updated, _ := m.Update(tea.KeyPressMsg{Text: keys.Token("nav.up")})
+	m = updated.(Model)
+	if got := m.fieldInput.Value(); got != "Draft title" {
+		t.Errorf("field input = %q, want unchanged draft", got)
+	}
+}
+
+func TestFieldInputRejectsSequenceOverrideAndKeepsEnterUsable(t *testing.T) {
+	got := stubClaimRunner(t, bdexec.Result{ExitCode: 0})
+	m := newSizedModel(t, fieldEditTestIssues(), 120, 32)
+	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{"field_input.apply": {"<leader>x"}}}, nil)
+	mustSelectTarget(t, &m)
+	m.requestFieldEdit()
+	m, _ = m.handleFieldSelectKeys(tea.KeyPressMsg{Code: 't', Text: "t"})
+	m.fieldInput.input.SetValue("Updated title")
+
+	if len(m.keyConfigErrs) != 1 {
+		t.Fatalf("key config errors = %v, want sequence restriction error", m.keyConfigErrs)
+	}
+	if got := m.keys.FieldInput.Apply.Keys(); !reflect.DeepEqual(got, []string{"enter", keys.Token("field_input.apply")}) {
+		t.Fatalf("field_input.apply keys = %v, want original Enter and token", got)
+	}
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = updated.(Model)
+	if cmd == nil {
+		t.Fatal("Enter did not dispatch the field update")
+	}
+	drainCmd(cmd)
+	want := []string{"update", "zz-target", "--title", "Updated title"}
+	if !slices.Equal(*got, want) {
+		t.Errorf("commit argv = %v, want %v", *got, want)
+	}
+}
+
+func TestFieldInputOwnedApplyTokenCommitsTitle(t *testing.T) {
+	got := stubClaimRunner(t, bdexec.Result{ExitCode: 0})
+	m := newSizedModel(t, fieldEditTestIssues(), 120, 32)
+	mustSelectTarget(t, &m)
+	m.requestFieldEdit()
+	m, _ = m.handleFieldSelectKeys(tea.KeyPressMsg{Code: 't', Text: "t"})
+	m.fieldInput.input.SetValue("Token title")
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Text: keys.Token("field_input.apply")})
+	m = updated.(Model)
+	if cmd == nil {
+		t.Fatal("field_input.apply token did not dispatch the field update")
+	}
+	drainCmd(cmd)
+	want := []string{"update", "zz-target", "--title", "Token title"}
+	if !slices.Equal(*got, want) {
+		t.Errorf("commit argv = %v, want %v", *got, want)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 )
 
 func TestHandleMouseClick_NoModalRequired(t *testing.T) {
@@ -278,6 +279,41 @@ func TestHandleMouseClick_SearchRowReopensFilter(t *testing.T) {
 			}
 			if val := got.list.FilterValue(); val != tc.wantValue {
 				t.Fatalf("expected filter value preserved as %q, got %q", tc.wantValue, val)
+			}
+		})
+	}
+}
+
+func TestMouseSearchRowUsesActionToken(t *testing.T) {
+	issues := []model.Issue{
+		{ID: "bd-cc0", Title: "first", Status: model.StatusOpen},
+		{ID: "bd-cgh", Title: "second", Status: model.StatusOpen},
+	}
+	for _, tc := range []struct {
+		name string
+		bind keys.BindValue
+	}{
+		{name: "rebound", bind: keys.BindValue{";"}},
+		{name: "unbound physical key", bind: keys.BindValue{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := NewModel(issues, nil, "", nil, nil)
+			m.width = 200
+			m.height = 40
+			m.mode = ViewList
+			m.isSplitView = true
+			m.list.SetSize(60, 30)
+			m.focused = focusList
+			m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{"app.search": tc.bind}}, nil)
+			m.list.SetFilterText("first")
+			m.list.SetFilterState(list.FilterApplied)
+
+			got, _ := m.handleMouseClick(tea.MouseClickMsg{X: 10, Y: 36, Button: tea.MouseLeft})
+			if got.list.FilterState() != list.Filtering {
+				t.Fatalf("search-row click left filter state %v, want Filtering", got.list.FilterState())
+			}
+			if got.list.FilterValue() != "first" {
+				t.Errorf("search-row click changed filter value to %q", got.list.FilterValue())
 			}
 		})
 	}

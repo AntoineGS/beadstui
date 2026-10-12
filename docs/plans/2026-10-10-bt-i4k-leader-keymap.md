@@ -11,11 +11,39 @@
 
 **Spec:** `docs/design/2026-10-10-bt-i4k-leader-keymap.md`. Read it before any task; its layout tables are the source of truth for keys and action IDs.
 
+## Execution record (2026-10-12)
+
+- [x] Task 1: action IDs and tokens; independent review approved.
+- [x] Task 2: raw key dispatch migration; independent review approved.
+- [x] Task 3: sequence router and debounced which-key; independent review approved.
+- [x] Task 4: default layout and quit/cancel semantics; independent review approved.
+- [x] Task 5: local help, retired sidebar and footer consolidation; independent review approved.
+- [x] Task 6: configuration and safe input dispatch; independent review approved.
+- [x] Task 7: deterministic collisions and diagnostics; independent review approved.
+- [x] Whole-branch review and runtime integration corrections, including literal
+  at-sign input, single-owner paging, filtered-result bounds, physical search
+  navigation, details navigation, rebound plugin quit and ordinal action IDs.
+- [x] Integration preserves main's independent dependency, Beads and empty-data
+  CLI changes. Retired sidebar source files and scratch artifacts are retained;
+  no files were deleted.
+
+The checklists below record the original plan, not pending work. Modal/text
+actions accept direct-key overrides only: sequences are rejected individually
+because the leader is intentionally inactive while entering text or operating
+modals. Other actions can move between direct keys and leader sequences.
+
+Full uncached tests passed on the feature branch and integrated source. Main's
+independent dependency upgrade left its vendor manifest outdated, so integrated
+build/vet/tests use `-mod=readonly`, preserving both dependency and vendor files.
+The optional race run excludes `TestViewSwitchingPerformance`: its fixed
+two-second benchmark threshold failed under instrumentation, without reporting
+a data race. No install or push is part of this execution.
+
 ## Global constraints
 
 - Work in worktree `.claude/worktrees/bt-i4k`, branch `task/bt-i4k`. One commit per task: `type(tui): ... (bt-i4k.N)`, committed with `git commit --only <paths>` or `git add <paths> && git commit`.
 - Every task ends with `go build ./...`, `go vet ./...`, `go test ./...` all passing. Never run `go install`. Never `git push`.
-- No file deletion except files the spec removes (`shortcuts_sidebar.go`, `shortcuts_sidebar_test.go` in Task 5). No `_v2` files. No compatibility shims.
+- No file deletion. Task 5 retires the sidebar's runtime state and entry points but preserves `shortcuts_sidebar.go` and `shortcuts_sidebar_test.go` under AGENTS.md. No `_v2` files. No compatibility shims.
 - Match surrounding style: arrows-first `WithKeys("up", "k")`, `WithHelp("↑/k", ...)`, comment density like the neighbouring code, bead refs in comments where the code already does that.
 - Tests never read the user's `~/.config/bt/config.yaml`.
 - Text inputs keep every key: list filtering, board search, history search, memories search, time-travel input, BQL, field input, longform edit, label/repo picker search focus.

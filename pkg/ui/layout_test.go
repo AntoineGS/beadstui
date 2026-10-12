@@ -754,6 +754,14 @@ func TestLayout_HistoryFileTreePassesGlobalActions(t *testing.T) {
 			t.Errorf("mode=%v treeFocus=%v, want history with the tree blurred", m.mode, m.historyView.FileTreeHasFocus())
 		}
 	})
+	t.Run("configured global physical key reaches its action", func(t *testing.T) {
+		m := setup(t)
+		m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{"view.board": {"b"}}}, nil)
+		m = press(t, m, "b")
+		if m.mode != ViewBoard {
+			t.Fatalf("mode = %v, want board after configured Global key b", m.mode)
+		}
+	})
 }
 
 func TestLayout_PendingLeaderOwnsQ(t *testing.T) {

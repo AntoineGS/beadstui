@@ -33,10 +33,12 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/hooks"
 	"github.com/seanmartinsmith/beadstui/pkg/loader"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/plugin"
 	"github.com/seanmartinsmith/beadstui/pkg/projects"
 	"github.com/seanmartinsmith/beadstui/pkg/recipe"
 	"github.com/seanmartinsmith/beadstui/pkg/search"
 	"github.com/seanmartinsmith/beadstui/pkg/ui"
+	uikeys "github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 	"github.com/seanmartinsmith/beadstui/pkg/workspace"
 
 	tea "charm.land/bubbletea/v2"
@@ -536,6 +538,11 @@ func runRootTUI(cmd *cobra.Command) {
 		m.SetActiveRepos(map[string]bool{appCtx.currentProjectDB: true})
 	}
 
+	if os.Getenv("BT_TEST_MODE") == "" {
+		path, _ := plugin.DefaultConfigPath()
+		cfg, err := uikeys.LoadConfig(path)
+		m.SetKeyConfig(cfg, err)
+	}
 	if host := loadPluginHost(&appCtx, flagPopup); host != nil {
 		m.SetPluginHost(host)
 	}

@@ -20,6 +20,8 @@ type EpicsKeys struct {
 	Down       key.Binding `action:"nav.down"`
 	JumpTop    key.Binding `action:"nav.top"`
 	JumpBottom key.Binding `action:"nav.bottom"`
+	PageDown   key.Binding `action:"nav.page_down"`
+	PageUp     key.Binding `action:"nav.page_up"`
 
 	// Tree
 	Expand      key.Binding `action:"epics.expand"`       // expand epic/lane (and focus subtree)
@@ -52,6 +54,14 @@ func NewEpicsKeys() EpicsKeys {
 		JumpBottom: key.NewBinding(
 			key.WithKeys("G", "end"),
 			key.WithHelp("G/end", "jump to bottom"),
+		),
+		PageDown: key.NewBinding(
+			key.WithKeys("ctrl+d", "pgdown"),
+			key.WithHelp("⌃d/pgdn", "page down"),
+		),
+		PageUp: key.NewBinding(
+			key.WithKeys("ctrl+u", "pgup"),
+			key.WithHelp("⌃u/pgup", "page up"),
 		),
 		Expand: key.NewBinding(
 			key.WithKeys("right", "l"),
@@ -99,7 +109,7 @@ func (k EpicsKeys) ShortHelp() []key.Binding {
 // Columns: Navigate / Tree / Actions.
 func (k EpicsKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.JumpTop, k.JumpBottom},
+		{k.Up, k.Down, k.JumpTop, k.JumpBottom, k.PageDown, k.PageUp},
 		{k.Expand, k.Collapse, k.CollapseAll},
 		{k.Open, k.CycleStatus, k.Card, k.FieldEdit, k.Exit},
 	}

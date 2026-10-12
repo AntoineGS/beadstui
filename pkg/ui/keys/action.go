@@ -14,8 +14,30 @@ const TokenPrefix = "@"
 // Token returns the action token for id.
 func Token(id string) string { return TokenPrefix + id }
 
-// IsToken reports whether k is an action token.
-func IsToken(k string) bool { return strings.HasPrefix(k, TokenPrefix) }
+// IsToken reports whether k is a syntactically valid action token. Requiring
+// an action-ID shape keeps a literal @ key available to text inputs.
+func IsToken(k string) bool {
+	if !strings.HasPrefix(k, TokenPrefix) {
+		return false
+	}
+	id := strings.TrimPrefix(k, TokenPrefix)
+	parts := strings.Split(id, ".")
+	if len(parts) < 2 {
+		return false
+	}
+	for _, part := range parts {
+		if len(part) == 0 || part[0] < 'a' || part[0] > 'z' {
+			return false
+		}
+		for i := 1; i < len(part); i++ {
+			c := part[i]
+			if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' {
+				return false
+			}
+		}
+	}
+	return true
+}
 
 // Ref names one tagged binding: the AppKeys field holding its map, the
 // binding's field, and its action ID.

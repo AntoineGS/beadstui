@@ -104,6 +104,26 @@ func (m *LabelDashboardModel) Update(msg tea.KeyMsg) (string, tea.Cmd) {
 				m.scrollOffset = 0
 			}
 		}
+	case key.Matches(msg, m.keys.PageDown):
+		if len(m.labels) > 0 {
+			m.cursor += max(1, visibleRows/2)
+			if m.cursor >= len(m.labels) {
+				m.cursor = len(m.labels) - 1
+			}
+			if m.cursor >= m.scrollOffset+visibleRows {
+				m.scrollOffset = m.cursor - visibleRows + 1
+			}
+		}
+	case key.Matches(msg, m.keys.PageUp):
+		if len(m.labels) > 0 {
+			m.cursor -= max(1, visibleRows/2)
+			if m.cursor < 0 {
+				m.cursor = 0
+			}
+			if m.cursor < m.scrollOffset {
+				m.scrollOffset = m.cursor
+			}
+		}
 	case key.Matches(msg, m.keys.Apply):
 		if m.cursor >= 0 && m.cursor < len(m.labels) {
 			return m.labels[m.cursor].Label, nil

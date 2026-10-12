@@ -843,6 +843,7 @@ func (m *Model) recalculateSplitPaneSizes() {
 
 	m.list.SetSize(listInnerWidth, listHeight)
 	m.viewport = viewport.New(viewport.WithWidth(detailInnerWidth), viewport.WithHeight(bodyHeight-2))
+	m.syncDetailsViewportKeyBindings()
 	m.renderer.SetWidthWithTheme(detailInnerWidth, m.theme)
 	m.updateViewportContent()
 }

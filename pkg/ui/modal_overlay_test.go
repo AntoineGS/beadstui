@@ -121,7 +121,7 @@ func TestHelpPreservesConfiguredKeyLabels(t *testing.T) {
 	want := map[string]string{
 		"move up":     "↑/k",
 		"jump to top": "home",
-		"page down":   "⌃d",
+		"page down":   "⌃d/pgdn",
 		"open detail": "⏎",
 	}
 	found := make(map[string]bool, len(want))
