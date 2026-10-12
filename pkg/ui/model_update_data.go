@@ -564,12 +564,15 @@ func (m Model) handleFileChanged(msg FileChangedMsg) (Model, tea.Cmd) {
 
 	// Recompute analysis (async Phase 1/Phase 2) with caching
 	m.data.issues = newIssues
+	resolvedIssues := analysis.ResolveExternalDeps(newIssues)
+	m.data.readinessEvaluatedAt = time.Now()
+	m.data.readiness = model.NewReadinessIndex(resolvedIssues)
 	var analysisStart time.Time
 	if profileRefresh {
 		analysisStart = time.Now()
 	}
-	cachedAnalyzer := analysis.NewCachedAnalyzer(newIssues, nil)
-	m.data.analyzer = cachedAnalyzer.Analyzer
+	cachedAnalyzer := analysis.NewCachedAnalyzer(resolvedIssues, nil)
+	m.data.analyzer = analysis.NewAnalyzerWithReadiness(resolvedIssues, m.data.readiness, m.data.readinessEvaluatedAt)
 	m.data.analysis = cachedAnalyzer.AnalyzeAsync(context.Background())
 	cacheHit := cachedAnalyzer.WasCacheHit()
 	if profileRefresh {

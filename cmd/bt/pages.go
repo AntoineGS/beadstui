@@ -90,13 +90,13 @@ func runPagesWizard(beadsPath string) error {
 
 	// Build graph and compute stats
 	fmt.Println("  -> Running graph analysis...")
-	analyzer := analysis.NewAnalyzer(exportIssues)
+	evaluatedAt := time.Now()
+	analyzer, triage := buildExportAnalysis(exportIssues, issues, evaluatedAt)
 	stats := analyzer.AnalyzeAsync(context.Background())
 	stats.WaitForPhase2()
 
 	// Compute triage
 	fmt.Println("  -> Generating triage data...")
-	triage := analysis.ComputeTriage(exportIssues)
 
 	// Extract dependencies
 	var deps []*model.Dependency
@@ -239,6 +239,30 @@ type pagesSource struct {
 	BeadsDir string
 	RepoRoot string
 	Reason   string
+}
+
+// buildExportAnalysis keeps candidate membership separate from the full source
+// evidence used to resolve readiness. The captured clock is shared by graph
+// analysis and triage for this export generation.
+func buildExportAnalysis(candidates, source []model.Issue, evaluatedAt time.Time) (*analysis.Analyzer, analysis.TriageResult) {
+	resolvedSource := analysis.ResolveExternalDeps(source)
+	resolvedByID := make(map[string]model.Issue, len(resolvedSource))
+	for _, issue := range resolvedSource {
+		resolvedByID[issue.ID] = issue
+	}
+	resolvedCandidates := make([]model.Issue, 0, len(candidates))
+	for _, issue := range candidates {
+		if resolved, ok := resolvedByID[issue.ID]; ok {
+			resolvedCandidates = append(resolvedCandidates, resolved)
+		} else {
+			resolvedCandidates = append(resolvedCandidates, issue)
+		}
+	}
+	readiness := model.NewReadinessIndex(resolvedSource)
+	analyzer := analysis.NewAnalyzerWithReadiness(resolvedCandidates, readiness, evaluatedAt)
+	triage := analysis.ComputeTriageWithOptionsAndTime(resolvedCandidates,
+		analysis.TriageOptions{Readiness: readiness, EvaluatedAt: evaluatedAt}, evaluatedAt)
+	return analyzer, triage
 }
 
 type pagesSourceCandidate struct {

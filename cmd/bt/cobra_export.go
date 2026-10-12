@@ -118,19 +118,19 @@ var exportPagesCmd = &cobra.Command{
 		watchMode, _ := cmd.Flags().GetBool("watch")
 
 		exportCount := 0
-		doExport := func(allIssues []model.Issue) error {
+		doExport := func(candidateSource, readinessSource []model.Issue) error {
 			exportCount++
 			if exportCount > 1 {
 				fmt.Printf("\n[%s] Re-exporting (change #%d)...\n", time.Now().Format("15:04:05"), exportCount-1)
 			} else {
 				fmt.Println("Exporting static site...")
 			}
-			fmt.Printf("  -> Loading %d issues\n", len(allIssues))
+			fmt.Printf("  -> Loading %d issues\n", len(readinessSource))
 
-			exportIssues := allIssues
+			exportIssues := candidateSource
 			if !includeClosed {
 				var openIssues []model.Issue
-				for _, issue := range allIssues {
+				for _, issue := range candidateSource {
 					if issue.Status != model.StatusClosed {
 						openIssues = append(openIssues, issue)
 					}
@@ -161,12 +161,12 @@ var exportPagesCmd = &cobra.Command{
 			}
 
 			fmt.Println("  -> Running graph analysis...")
-			analyzer := analysis.NewAnalyzer(exportIssues)
+			evaluatedAt := time.Now()
+			analyzer, triage := buildExportAnalysis(exportIssues, readinessSource, evaluatedAt)
 			stats := analyzer.AnalyzeAsync(context.Background())
 			stats.WaitForPhase2()
 
 			fmt.Println("  -> Generating triage data...")
-			triage := analysis.ComputeTriage(exportIssues)
 
 			var deps []*model.Dependency
 			for i := range exportIssues {
@@ -209,7 +209,7 @@ var exportPagesCmd = &cobra.Command{
 
 			if includeHistory {
 				fmt.Println("  -> Generating time-travel history data...")
-				if historyReport, err := generateHistoryForExport(allIssues); err == nil && historyReport != nil {
+				if historyReport, err := generateHistoryForExport(readinessSource); err == nil && historyReport != nil {
 					historyPath := filepath.Join(outputDir, "data", "history.json")
 					if historyJSON, err := json.MarshalIndent(historyReport, "", "  "); err == nil {
 						if err := os.WriteFile(historyPath, historyJSON, 0644); err != nil {
@@ -238,12 +238,18 @@ var exportPagesCmd = &cobra.Command{
 			return nil
 		}
 
-		if err := doExport(appCtx.issues); err != nil {
+		if err := doExport(appCtx.issues, appCtx.issuesCorpus); err != nil {
 			return err
 		}
 
 		if watchMode {
-			return runExportWatchLoop(outputDir, doExport)
+			return runExportWatchLoop(outputDir, func(freshIssues []model.Issue) error {
+				candidates := freshIssues
+				if flagRepo != "" {
+					candidates = filterByRepo(freshIssues, flagRepo)
+				}
+				return doExport(candidates, freshIssues)
+			})
 		}
 
 		fmt.Println("")

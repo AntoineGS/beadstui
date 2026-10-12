@@ -192,6 +192,40 @@ func TestReplaceIssuesRebuildsReadinessAuthority(t *testing.T) {
 	}
 }
 
+func TestFileChangedRebuildsReadinessForAddedAndClosedBlockers(t *testing.T) {
+	base := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	candidate := model.Issue{ID: "candidate", Title: "candidate", Status: model.StatusOpen, IssueType: model.TypeTask, CreatedAt: base,
+		Dependencies: []*model.Dependency{{DependsOnID: "gate", Type: model.DepBlocks}}}
+	openGate := model.Issue{ID: "gate", Title: "gate", Status: model.StatusOpen, IssueType: model.TypeTask, CreatedAt: base}
+	closedGate := openGate
+	closedGate.Status = model.StatusClosed
+
+	tests := []struct {
+		name      string
+		initial   []model.Issue
+		reloaded  []model.Issue
+		wantReady bool
+	}{
+		{name: "added open blocker", initial: []model.Issue{{ID: candidate.ID, Title: candidate.Title, Status: candidate.Status, IssueType: candidate.IssueType, CreatedAt: base}}, reloaded: []model.Issue{candidate, openGate}},
+		{name: "closed existing blocker", initial: []model.Issue{candidate, openGate}, reloaded: []model.Issue{candidate, closedGate}, wantReady: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewModel(tt.initial, nil, "", nil, nil)
+			defer m.Stop()
+			m.data.beadsPath = writeCassIssuesFile(t, tt.reloaded)
+			updated, _ := m.Update(FileChangedMsg{})
+			reloaded := updated.(Model)
+			if len(reloaded.data.issues) != len(tt.reloaded) {
+				t.Fatalf("loaded %d issues, want %d", len(reloaded.data.issues), len(tt.reloaded))
+			}
+			if got := reloaded.data.readiness.Ready(candidate.ID, reloaded.readinessNow()); got != tt.wantReady {
+				t.Fatalf("readiness after FileChanged = %t, want %t", got, tt.wantReady)
+			}
+		})
+	}
+}
+
 func TestStatusTickRefreshesExpiredReadiness(t *testing.T) {
 	evaluatedAt := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
 	expiry := evaluatedAt.Add(time.Hour)

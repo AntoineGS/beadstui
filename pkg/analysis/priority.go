@@ -818,59 +818,39 @@ func (a *Analyzer) computeWhatIfDelta(issueID string) *WhatIfDelta {
 // countTransitiveUnblocks counts total issues unblocked by a hypothetical completion of issueID,
 // including cascading effects (diamonds, chains) via simulation.
 func (a *Analyzer) countTransitiveUnblocks(issueID string) int {
-	// Set of "conceptually closed" issues: initially just the starting issue
-	simulatedClosed := make(map[string]bool)
-	simulatedClosed[issueID] = true
-
+	if a.readiness == nil {
+		return 0
+	}
+	completed := make(map[string]bool)
+	queued := map[string]bool{issueID: true}
 	queue := []string{issueID}
 	count := 0
 
 	for len(queue) > 0 {
 		curr := queue[0]
 		queue = queue[1:]
-
-		// Find dependents of the current node
-		nodeID, ok := a.idToNode[curr]
-		if !ok {
+		if completed[curr] {
 			continue
 		}
 
-		dependents := a.g.To(nodeID)
-		for dependents.Next() {
-			depNode := dependents.Node()
-			depID := a.nodeToID[depNode.ID()]
-
-			// If already processed in simulation or really closed, skip
-			if simulatedClosed[depID] {
+		// The readiness index includes hidden source issues and inherited parent
+		// gates. Intersect its bounded affected frontier with selected candidates
+		// so hidden references can carry evidence but cannot become counted work.
+		candidates := a.unblockCandidates(curr)
+		wasReady := make(map[string]bool, len(candidates))
+		for _, depID := range candidates {
+			wasReady[depID] = a.readiness.ReadyAfter(depID, a.evaluatedAt, completed)
+		}
+		completed[curr] = true
+		for _, depID := range candidates {
+			if queued[depID] || completed[depID] {
 				continue
 			}
-			if issue, exists := a.issueMap[depID]; exists && isClosedLikeStatus(issue.Status) {
+			if _, selected := a.issueMap[depID]; !selected {
 				continue
 			}
-
-			readyAfter := false
-			if a.readiness != nil {
-				readyAfter = a.readiness.ReadyAfter(depID, a.evaluatedAt, simulatedClosed)
-			} else {
-				isBlocked := false
-				blockers := a.g.From(depNode.ID())
-				for blockers.Next() {
-					blockerNode := blockers.Node()
-					blockerID := a.nodeToID[blockerNode.ID()]
-					isClosed := simulatedClosed[blockerID]
-					if bIssue, ok := a.issueMap[blockerID]; ok && isClosedLikeStatus(bIssue.Status) {
-						isClosed = true
-					}
-					if !isClosed {
-						isBlocked = true
-						break
-					}
-				}
-				readyAfter = !isBlocked
-			}
-
-			if readyAfter {
-				simulatedClosed[depID] = true
+			if !wasReady[depID] && a.readiness.ReadyAfter(depID, a.evaluatedAt, completed) {
+				queued[depID] = true
 				queue = append(queue, depID)
 				count++
 			}
