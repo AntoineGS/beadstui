@@ -1,14 +1,82 @@
 package main_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+// TestTUIEmptyIssues opens the real TUI with an empty data set. A successful
+// exit alone is insufficient: the old startup guards exited before rendering.
+func TestTUIEmptyIssues(t *testing.T) {
+	t.Parallel()
+	skipIfNoScript(t)
+	bt := buildBtBinary(t)
+
+	for _, tt := range []struct {
+		name string
+		args []string
+	}{
+		{name: "current"},
+		{name: "historical", args: []string{"--as-of", "HEAD"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			beadsDir := filepath.Join(dir, ".beads")
+			if err := os.MkdirAll(beadsDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(beadsDir, "beads.jsonl"), nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			home := t.TempDir()
+			env := append(os.Environ(),
+				"HOME="+home,
+				"XDG_CONFIG_HOME="+home,
+				"BEADS_DIR="+beadsDir,
+				"TERM=xterm-256color",
+				"BT_TUI_AUTOCLOSE_MS=1500",
+			)
+			if tt.name == "historical" {
+				for _, args := range [][]string{
+					{"init", "-b", "main"},
+					{"add", ".beads/beads.jsonl"},
+					{"-c", "commit.gpgsign=false", "commit", "-m", "Empty issue snapshot"},
+				} {
+					cmd := exec.Command("git", args...)
+					cmd.Dir = dir
+					cmd.Env = append(env,
+						"GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@example.com",
+						"GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@example.com",
+					)
+					if out, err := cmd.CombinedOutput(); err != nil {
+						t.Fatalf("git %v: %v\n%s", args, err, out)
+					}
+				}
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			cmd := scriptTUICommand(ctx, bt, tt.args...)
+			cmd.Dir = dir
+			cmd.Env = env
+			ensureCmdStdinCloses(t, ctx, cmd, 3*time.Second)
+			out, err := runCmdToFile(t, cmd)
+			if err != nil || ctx.Err() != nil {
+				t.Fatalf("empty TUI failed: %v (context: %v)\n%s", err, ctx.Err(), out)
+			}
+			if !bytes.Contains(out, []byte("\x1b[?1049h")) || !bytes.Contains(out, []byte("Issues")) {
+				t.Fatalf("expected the empty issues pane in the TUI alternate screen; got:\n%s", out)
+			}
+		})
+	}
+}
 
 // TestTUIPrioritySnapshot launches the TUI briefly to ensure it initializes and exits cleanly.
 // We rely on BT_TUI_AUTOCLOSE_MS to avoid hanging in CI.

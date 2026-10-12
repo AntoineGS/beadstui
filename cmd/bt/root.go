@@ -449,10 +449,6 @@ func runRootTUI(cmd *cobra.Command) {
 
 	// Handle --as-of for TUI mode.
 	if flagAsOf != "" {
-		if len(appCtx.issues) == 0 {
-			fmt.Printf("No issues found at %s.\n", flagAsOf)
-			return
-		}
 		m := ui.NewModel(appCtx.issues, activeRecipe, "", nil, appCtx.routeTable)
 		defer m.Stop()
 		if err := runTUIProgram(m); err != nil {
@@ -460,11 +456,6 @@ func runRootTUI(cmd *cobra.Command) {
 			os.Exit(1)
 		}
 		return
-	}
-
-	if len(appCtx.issues) == 0 {
-		fmt.Println("No issues found. Create some with 'bd create'!")
-		os.Exit(0)
 	}
 
 	// Apply recipe filters and sorting.
