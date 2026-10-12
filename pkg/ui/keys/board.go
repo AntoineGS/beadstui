@@ -190,7 +190,7 @@ func (k BoardNormalKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Enter, k.Search, k.CycleSwim, k.ToggleExpand, k.DetailToggle, k.CopyID}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 // Columns: Move / Jump / Search / Actions / Detail.
 func (k BoardNormalKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
@@ -258,7 +258,7 @@ func (k BoardSearchKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Finish, k.Cancel, k.NextMatch, k.PrevMatch, k.Backspace}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay
+// FullHelp returns column-grouped bindings consumed by the local ? overlay
 // during search mode.
 func (k BoardSearchKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{

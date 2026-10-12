@@ -93,7 +93,6 @@ func TestSupportingSurfacesTextRoles(t *testing.T) {
 	update.SetSize(100, 40)
 	m.cassModal.beadID = "role-id"
 	m.cassModal.SetSize(100, 40)
-	m.shortcutsSidebar.SetSize(34, 40)
 	m.settingsModal.SetSize(100, 40)
 	for _, tc := range []struct{ name, out, label string }{
 		{"field", field.View(), "Title:"},
@@ -102,8 +101,8 @@ func TestSupportingSurfacesTextRoles(t *testing.T) {
 		{"update", update.View(), "Current version: "},
 		{"agent", agent.View(), "Preview of content to add:"},
 		{"cass", m.cassModal.View(), "role-id"},
-		{"help", RenderContextHelp(ContextList, theme, 100, 40), "Press ` for full tutorial │ Esc to close"},
-		{"sidebar", m.shortcutsSidebar.View(), "? global  -  ; hide"},
+		{"help", RenderContextHelp(ContextList, theme, 100, 40), "Esc to close · SPC T for tutorial"},
+		{"local help", m.renderHelpOverlay(), "edit field"},
 		{"settings", strings.Join(m.settingsModal.renderHelp(60), "\n"), "Set the color palette."},
 		{"footer scope", renderLens(richLensFixture(160), lensFull), "bt"},
 		{"footer hint", renderStaticHints(false), " help"},

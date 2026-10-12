@@ -12,7 +12,7 @@ import (
 // full-width bordered strip listing the next keys, groups first (bt-i4k).
 // Returns "" when no panel is due.
 func (m Model) renderWhichKey() string {
-	if !m.seq.pending() || !m.seq.showPanel || m.seq.node == nil || m.width < 8 {
+	if !m.seq.pending() || !m.seq.showPanel || m.seq.node == nil || m.width < 8 || m.height/3 < 3 {
 		return ""
 	}
 	node := m.seq.node
@@ -40,12 +40,19 @@ func (m Model) renderWhichKey() string {
 
 	inner := m.width - 4 // border plus one cell of padding each side
 	cols := max(1, inner/max(1, colW))
-	maxRows := max(1, m.height/3)
+	maxRows := m.height/3 - 2 // the bordered panel itself stays within one-third height
 	rows := (len(cells) + cols - 1) / cols
 	if rows > maxRows {
 		rows = maxRows
-		keep := rows*cols - 1
-		cells = append(cells[:keep], cell{"…", groupStyle.Render("…")})
+		capacity := rows * cols
+		if capacity == 1 {
+			cells = cells[:1]
+			cells[0].plain += "  …"
+			cells[0].styled += groupStyle.Render("  …")
+		} else {
+			keep := capacity - 1
+			cells = append(cells[:keep], cell{"…", groupStyle.Render("…")})
+		}
 	}
 
 	lines := make([]string, rows)

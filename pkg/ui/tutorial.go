@@ -1214,7 +1214,7 @@ Throughout bv, blocking relationships are shown:
 
 ### The "Ready" Filter
 
-Press **r** in List view to filter to **ready** issues only:
+Press **SPC f r** in List view to filter to **ready** issues only:
 
 ` + "```" + `
   Ready = Open + Zero Blockers
@@ -1264,13 +1264,12 @@ This issue is a high-priority auth bug that needs security review.
 
 | Key | Action |
 |-----|--------|
-| **L** | Open label picker (apply labels) |
-| **Shift+L** | Filter by label |
-| **[** | Switch to Labels dashboard view |
+| **SPC f l** | Open label picker (apply labels) |
+| **SPC v L** | Switch to Labels dashboard view |
 
 ### Label Analytics
 
-The **Labels view** (press **[**) shows:
+The **Labels view** (press **SPC v L**) shows:
 - Issue count per label
 - Health indicators (stale issues, blockers)
 - Distribution across priorities
@@ -1329,7 +1328,7 @@ Every issue has a **priority** and a **status**. Together, they answer:
 
 ### Priority in the UI
 
-The **Insights panel** (press **i**) calculates a priority score:
+The **Insights panel** (press **SPC v i**) calculates a priority score:
 
 ` + "```" + `
 Priority Score = Base Priority + Blocking Factor + Freshness
@@ -1344,8 +1343,7 @@ This surfaces issues that are both important AND blocking other work.
 
 | Key | Action |
 |-----|--------|
-| **p** | Change priority |
-| **s** | Change status |
+| **e** | Edit the selected issue's fields, including priority and status |
 
 Or from the command line:
 
@@ -1390,7 +1388,7 @@ but the concept is simple: work flows in one direction, with no cycles.
 3. **High fan-out** — Completing this unblocks many items
 4. **Critical path** — The longest chain determines minimum time
 
-### Graph View (Press g)
+### Graph View (Press SPC v g)
 
 The **Graph view** visualizes these relationships:
 
@@ -1408,7 +1406,7 @@ The **Graph view** visualizes these relationships:
 |-----|--------|
 | **j/k** | Move between nodes vertically |
 | **h/l** | Move between siblings |
-| **f** | Focus on selected subgraph |
+| **s** | Toggle swarm view |
 | **Enter** | View selected issue |
 | **Esc** | Return to list |
 
@@ -1446,8 +1444,8 @@ at home. If not, you'll pick it up in minutes.
 
 | Key | Action |
 |-----|--------|
-| **g** | Jump to top |
-| **G** | Jump to bottom |
+| **gg / Home** | Jump to top |
+| **G / End** | Jump to bottom |
 | **Ctrl+d** | Half-page down |
 | **Ctrl+u** | Half-page up |
 
@@ -1457,15 +1455,15 @@ These work in every view:
 
 | Key | Action |
 |-----|--------|
-| **?** | Help overlay |
+| **? / F1** | Local direct-key reference |
 | **Esc** | Close overlay / go back |
 | **Enter** | Select / open |
 | **q** | Quit bt |
 
-### The Shortcuts Sidebar
+### Leader Menu
 
-Press **;** (semicolon) to toggle a floating sidebar showing all available
-shortcuts for your current view. It updates as you navigate.
+Press **Space** in a view, then pause for the which-key menu. Leader actions are
+grouped there; press **?** for the current view's direct keys.
 
 > Press **→** to continue.`
 
@@ -1489,31 +1487,30 @@ Quickly narrow down what you see:
 
 | Key | Filter |
 |-----|--------|
-| **o** | Open issues only |
-| **c** | Closed issues only |
-| **r** | Ready issues (no blockers) |
-| **a** | All issues (reset filter) |
+| **SPC f o** | Open issues only |
+| **SPC f c** | Closed issues only |
+| **SPC f r** | Ready issues (no blockers) |
+| **SPC f x** | Clear filters |
 
 ### Searching
 
 | Key | Search Type |
 |-----|-------------|
 | **/** | Open search bar (typo-tolerant fuzzy by default) |
-| **Ctrl+S** | Cycle mode: fuzzy → hybrid → semantic |
-| **H** | Cycle hybrid preset (only in hybrid mode) |
+| **SPC / m** | Cycle search ranking |
+| **SPC / h** | Cycle hybrid preset |
 | **"foo bar"** | Exact phrase / substring match |
 | **n/N** | Next/previous search result |
 
 ### Sorting
 
-Press **s** to cycle through sort modes: priority → created → updated.
-Press **S** (shift+s) to reverse the current sort order.
+Use **SPC s s** to cycle sort modes and **SPC s S** to reverse the current sort order.
 
 ### When to Use List View
 
-- Daily triage: filter to ` + "`r`" + ` (ready) and work top-down
-- Quick status check: filter to ` + "`o`" + ` (open) to see backlog size
-- Finding specific issues: use **/** or **Ctrl+S** to search
+- Daily triage: filter to **SPC f r** (ready) and work top-down
+- Quick status check: filter to **SPC f o** (open) to see backlog size
+- Finding specific issues: use **/** to search
 
 > Press **→** to continue.`
 
@@ -1596,7 +1593,7 @@ Press **Tab** from Detail view to enter Split view — list and detail side by s
 // viewsBoardContent is the Board View page content.
 const viewsBoardContent = `## Board View
 
-Press **b** to switch to the Kanban-style board.
+Press **SPC v b** to switch to the Kanban-style board.
 
 ` + "```" + `
 ┌─────────────┬─────────────┬─────────────┬─────────────┐
@@ -1616,7 +1613,9 @@ Press **b** to switch to the Kanban-style board.
 | **h/l** | Move between columns |
 | **j/k** | Move within a column |
 | **Enter** | View issue details |
-| **m** | Move issue to different status |
+| **s** | Cycle swimlane grouping |
+| **z** | Toggle empty columns |
+| **d** | Expand the selected card |
 
 ### Visual Indicators
 
@@ -1635,7 +1634,7 @@ Press **b** to switch to the Kanban-style board.
 // viewsGraphContent is the Graph View page content.
 const viewsGraphContent = `## Graph View
 
-Press **g** to visualize issue dependencies as a graph.
+Press **SPC v g** to visualize issue dependencies as a graph.
 
 ` + "```" + `
                     ┌─────────┐
@@ -1668,7 +1667,7 @@ Press **g** to visualize issue dependencies as a graph.
 | **j/k** | Navigate between connected nodes |
 | **h/l** | Navigate siblings |
 | **Enter** | Select node and view details |
-| **f** | Focus: show only this node's subgraph |
+| **s** | Toggle swarm view |
 | **Esc** | Exit focus / return to list |
 
 ### When to Use Graph View
@@ -1682,7 +1681,7 @@ Press **g** to visualize issue dependencies as a graph.
 // viewsInsightsContent is the Insights Panel page content.
 const viewsInsightsContent = `## Insights Panel
 
-Press **i** to open the Insights panel — AI-powered prioritization assistance.
+Press **SPC v i** to open the Insights panel — AI-powered prioritization assistance.
 
 ### Priority Score Algorithm
 
@@ -1719,7 +1718,7 @@ Press **m** to toggle heatmap mode, which colors the list by:
 // viewsHistoryContent is the History View page content.
 const viewsHistoryContent = `## History View
 
-Press **h** to see the git-integrated timeline of your project.
+Press **SPC v h** to see the git-integrated timeline of your project.
 
 ` + "```" + `
 ┌─────────────────────────────────────────────────────┐
@@ -1746,7 +1745,9 @@ Press **h** to see the git-integrated timeline of your project.
 |-----|--------|
 | **j/k** | Navigate timeline |
 | **Enter** | Preview project state at that commit |
-| **d** | Show diff for selected commit |
+| **v** | Toggle Bead/Git mode |
+| **f** | Toggle the file tree |
+| **c** | Cycle confidence filter |
 | **Esc** | Return to current state |
 
 ### Time Travel
@@ -1776,10 +1777,10 @@ impact in the dependency graph.
 | Mode | Key | What it does |
 |------|-----|-------------|
 | Fuzzy   | **/**       | Open search bar (default fuzzy ranker) |
-| Cycle   | **Ctrl+S**  | Cycle ranker: fuzzy → hybrid → semantic → fuzzy |
+| Cycle   | **SPC / m** | Cycle ranker: fuzzy → hybrid → semantic → fuzzy |
 | Hybrid  | (in cycle)  | Semantic + graph-aware ranking (most useful general mode) |
 | Semantic| (in cycle)  | Meaning-based retrieval (no graph influence) |
-| Preset  | **H**       | Cycle hybrid presets (only meaningful in hybrid mode) |
+| Preset  | **SPC / h** | Cycle hybrid presets (only meaningful in hybrid mode) |
 | Exact   | ` + "`\"foo bar\"`" + ` | Substring/phrase match — bypasses fuzzy/semantic |
 
 ### How It Works
@@ -1802,7 +1803,7 @@ Searching for "permissions":
 ### When to Use Each Mode
 
 - **Fuzzy** — fast substring/character match. Best for IDs, known phrases, exact-ish lookups (e.g. "z5jj", "hybrid badge"). Default boot mode when no semantic index exists.
-- **Hybrid** — semantic + graph weight. Best general-purpose mode for daily browsing. Default boot mode once a semantic index has been built. Use **H** to cycle weight presets.
+- **Hybrid** — semantic + graph weight. Best general-purpose mode for daily browsing. Default boot mode once a semantic index has been built. Use **SPC / h** to cycle weight presets.
 - **Semantic** — meaning-based retrieval without graph influence. Use when fuzzy misses the right bead and you don't want graph centrality biasing the result.
 - **Exact phrase** — wrap in double quotes (e.g. ` + "`\"sprint feature\"`" + `) to bypass ranker and require literal substring match. Composes with comma-OR for mixed queries.
 
@@ -1813,7 +1814,7 @@ Searching for "permissions":
 > Press **→** to continue.`
 
 // advancedTimeTravelContent is the Time Travel tutorial page.
-const advancedTimeTravelContent = `## Time Travel (t/T)
+const advancedTimeTravelContent = `## Time Travel (SPC t)
 
 See how your project looked at any point in history — compare past to present.
 
@@ -1821,8 +1822,8 @@ See how your project looked at any point in history — compare past to present.
 
 | Key | Action |
 |-----|--------|
-| **t** | Time travel with git ref input (e.g. HEAD~5) |
-| **h** | History view (visual timeline) |
+| **SPC t** | Time travel with git ref input (e.g. HEAD~5) |
+| **SPC v h** | History view (visual timeline) |
 
 ### Git Reference Syntax
 
@@ -1838,7 +1839,7 @@ Time travel understands git references:
 ### Example: Sprint Retrospective
 
 ` + "```" + `
-1. Press t and enter "HEAD~50" (start of sprint)
+1. Press SPC t and enter "HEAD~50" (start of sprint)
 2. See: 45 open issues, 12 blocked
 3. Press Esc to return to present
 4. Now: 22 open, 3 blocked
@@ -1881,9 +1882,9 @@ const advancedLabelAnalyticsContent = `## Label Analytics
 
 Labels are more than tags — they're a lens for understanding your project.
 
-### The Labels Dashboard ([)
+### The Labels Dashboard (SPC v L)
 
-Press **[** to open the Labels dashboard:
+Press **SPC v L** to open the Labels dashboard:
 
 ` + "```" + `
 ┌─────────────────────────────────────────────────────┐
@@ -1913,7 +1914,7 @@ Press **[** to open the Labels dashboard:
 
 ### Label Flow Analysis
 
-Press **f** in Labels view to see cross-label flow:
+Press **SPC v f** to open the flow matrix and see cross-label flow:
 
 ` + "```" + `
 frontend → backend: 5 dependencies
@@ -1940,9 +1941,9 @@ const advancedExportContent = `## Export & Deployment
 
 Share your project status with people who don't use the terminal.
 
-### Quick Markdown Export (x)
+### Quick Markdown Export (SPC b x)
 
-Press **x** in any view to export current state to markdown:
+Press **SPC b x** in any view to export current state to markdown:
 
 ` + "```markdown\n# Project Status - 2025-01-15\n\n## Open Issues (24)\n| ID | Priority | Title |\n|----|----------|-------|\n| bt-abc1 | P1 | Fix login timeout |\n...\n\n## Blocked Issues (5)\n...\n```" + `
 
@@ -2031,7 +2032,7 @@ The graph view shows these cross-repo relationships.
 
 ### Filtering by Repo
 
-Press **w** to open the repo picker, then:
+Press **SPC p p** to open the workspace/project picker, then:
 
 | Key | Effect |
 |-----|--------|
@@ -2049,13 +2050,13 @@ Press **w** to open the repo picker, then:
 > Press **→** to continue.`
 
 // advancedRecipesContent is the Recipes tutorial page.
-const advancedRecipesContent = `## Recipes (R)
+const advancedRecipesContent = `## Recipes (SPC f R)
 
 Recipes are **saved filter combinations** — complex queries you use repeatedly.
 
 ### Opening the Recipe Picker
 
-Press **R** (capital R) to open recipes:
+Press **SPC f R** to open recipes:
 
 ` + "```" + `
 ┌─────────────────────────────────────────────────────┐
@@ -2188,14 +2189,14 @@ Let's walk through implementing a feature from start to finish.
 
 ` + "```bash\nbd ready                        # Show actionable issues\nbt --robot-triage | jq '.recommendations[0]'\n```" + `
 
-Or in bv: press **r** to filter to ready issues.
+Or in bt: press **SPC f r** to filter to ready issues.
 
 ### Step 2: Review the Issue
 
 ` + "```" + `
 j/k   Navigate to the feature
 Enter View full details
-g     See dependency graph
+SPC v g  See dependency graph
 ` + "```" + `
 
 Check: Is anything blocking this? Are there related tasks?
@@ -2223,7 +2224,7 @@ As you work, you realize there are sub-tasks:
 ### Pro Tips
 
 - **Check ` + "`bd ready`" + `** after each close — new work may have unblocked
-- **Use ` + "`g`" + ` (graph view)** to visualize the sub-task structure
+- **Use SPC v g (graph view)** to visualize the sub-task structure
 - **Set realistic priorities** — P2 for standard work, P1 only for blockers
 
 > Press **→** to continue.`
@@ -2242,7 +2243,7 @@ Bug arrives (from user, agent, or monitoring):
 
 ### Step 2: Assess Severity
 
-In bv, select the new issue and press **S** for triage suggestions:
+Review the issue's priority and details, or use ` + "`bt robot triage`" + ` for ranked suggestions:
 
 ` + "```" + `
 ┌─────────────────────────────────────────────────────┐
@@ -2267,7 +2268,7 @@ In bv, select the new issue and press **S** for triage suggestions:
 
 ### Step 4: Add Labels for Categorization
 
-Press **L** to open label picker, select:
+Press **SPC f l** to open the label picker, select:
 - ` + "`bug`" + ` - It's a bug
 - ` + "`auth`" + ` - Affects authentication
 - ` + "`user-reported`" + ` - External report
@@ -2308,7 +2309,7 @@ Use bv's analytics to make data-driven sprint decisions.
 
 ### Step 1: Review Project Health
 
-Open the Insights panel with **i**:
+Open the Insights panel with **SPC v i**:
 
 ` + "```" + `
 ┌─────────────────────────────────────────────────────┐
@@ -2327,7 +2328,7 @@ Open the Insights panel with **i**:
 
 ### Step 2: Identify Dependencies
 
-Press **g** for the graph view to see the dependency structure:
+Press **SPC v g** for the graph view to see the dependency structure:
 
 - **Tall chains** = sequential work (can't parallelize)
 - **Wide clusters** = parallel opportunities
@@ -2335,7 +2336,7 @@ Press **g** for the graph view to see the dependency structure:
 
 ### Step 3: Filter to Ready Work
 
-Press **r** to show only unblocked issues:
+Press **SPC f r** to show only unblocked issues:
 
 ` + "```" + `
 ┌─────────────────────────────────────────────────────┐
@@ -2353,12 +2354,12 @@ Press **r** to show only unblocked issues:
 For each sprint candidate:
 1. Review in detail view (Enter)
 2. Discuss scope and estimates
-3. Add sprint label: **L** → "sprint-42"
+3. Add sprint label: **SPC f l** → "sprint-42"
 4. Optionally assign: update with --assignee
 
 ### Step 5: Export Sprint Plan
 
-Press **x** to export the filtered list to markdown:
+Press **SPC b x** to export the filtered list to markdown:
 
 ` + "```markdown\n# Sprint 42 Plan\n\n## P1 - Must Complete\n- [ ] bt-abc1: Fix auth timeout\n- [ ] bt-def2: API rate limiting\n\n## P2 - Should Complete  \n- [ ] bt-ghi3: Dashboard redesign\n...\n```" + `
 
@@ -2368,7 +2369,7 @@ Share in Slack, email, or sprint planning doc.
 
 After the sprint, compare progress:
 
-` + "```bash\n# Press t, enter: HEAD~50 (start of sprint)\n# Or use robot mode:\nbt --robot-diff --diff-since HEAD~50\n```" + `
+` + "```bash\n# Press SPC t, enter: HEAD~50 (start of sprint)\n# Or use robot mode:\nbt --robot-diff --diff-since HEAD~50\n```" + `
 
 See exactly how many issues closed, what unblocked, velocity achieved.
 
@@ -2393,9 +2394,9 @@ Tell them about the help system:
 
 | Key | What They Get |
 |-----|---------------|
-| **?** | Quick reference overlay |
-| **` + "`" + `** | Full interactive tutorial |
-| **;** | Shortcuts sidebar |
+| **? / F1** | Local direct-key reference |
+| **SPC T** | Full interactive tutorial |
+| **SPC** | Leader menu |
 
 > "If you forget anything, just press ? or ` + "`" + `"
 
@@ -2403,7 +2404,7 @@ Tell them about the help system:
 
 Find a good starter issue:
 
-` + "```bash\n# In bv: press L, select \"good-first-issue\" label\nbr list --label=good-first-issue --status=open\n```" + `
+` + "```bash\n# In bt: press SPC f l, select \"good-first-issue\" label\nbr list --label=good-first-issue --status=open\n```" + `
 
 Starter issues should:
 - Have clear scope
@@ -2414,9 +2415,9 @@ Starter issues should:
 
 Guide them through:
 
-1. **Find the issue**: Use filters (o/r) and search (/)
+1. **Find the issue**: Use SPC f o / SPC f r filters and search (/)
 2. **Review details**: Press Enter to see full description
-3. **Check dependencies**: Press g for graph view
+3. **Check dependencies**: Press SPC v g for graph view
 4. **Claim it**: ` + "`br update ID --status=in_progress`" + `
 5. **Do the work**: Regular development process
 6. **Close it**: ` + "`bd close ID`" + `
@@ -2428,7 +2429,7 @@ Key concepts for new team members:
 
 - **Beads = issues** stored in the repo itself
 - **Dependencies** are first-class — graph shows what blocks what
-- **Ready filter** (r) shows only actionable work
+- **Ready filter** (SPC f r) shows only actionable work
 - **Everything syncs** via git — no external databases
 
 ### Onboarding Checklist

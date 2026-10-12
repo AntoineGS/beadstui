@@ -35,7 +35,7 @@ func (k LabelDashboardKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.Apply, k.Drilldown, k.Close}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k LabelDashboardKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.JumpTop, k.JumpBottom},
@@ -62,7 +62,7 @@ func (k LabelHealthKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Drilldown, k.Close}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k LabelHealthKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{{k.Drilldown, k.Close}}
 }
@@ -88,7 +88,7 @@ func (k LabelDrilldownKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Apply, k.Graph, k.Close}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k LabelDrilldownKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{{k.Apply, k.Graph, k.Close}}
 }
@@ -108,7 +108,7 @@ func NewLabelGraphKeys() LabelGraphKeys {
 // ShortHelp returns the bindings shown in the status-bar L1 hint slot.
 func (k LabelGraphKeys) ShortHelp() []key.Binding { return []key.Binding{k.Close} }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k LabelGraphKeys) FullHelp() [][]key.Binding { return [][]key.Binding{{k.Close}} }
 
 // AttentionKeys are the bindings for the attention view. PickLabel matches the
@@ -132,7 +132,7 @@ func (k AttentionKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.PickLabel, k.Close}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k AttentionKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{{k.PickLabel, k.Close}}
 }

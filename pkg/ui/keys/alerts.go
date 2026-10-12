@@ -75,7 +75,7 @@ func (k AlertsKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.Open, k.Dismiss, k.Close}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 // Columns: Move, Act, Filter, Tabs.
 func (k AlertsKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
@@ -130,7 +130,7 @@ func (k NotificationsKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.Open, k.Dismiss, k.Close}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 // Columns: Move, Act, Filter.
 func (k NotificationsKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{

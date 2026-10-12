@@ -111,8 +111,8 @@ func TestGetContextHelpFallback(t *testing.T) {
 	}
 
 	// Generic content should contain basic navigation
-	if !strings.Contains(result, "Global Keys") {
-		t.Error("Generic help should contain Global Keys section")
+	if !strings.Contains(result, "Direct keys") {
+		t.Error("Generic help should contain the direct-key section")
 	}
 }
 
@@ -198,7 +198,7 @@ func TestContextHelpKeyboardShortcuts(t *testing.T) {
 		{ContextList, "j/k"},
 		{ContextList, "Enter"},
 		{ContextGraph, "h/l"},
-		{ContextGraph, "f"},
+		{ContextGraph, "s"},
 		{ContextBoard, "h/l"},
 		{ContextDetail, "Esc"},
 		{ContextSplit, "Tab"},
@@ -290,7 +290,8 @@ func TestContextHelpListShortcutsMatchModel(t *testing.T) {
 	}{
 		{"j/k", "vertical navigation"},
 		{"Enter", "view details"},
-		{"g/G", "jump to top/bottom"},
+		{"gg/home", "jump to top"},
+		{"G/end", "jump to bottom"},
 		{"/", "search"},
 	}
 
@@ -357,7 +358,7 @@ func TestContextHelpGraphShortcutsMatchModel(t *testing.T) {
 		{"j/k", "vertical navigation"},
 		{"h/l", "sibling navigation"},
 		{"Enter", "view issue"},
-		{"f", "focus subgraph"},
+		{"s", "toggle swarm view"},
 		{"Esc", "exit"},
 	}
 
@@ -435,10 +436,10 @@ func TestContextHelpAllContextsRender(t *testing.T) {
 }
 
 func TestContextHelpFilterModeComplete(t *testing.T) {
-	// Filter mode help should document all status filter keys
+	// Filter mode help should document the leader sequences for status filters.
 	content := GetContextHelp(ContextFilter)
 
-	filterShortcuts := []string{"o", "c", "r", "a"}
+	filterShortcuts := []string{"SPC f o", "SPC f c", "SPC f r", "SPC f x"}
 	for _, key := range filterShortcuts {
 		if !strings.Contains(content, key) {
 			t.Errorf("Filter context help should document %q filter key", key)

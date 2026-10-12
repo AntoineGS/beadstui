@@ -11,7 +11,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
@@ -1316,7 +1315,7 @@ func TestHelpOverlayScroll(t *testing.T) {
 	issues := []model.Issue{{ID: "1", Title: "One", Status: model.StatusOpen}}
 	m := NewModel(issues, nil, "", nil, nil)
 	m.width, m.height = 80, 20 // Small terminal to force scroll
-	m.openModal(ModalHelp)
+	m.mode = ViewList
 	m.focused = focusHelp
 	m.helpScroll = 0
 
@@ -1369,6 +1368,8 @@ func TestHelpOverlayScroll(t *testing.T) {
 	}
 
 	// Test q closes help
+	m.openModal(ModalHelp)
+	m.helpScroll = 5
 	m = m.handleHelpKeys(tea.KeyPressMsg{Code: 'q', Text: "q"})
 	if m.activeModal == ModalHelp {
 		t.Fatalf("expected modal closed after q")
@@ -1394,9 +1395,10 @@ func TestHelpOverlayScroll(t *testing.T) {
 	if !strings.Contains(out, "shortcuts") {
 		t.Fatalf("help overlay should render the global title")
 	}
-	// Should show the ; cross-reference; closing with esc is assumed.
-	if strings.Contains(out, "Esc") || !strings.Contains(out, "; per-view") {
-		t.Fatalf("help overlay should show only the ; cross-reference")
+	// The footer points to which-key, not the retired sidebar.
+	plain := ansi.Strip(out)
+	if strings.Contains(plain, ";") || !strings.Contains(plain, "SPC  leader menu") {
+		t.Fatalf("help overlay should show only the leader-menu cross-reference")
 	}
 
 	// Test Space key closes help for tutorial entry (bv-0trk)
@@ -1439,29 +1441,23 @@ func TestRenderHelpOverlay_ResponsiveLayout(t *testing.T) {
 	}
 }
 
-// TestHelpOverlay_ConsumesKeyMapBindings verifies the ? overlay is scoped to the
-// Global map only (bt-dx7k): global binding descs appear; view-specific descs
-// (ListNormal's "epic card" / "cycle sort") do not. Source is still the key.Map
-// FullHelp(), never literal tables.
+// TestHelpOverlay_ConsumesKeyMapBindings verifies the ? overlay combines the
+// Global map with the active view map, while omitting leader-only actions.
 func TestHelpOverlay_ConsumesKeyMapBindings(t *testing.T) {
 	m := NewModel(harnessIssues(), nil, "", nil, nil)
-	m.mode = ViewList // a populated view, to prove its keys are still excluded
+	m.mode = ViewList
 	m.width, m.height = 180, 60
-	m.openModal(ModalHelp)
-	m.focused = focusHelp
 
-	out := m.renderHelpOverlay()
+	out := ansi.Strip(m.renderHelpOverlay())
 
-	// Global descs must be present.
-	for _, want := range []string{"board", "graph", "refresh", "label picker"} {
+	for _, want := range []string{"GLOBAL", "LIST", "help", "edit field", "copy ID"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("? overlay missing global binding desc %q", want)
+			t.Errorf("? overlay missing direct binding %q", want)
 		}
 	}
-	// View-specific descs (ListNormal) must NOT be present -- ? is global-only.
-	for _, absent := range []string{"epic card", "cycle sort"} {
+	for _, absent := range []string{"board", "cycle sort"} {
 		if strings.Contains(out, absent) {
-			t.Errorf("? overlay leaked view-specific desc %q (should be global-only)", absent)
+			t.Errorf("? overlay leaked leader-only action %q", absent)
 		}
 	}
 }
@@ -1481,17 +1477,12 @@ func TestHelpOverlayColumns(t *testing.T) {
 	}
 }
 
-// TestHelpOverlayScroll_WindowsContent verifies help overlay behaviour at a
-// narrow short height (bt-dx7k.1 tier-flip adaptation). At 60x16 the full body
-// overflows so renderHelpOverlay returns the non-scrolling mini card. The scroll
-// handler math (helpScrollMax) still holds — the overflow count is valid — but
-// the render surface is now the mini, not the full sheet. The "scrolling changes
-// the render" premise no longer applies to this size class.
+// TestHelpOverlayScroll_WindowsContent verifies the direct-key list remains
+// scrollable when the terminal is short.
 func TestHelpOverlayScroll_WindowsContent(t *testing.T) {
 	m := NewModel(harnessIssues(), nil, "", nil, nil)
-	m.width, m.height = 60, 16 // narrow + short -> 1 column, overflows -> mini tier
-	m.openModal(ModalHelp)
-	m.focused = focusHelp
+	m.mode = ViewList
+	m.width, m.height = 60, 16
 
 	// The overflow math is still valid: bodyLines > avail at this size.
 	max := m.helpScrollMax()
@@ -1499,95 +1490,72 @@ func TestHelpOverlayScroll_WindowsContent(t *testing.T) {
 		t.Fatalf("expected content to overflow at 60x16 (helpScrollMax>0), got %d", max)
 	}
 
-	// At overflow size, renderHelpOverlay returns the mini card (non-scrolling).
 	m.helpScroll = 0
-	out := m.renderHelpOverlay()
-	if !strings.Contains(out, "↓ expand") {
-		t.Fatalf("expected mini card at 60x16 (missing '↓ expand' nudge): %s", out)
+	first := ansi.Strip(m.renderHelpOverlay())
+	if strings.Contains(first, "expand") || !strings.Contains(first, "GLOBAL") {
+		t.Fatalf("expected the scrollable local-key reference at 60x16: %s", first)
 	}
-	// Full-sheet group headers must NOT appear in the mini.
-	for _, absent := range []string{"SWITCH VIEWS", "WORKSPACE", "CHROME"} {
-		if strings.Contains(out, absent) {
-			t.Fatalf("mini at 60x16 unexpectedly shows full-sheet header %q", absent)
-		}
-	}
-
-	// The mini renders the same card regardless of helpScroll (non-scrolling).
-	// Verify over-scroll doesn't panic and still returns the mini.
+	// Scrolling changes the visible local-key rows and over-scroll renders as
+	// the final valid window.
+	m.helpScroll = max
+	atMax := ansi.Strip(m.renderHelpOverlay())
 	m.helpScroll = max + 50
-	over := m.renderHelpOverlay()
-	if !strings.Contains(over, "↓ expand") {
-		t.Fatalf("over-scroll should still show mini card at 60x16: %s", over)
+	over := ansi.Strip(m.renderHelpOverlay())
+	if atMax != over {
+		t.Fatalf("over-scroll did not render the final valid window")
 	}
 }
 
-// TestHelpOverlay_CrossRefFooter verifies the ? overlay footer carries the
-// one-line cross-reference to the ; sidebar plus a close hint (bt-dx7k).
+// TestHelpOverlay_CrossRefFooter verifies the ? overlay footer points to the
+// leader menu, not the retired sidebar.
 func TestHelpOverlay_CrossRefFooter(t *testing.T) {
 	m := NewModel(harnessIssues(), nil, "", nil, nil)
 	m.width, m.height = 120, 40
-	m.openModal(ModalHelp)
-	m.focused = focusHelp
 
 	out := m.renderHelpOverlay()
-	if !strings.Contains(out, ";") {
-		t.Errorf("? footer should cross-reference the ; sidebar")
+	if !strings.Contains(out, "SPC  leader menu") || strings.Contains(out, "; per-view") {
+		t.Errorf("? footer should cross-reference the leader menu")
 	}
 	if strings.Contains(out, "Esc") {
 		t.Errorf("? footer should not spell out the assumed close key")
 	}
 }
 
-// TestHelpOverlayMini_ShownWhenShort verifies the mini card renders (not the
-// full sheet) when the terminal is too short for the full body (bt-dx7k.1 Task 2).
-// Descs are sourced from GlobalKeys.Board.Help() etc. (single-source, no literals).
-// "label" matches the LabelPicker desc "label picker"; the task spec used "labels"
-// as a shorthand for the label-entry slot.
-func TestHelpOverlayMini_ShownWhenShort(t *testing.T) {
+// TestHelpOverlayMini_ShownWhenShort verifies short terminals keep the same
+// scrollable local-key reference rather than switching to another surface.
+func TestHelpOverlayShortHeightKeepsScrollableList(t *testing.T) {
 	m := NewModel(harnessIssues(), nil, "", nil, nil)
+	m.mode = ViewList
 	m.width, m.height = 80, 12
-	m.openModal(ModalHelp)
-	m.focused = focusHelp
-	out := m.renderHelpOverlay()
+	out := ansi.Strip(m.renderHelpOverlay())
 
-	// Mini descs must be present (sourced from GlobalKeys bindings).
-	for _, want := range []string{"board", "search", "label", "help"} {
+	for _, want := range []string{"GLOBAL", "LIST", "help"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("mini card at 80x12 missing desc %q: %s", want, out)
+			t.Errorf("short help at 80x12 missing direct group %q: %s", want, out)
 		}
 	}
-	// Nudge and per-view pointer.
-	if !strings.Contains(out, "↓ expand") {
-		t.Errorf("mini card at 80x12 missing '↓ expand' nudge: %s", out)
+	if strings.Contains(out, "expand") || m.helpScrollMax() <= 0 {
+		t.Errorf("short help should remain scrollable without a mini/full nudge: %s", out)
 	}
-	if !strings.Contains(out, "; per-view") {
-		t.Errorf("mini card at 80x12 missing '; per-view' hint: %s", out)
-	}
-	// Full-sheet-only group headers must NOT appear.
-	for _, absent := range []string{"WORKSPACE", "CHROME"} {
-		if strings.Contains(out, absent) {
-			t.Errorf("mini card at 80x12 leaked full-sheet header %q", absent)
-		}
+	if !strings.Contains(out, "SPC  leader menu") {
+		t.Errorf("short help should retain the leader-menu footer: %s", out)
 	}
 }
 
-// TestHelpOverlayMini_HiddenWhenTall verifies the full sheet renders (not the
-// mini) when the terminal is tall enough for the full body (bt-dx7k.1 Task 2).
-func TestHelpOverlayMini_HiddenWhenTall(t *testing.T) {
+// TestHelpOverlayMini_HiddenWhenTall verifies the local direct-key groups render
+// at full height without a mini/full switching hint.
+func TestHelpOverlayTallShowsLocalGroups(t *testing.T) {
 	m := NewModel(harnessIssues(), nil, "", nil, nil)
+	m.mode = ViewList
 	m.width, m.height = 120, 40
-	m.openModal(ModalHelp)
-	m.focused = focusHelp
-	out := m.renderHelpOverlay()
+	out := ansi.Strip(m.renderHelpOverlay())
 
-	// At 120x40 the full sheet fits; the mini nudge must NOT appear.
-	if strings.Contains(out, "↓ expand") {
-		t.Errorf("full-sheet at 120x40 should NOT contain '↓ expand' mini nudge")
+	if strings.Contains(out, "expand") {
+		t.Errorf("help at 120x40 should not contain a mini/full switching hint")
 	}
-	// Full-sheet group headers must be present.
-	for _, want := range []string{"SWITCH VIEWS", "CHROME"} {
+	for _, want := range []string{"GLOBAL", "LIST", "edit field", "copy ID"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("full-sheet at 120x40 missing group header %q", want)
+			t.Errorf("help at 120x40 missing local content %q", want)
 		}
 	}
 }
@@ -1604,12 +1572,12 @@ func TestHelpOverlay_FloatsOverDimmedBackground(t *testing.T) {
 	m.focused = focusHelp
 	out := m.View().Content
 
-	// The full help card renders (not the mini at this size).
-	if !strings.Contains(out, "shortcuts") || !strings.Contains(out, "SWITCH VIEWS") {
-		t.Fatalf("expected the full help card to render")
+	// The help card renders the underlying view's direct keys and global controls.
+	if !strings.Contains(out, "shortcuts") || !strings.Contains(out, "GLOBAL") || !strings.Contains(out, "LIST") || !strings.Contains(out, "edit field") {
+		t.Fatalf("expected the local help card to render")
 	}
-	if strings.Contains(out, "↓ expand") {
-		t.Fatalf("expected the full sheet at 120x44, got the mini")
+	if strings.Contains(out, "expand") {
+		t.Fatalf("help card should not contain a mini/full switching hint")
 	}
 	// Locate the card (its title row) and the underlying view (the column header
 	// "TYPE", which the help card has no copy of). Both must be present, and the
@@ -1660,143 +1628,63 @@ func TestHelpOverlay_FewerColumnsWhenTall(t *testing.T) {
 	}
 }
 
-// TestHelpMini_ProjectsGate verifies ProjectsOrWisps appears in helpMiniRows
-// only when m.workspaceMode is true (bt-dx7k.1 Task 3).
-func TestHelpMini_ProjectsGate(t *testing.T) {
-	m := NewModel(harnessIssues(), nil, "", nil, nil)
-	m.width, m.height = 80, 30
-
-	// Single-project: workspaceMode off — "projects / wisps" must be absent.
-	m.workspaceMode = false
-	rows := m.helpMiniRows()
-	for _, r := range rows {
-		if r.right == "projects / wisps" {
-			t.Errorf("single-project: helpMiniRows() should NOT contain 'projects / wisps', but it does")
+// TestHelpOverlayOmitsLeaderOnlyWorkspaceAction verifies project switching is
+// not listed in the local reference because it is available only through the leader.
+func TestHelpOverlayOmitsLeaderOnlyWorkspaceAction(t *testing.T) {
+	for _, workspace := range []bool{false, true} {
+		m := NewModel(harnessIssues(), nil, "", nil, nil)
+		m.width, m.height = 120, 40
+		m.workspaceMode = workspace
+		out := ansi.Strip(m.renderHelpOverlay())
+		if strings.Contains(out, "projects / wisps") {
+			t.Errorf("workspaceMode=%v: local help lists a leader-only action", workspace)
 		}
-	}
-
-	// Multi-project: workspaceMode on — "projects / wisps" must be present.
-	m.workspaceMode = true
-	rows = m.helpMiniRows()
-	found := false
-	for _, r := range rows {
-		if r.right == "projects / wisps" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("multi-project: helpMiniRows() should contain 'projects / wisps', but it does not")
 	}
 }
 
-// TestHelpOverlay_SingleBoxAesthetic verifies the ? overlay renders in a single
-// rounded modal box with inline-divider group headers and dim-mono theme tokens
-// (bt-dx7k.1). The four global task group headers must appear, global binding
-// descs must be present, and the box title "shortcuts" must appear exactly once
-// (proving one box, not four).
+// TestHelpOverlay_SingleBoxAesthetic verifies the ? overlay renders one box with
+// global and active-view direct-key groups.
 func TestHelpOverlay_SingleBoxAesthetic(t *testing.T) {
 	m := NewModel(harnessIssues(), nil, "", nil, nil)
+	m.mode = ViewList
 	m.width, m.height = 120, 40
-	m.openModal(ModalHelp)
-	m.focused = focusHelp
 
 	out := m.renderHelpOverlay()
 
-	// (a) All four global task group headers present as inline dividers.
-	for _, header := range []string{"SWITCH VIEWS", "DO THINGS", "WORKSPACE", "CHROME"} {
+	// (a) Global and active-view headings appear as inline dividers.
+	for _, header := range []string{"GLOBAL", "LIST"} {
 		if !strings.Contains(out, header) {
 			t.Errorf("? overlay missing group header %q", header)
 		}
 	}
 
-	// (b) Global binding descs present (sourced from the key.Map, not literals).
-	for _, desc := range []string{"board", "refresh"} {
+	// (b) Direct global and view binding descriptions come from their key maps.
+	for _, desc := range []string{"help", "edit field", "copy ID"} {
 		if !strings.Contains(out, desc) {
-			t.Errorf("? overlay missing global binding desc %q", desc)
+			t.Errorf("? overlay missing direct binding desc %q", desc)
 		}
 	}
 
-	// (c) Exactly two occurrences of "shortcuts" proves a single box (one in the
-	// title border, one from the Sidebar binding desc in the CHROME group body).
-	// Old code had count==1 (no box title, only the Sidebar desc body row).
-	// Four-box code would also have count==1 (Sidebar desc in one panel body, no "shortcuts" in panel titles).
-	if n := strings.Count(out, "shortcuts"); n != 2 {
-		t.Errorf("? overlay contains %d occurrences of %q, want exactly 2 (title border + Sidebar desc)", n, "shortcuts")
+	if n := strings.Count(out, "shortcuts"); n != 1 {
+		t.Errorf("? overlay contains %d occurrences of %q, want one titled box", n, "shortcuts")
 	}
 }
 
-func TestHelpLegendAccessibleFromCompactAndFullHelp(t *testing.T) {
+func TestHelpOverlayHasNoLegendScreen(t *testing.T) {
 	for _, size := range [][2]int{{50, 14}, {120, 40}} {
 		m := NewModel(nil, nil, "", nil, nil)
 		m.width, m.height = size[0], size[1]
 		m.openModal(ModalHelp)
 		m.focused = focusHelp
-		if out := ansi.Strip(m.renderHelpOverlay()); !strings.Contains(out, "legend") {
-			t.Errorf("size=%v: help does not advertise legend: %q", size, out)
-		}
-		m = m.handleHelpKeys(tea.KeyPressMsg{Code: 'l', Text: "l"})
-		if m.activeModal != ModalHelp {
-			t.Fatalf("size=%v: l dismissed help instead of opening legend", size)
-		}
 		first := ansi.Strip(m.renderHelpOverlay())
-		if !strings.Contains(first, "icon legend") || !strings.Contains(first, "ISSUE TYPES") {
-			t.Fatalf("size=%v: missing icon legend: %q", size, first)
+		if !strings.Contains(first, "shortcuts") || strings.Contains(strings.ToLower(first), "legend") {
+			t.Errorf("size=%v: expected one local-key reference and no legend screen: %q", size, first)
 		}
-		if lipgloss.Width(first) > size[0] || lipgloss.Height(first) > size[1]-1 {
-			t.Errorf("size=%v: legend overflows terminal: %q", size, first)
-		}
-		m = m.handleHelpKeys(tea.KeyPressMsg{Code: 'G', Text: "G"})
-		last := ansi.Strip(m.renderHelpOverlay())
-		if first == last || !strings.Contains(last, "Enter") {
-			t.Errorf("size=%v: scrolling must reach the last legend entry: %q", size, last)
-		}
-		m = m.handleHelpKeys(tea.KeyPressMsg{Code: 'l', Text: "l"})
-		if m.helpScroll != 0 || strings.Contains(ansi.Strip(m.renderHelpOverlay()), "ISSUE TYPES") {
-			t.Errorf("size=%v: toggling back must restore shortcuts and reset scroll", size)
-		}
-		m = m.handleHelpKeys(tea.KeyPressMsg{Code: 'l', Text: "l"})
-		m = m.handleHelpKeys(tea.KeyPressMsg{Code: tea.KeyEscape})
-		m.openModal(ModalHelp)
-		if strings.Contains(ansi.Strip(m.renderHelpOverlay()), "ISSUE TYPES") {
-			t.Errorf("size=%v: reopening help must start on shortcuts", size)
-		}
-	}
-}
-
-func TestHelpLegendExplainsIssueAndChromeIndicators(t *testing.T) {
-	for _, glyphs := range []GlyphSet{asciiGlyphs, nerdfontGlyphs} {
-		setGlyphs(t, glyphs)
-		m := NewModel(nil, nil, "", nil, nil)
-		m.width, m.height = 120, 300
-		m.openModal(ModalHelp)
-		m = m.handleHelpKeys(tea.KeyPressMsg{Code: 'l', Text: "l"})
-		out := ansi.Strip(m.renderHelpOverlay())
-		for _, want := range []struct{ glyph, meaning string }{
-			{glyphs.TypeBug, "Bug"}, {glyphs.TypeFeature, "Feature"},
-			{glyphs.TypeTask, "Task"}, {glyphs.TypeEpic, "Epic"},
-			{glyphs.TypeChore, "Chore"}, {glyphs.TypeDefault, "Other issue type"},
-			{glyphs.StDeferred, "Deferred"}, {glyphs.StReview, "Review"},
-			{glyphs.GateHuman, "Human gate"}, {glyphs.GateCI, "CI gate"},
-			{glyphs.GatePR, "PR gate"}, {glyphs.GateBead, "Bead gate"},
-			{glyphs.Stale, "Stale issue"}, {glyphs.Overdue + "DUE", "Overdue"},
-			{glyphs.Bolt, "Quick win"}, {glyphs.Unlock + "N", "Unblocks N"},
-			{"↪N", "Unblocks N"}, {glyphs.Comment + "N", "Comments"},
-			{"done/total", "Epic progress"}, {"↑ / ↓", "Priority hint"},
-			{"0", "Critical"}, {"4", "Backlog"},
-			{glyphs.New, "New issue"}, {"~", "Modified issue"},
-			{glyphs.Pencil, "Author"}, {glyphs.Tag, "Labels"},
-			{glyphs.TriadReady, "Ready"}, {glyphs.DepChild, "Parent-child"},
-		} {
-			found := false
-			for _, line := range strings.Split(out, "\n") {
-				if strings.Contains(line, want.glyph) && strings.Contains(line, want.meaning) {
-					found = true
-					break
+		for _, group := range m.helpGroups() {
+			for _, binding := range group.bindings {
+				if strings.Contains(strings.ToLower(binding.Help().Desc), "legend") {
+					t.Errorf("size=%v: retired icon legend binding remains in help", size)
 				}
-			}
-			if !found {
-				t.Errorf("legend missing %q explanation for %q", want.meaning, want.glyph)
 			}
 		}
 	}

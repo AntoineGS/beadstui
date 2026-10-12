@@ -29,7 +29,7 @@ func (k ConfirmKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Confirm, k.Cancel}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k ConfirmKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{{k.Confirm, k.Cancel}}
 }
@@ -106,7 +106,7 @@ func (k LabelPickerNavKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.Toggle, k.Apply, k.FocusSearch, k.Cancel}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k LabelPickerNavKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		// Nav
@@ -166,7 +166,7 @@ func (k LabelPickerSearchKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.ResultUp, k.ResultDown, k.Apply, k.BlurSearch}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay
+// FullHelp returns column-grouped bindings consumed by the local ? overlay
 // during label picker search mode.
 func (k LabelPickerSearchKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
@@ -282,7 +282,7 @@ func (k SettingsKeys) FullHelp() [][]key.Binding {
 	}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k RecipePickerKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		// Nav
@@ -337,7 +337,7 @@ func (k BQLQueryKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Apply, k.Cancel, k.HistoryPrev, k.HistoryNext}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k BQLQueryKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.HistoryPrev, k.HistoryNext},
@@ -373,7 +373,7 @@ func (k TimeTravelInputKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Submit, k.Cancel}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k TimeTravelInputKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Submit, k.Cancel},
@@ -460,7 +460,7 @@ func (k RepoPickerNavKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.Toggle, k.Apply, k.FocusSearch, k.Cancel}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k RepoPickerNavKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		// Nav
@@ -518,7 +518,7 @@ func (k RepoPickerSearchKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.ResultUp, k.ResultDown, k.Apply, k.BlurSearch}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay
+// FullHelp returns column-grouped bindings consumed by the local ? overlay
 // during repo picker search mode.
 func (k RepoPickerSearchKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{

@@ -12,6 +12,7 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/cass"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/recipe"
+	uiKeys "github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 )
 
 // faintSGR is the ANSI Select-Graphic-Rendition byte sequence for the Faint
@@ -43,14 +44,100 @@ func TestHelpPopup_BoundsAndFooter(t *testing.T) {
 		out := m.renderHelpOverlay()
 		assertPopupBounds(t, out, size.Width, size.Height-1)
 		rows := strings.Split(ansi.Strip(out), "\n")
-		if footer := rows[len(rows)-3]; !strings.Contains(footer, "; per-view") || strings.Contains(footer, "Esc") {
-			t.Fatalf("help footer row = %q, want only the ; per-view hint", footer)
+		if footer := rows[len(rows)-3]; !strings.Contains(footer, "SPC  leader menu") || strings.Contains(footer, ";") {
+			t.Fatalf("help footer row = %q, want only the SPC leader-menu hint", footer)
 		}
-		m.helpLegend = true
+		m.helpScroll = m.helpScrollMax()
 		out = m.renderHelpOverlay()
 		rows = strings.Split(ansi.Strip(out), "\n")
-		if footer := rows[len(rows)-3]; !strings.Contains(footer, "l shortcuts") || strings.Contains(footer, "j/k") || strings.Contains(footer, "Esc") {
-			t.Fatalf("legend footer row = %q, want only the l shortcuts hint", footer)
+		if footer := rows[len(rows)-3]; !strings.Contains(footer, "SPC  leader menu") || strings.Contains(footer, ";") {
+			t.Fatalf("scrolled help footer row = %q, want only the SPC leader-menu hint", footer)
+		}
+	}
+}
+
+func TestHelpOverlayLocalOnly(t *testing.T) {
+	m := newSizedModel(t, fieldEditTestIssues(), 180, 80)
+	m, _ = sendMsg(m, keyRune('?'))
+	if m.activeModal != ModalHelp {
+		t.Fatal("? did not open help")
+	}
+	plain := ansi.Strip(m.renderHelpOverlay())
+	for _, forbidden := range []string{"board", "cycle sort"} {
+		if strings.Contains(strings.ToLower(plain), forbidden) {
+			t.Errorf("local help lists leader-only action %q:\n%s", forbidden, plain)
+		}
+	}
+	for _, want := range []string{"edit field", "copy ID", "f1"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("local help is missing direct action %q:\n%s", want, plain)
+		}
+	}
+}
+
+func TestHelpListsOnlyDirectKeys(t *testing.T) {
+	modes := []ViewMode{
+		ViewList, ViewBoard, ViewGraph, ViewInsights, ViewActionable, ViewFlowMatrix,
+		ViewHistory, ViewEpics, ViewTree, ViewLabelDashboard, ViewAttention, ViewMemories,
+	}
+	for _, mode := range modes {
+		t.Run(fmt.Sprint(mode), func(t *testing.T) {
+			m := newSizedModel(t, fieldEditTestIssues(), 220, 100)
+			m.mode = mode
+			m.renderHelpOverlay()
+			for _, group := range m.helpGroups() {
+				for _, binding := range group.bindings {
+					direct := false
+					for _, raw := range binding.Keys() {
+						if uiKeys.IsToken(raw) {
+							continue
+						}
+						if _, _, sequence := uiKeys.ParseSeq(raw); !sequence {
+							direct = true
+						}
+					}
+					if !direct {
+						t.Errorf("help for view %v includes binding %q without a direct key", mode, binding.Help().Desc)
+					}
+					if strings.Contains(binding.Help().Key, "SPC") {
+						t.Errorf("help for view %v displays leader key %q", mode, binding.Help().Key)
+					}
+				}
+				for _, row := range group.rows {
+					if strings.Contains(row.left, "SPC") {
+						t.Errorf("help for view %v displays leader row %q", mode, row.left)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestHelpPreservesConfiguredKeyLabels(t *testing.T) {
+	m := newSizedModel(t, fieldEditTestIssues(), 220, 100)
+	m.mode = ViewList
+
+	want := map[string]string{
+		"move up":     "↑/k",
+		"jump to top": "home",
+		"page down":   "⌃d",
+		"open detail": "⏎",
+	}
+	found := make(map[string]bool, len(want))
+	for _, group := range m.helpGroups() {
+		for _, binding := range group.bindings {
+			desc := binding.Help().Desc
+			if label, ok := want[desc]; ok {
+				found[desc] = true
+				if got := binding.Help().Key; got != label {
+					t.Errorf("help label for %q = %q, want configured label %q", desc, got, label)
+				}
+			}
+		}
+	}
+	for desc := range want {
+		if !found[desc] {
+			t.Errorf("help did not include %q binding", desc)
 		}
 	}
 }

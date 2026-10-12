@@ -14,15 +14,12 @@ import "charm.land/bubbles/v2/key"
 // Column layout (FullHelp): Help & Chrome / Views / Workspace / Actions.
 type GlobalKeys struct {
 	// Help & Chrome
-	Help              key.Binding `action:"app.help"`         // ? / f1
-	Sidebar           key.Binding `action:"app.sidebar"`      // ;
-	SidebarScrollDown key.Binding `action:"app.sidebar_down"` // ctrl+j (gated on showShortcutsSidebar)
-	SidebarScrollUp   key.Binding `action:"app.sidebar_up"`   // ctrl+k (gated on showShortcutsSidebar)
-	Tutorial          key.Binding `action:"app.tutorial"`     // SPC T
-	Settings          key.Binding `action:"app.settings"`     // SPC ,
-	Quit              key.Binding `action:"app.force_quit"`   // ctrl+c
-	Back              key.Binding `action:"app.quit"`         // q / SPC q
-	Cancel            key.Binding `action:"app.cancel"`       // esc (cascade)
+	Help     key.Binding `action:"app.help"`       // ? / f1
+	Tutorial key.Binding `action:"app.tutorial"`   // SPC T
+	Settings key.Binding `action:"app.settings"`   // SPC ,
+	Quit     key.Binding `action:"app.force_quit"` // ctrl+c
+	Back     key.Binding `action:"app.quit"`       // q / SPC q
+	Cancel   key.Binding `action:"app.cancel"`     // esc (cascade)
 
 	// Views
 	ViewList       key.Binding `action:"view.list"`       // SPC v l
@@ -73,19 +70,7 @@ func NewGlobalKeys() GlobalKeys {
 		// Help & Chrome
 		Help: key.NewBinding(
 			key.WithKeys("?", "f1"),
-			key.WithHelp("?", "help"),
-		),
-		Sidebar: key.NewBinding(
-			key.WithKeys(";"),
-			key.WithHelp(";", "shortcuts"),
-		),
-		SidebarScrollDown: key.NewBinding(
-			key.WithKeys("ctrl+j"),
-			key.WithHelp("⌃j", "sidebar down"),
-		),
-		SidebarScrollUp: key.NewBinding(
-			key.WithKeys("ctrl+k"),
-			key.WithHelp("⌃k", "sidebar up"),
+			key.WithHelp("?/f1", "help"),
 		),
 		Tutorial: key.NewBinding(
 			key.WithKeys("<leader>T"),
@@ -257,16 +242,15 @@ func NewGlobalKeys() GlobalKeys {
 // are background context. This method exists for the modal-or-empty-view
 // fallback path; populated views provide their own ShortHelp.
 func (k GlobalKeys) ShortHelp() []key.Binding {
-	return []key.Binding{k.Help, k.Sidebar, k.Refresh, k.Back}
+	return []key.Binding{k.Help, k.Cancel, k.Back, k.BQL}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
-// Columns: Help & Chrome / Views / Workspace / Actions (the overlay indexes
-// them, so the filters sit in Actions).
+// FullHelp returns the global binding groups consumed by the ? overlay.
+// Groups: Help & Chrome / Views / Workspace / Actions.
 func (k GlobalKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		// Help & Chrome
-		{k.Help, k.Sidebar, k.SidebarScrollDown, k.SidebarScrollUp, k.Tutorial, k.Settings, k.Quit, k.Back, k.Cancel},
+		{k.Help, k.Tutorial, k.Settings, k.Quit, k.Back, k.Cancel},
 		// Views
 		{k.ViewList, k.Board, k.Graph, k.Insights, k.History, k.Actionable, k.FlowMatrix, k.Tree, k.LabelDashboard, k.Attention, k.Epics, k.Memories},
 		// Workspace

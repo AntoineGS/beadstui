@@ -3,8 +3,8 @@
 //
 // Each per-view Map (TreeKeys, ListKeys, BoardKeys, ...) implements the
 // help.KeyMap interface (ShortHelp, FullHelp) and is consumed by both the
-// dispatcher (via key.Matches) and the help surfaces (status-bar L1, ;
-// sidebar L1.5, ? overlay L2).
+// dispatcher (via key.Matches) and the help surfaces (filtered active-view
+// footer and local ? overlay).
 //
 // AppKeys is the umbrella container the Model holds. Adding a new view's
 // Map: add a field here and a constructor call in NewAppKeys, then add

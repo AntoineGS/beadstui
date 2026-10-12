@@ -263,25 +263,19 @@ func TestRenderDump(t *testing.T) {
 			m.graphView.SelectByID(id)
 		}
 	}
-	// enterTreeSidebar / enterHistorySidebar mirror the real E-key / h-key entry
-	// paths (tree_mouse_test.go's treeMouseTestModel, history_focus_test.go's
-	// createRichHistoryReport) so the ; sidebar height/distribution fix
-	// (bt-xavk.2) has ground-truth dumps for the views the dogfood complaint
-	// named (board/history/tree/flow-matrix render via m.height-1 bodies; the
-	// sidebar previously joined at m.height-2).
-	enterTreeSidebar := func(m *Model) {
+	// enterTree / enterHistory mirror the real view entry paths and provide
+	// ground-truth dumps at normal and scrunched terminal sizes.
+	enterTree := func(m *Model) {
 		m.mode = ViewTree
 		m.focused = focusTree
 		m.tree.Build(m.data.issues)
-		m.showShortcutsSidebar = true
 	}
-	enterHistorySidebar := func(m *Model) {
+	enterHistory := func(m *Model) {
 		m.historyView = NewHistoryModel(createRichHistoryReport(), m.theme)
 		m.mode = ViewHistory
 		m.focused = focusHistory
 		m.historyLoading = false
 		m.historyDoltOnly = false
-		m.showShortcutsSidebar = true
 	}
 	// enterMemories (bt-2ea7t.4) mirrors the real async toggle handler
 	// (enterMemoriesView) but installs a fixture MemoriesAggregate directly
@@ -556,46 +550,23 @@ func TestRenderDump(t *testing.T) {
 		// Modal overlays — composited by View() over the (dimmed) background via
 		// activeModal. Proves popups render in-position in the harness. The dim
 		// backdrop is a brightness effect lost to ansi.Strip; judge that in a PNG.
-		{"modal_help_70x20", 70, 20, func(m *Model) { m.openModal(ModalHelp) }}, // bt-dx7k repro -> now mini
+		{"modal_help_70x20", 70, 20, func(m *Model) { m.openModal(ModalHelp) }},
 		{"modal_help_120x40", 120, 40, func(m *Model) { m.openModal(ModalHelp) }},
-		{"modal_help_50x14", 50, 14, func(m *Model) { m.openModal(ModalHelp) }}, // bt-dx7k hard gate -> mini
-		{"modal_help_30x20", 30, 20, func(m *Model) { m.openModal(ModalHelp) }}, // bt-dx7k 1-col -> mini
-		// bt-dx7k.1 mini/full tiers: explicit short cases (mini) + a clearly-tall case (full sheet).
-		{"modal_help_mini_80x12", 80, 12, func(m *Model) { m.openModal(ModalHelp) }},   // 2-col mini at the maintainer's scrunched size
-		{"modal_help_mini_160x14", 160, 14, func(m *Model) { m.openModal(ModalHelp) }}, // wide but short -> still mini
-		{"modal_help_full_120x44", 120, 44, func(m *Model) { m.openModal(ModalHelp) }}, // tall -> full grouped sheet
-		{"modal_help_full_160x48", 160, 48, func(m *Model) { m.openModal(ModalHelp) }}, // large window -> column count vs vertical fill
-		{"modal_help_full_220x56", 220, 56, func(m *Model) { m.openModal(ModalHelp) }}, // very large (approx the maximized window)
-
-		// ; sidebar scoping (bt-dx7k): view-only bindings in List (no Global
-		// prefix) and the empty-view fallback in Attention (no view-specific map).
-		{"sidebar_list_100x32", 100, 32, func(m *Model) { m.showShortcutsSidebar = true }},
-		{"sidebar_attention_100x32", 100, 32, func(m *Model) {
+		{"modal_help_50x14", 50, 14, func(m *Model) { m.openModal(ModalHelp) }},
+		{"modal_help_30x20", 30, 20, func(m *Model) { m.openModal(ModalHelp) }},
+		{"modal_help_80x12", 80, 12, func(m *Model) { m.openModal(ModalHelp) }},
+		{"modal_help_160x14", 160, 14, func(m *Model) { m.openModal(ModalHelp) }},
+		{"modal_help_120x44", 120, 44, func(m *Model) { m.openModal(ModalHelp) }},
+		{"modal_help_160x48", 160, 48, func(m *Model) { m.openModal(ModalHelp) }},
+		{"modal_help_220x56", 220, 56, func(m *Model) { m.openModal(ModalHelp) }},
+		{"attention_100x32", 100, 32, func(m *Model) {
 			m.mode = ViewAttention
 			m.focused = focusInsights
-			m.showShortcutsSidebar = true
 		}},
-
-		// Sidebar height + distribution fix (bt-xavk.2): board/history/tree at a
-		// normal size (room to distribute groups down the column) and a small
-		// size (100x16, the user's scrunched-terminal floor - compact top-stack
-		// fallback, not stretched-apart entries). Full-height box in both cases.
-		{"sidebar_board_120x32", 120, 32, func(m *Model) {
-			enterBoard(m)
-			m.showShortcutsSidebar = true
-		}},
-		{"sidebar_board_100x16", 100, 16, func(m *Model) {
-			enterBoard(m)
-			m.showShortcutsSidebar = true
-		}},
-		{"sidebar_history_120x32", 120, 32, enterHistorySidebar},
-		{"sidebar_history_100x16", 100, 16, enterHistorySidebar},
-		{"sidebar_tree_120x32", 120, 32, enterTreeSidebar},
-		{"sidebar_tree_100x16", 100, 16, enterTreeSidebar},
-		{"sidebar_flowmatrix_120x32", 120, 32, func(m *Model) {
-			enterFlowMatrix(m)
-			m.showShortcutsSidebar = true
-		}},
+		{"history_120x32", 120, 32, enterHistory},
+		{"history_100x16", 100, 16, enterHistory},
+		{"tree_120x32", 120, 32, enterTree},
+		{"tree_100x16", 100, 16, enterTree},
 		{"modal_labelpicker_120x36", 120, 36, func(m *Model) { m.openModal(ModalLabelPicker) }},
 		{"modal_recipepicker_120x36", 120, 36, func(m *Model) { m.openModal(ModalRecipePicker) }},
 		{"modal_alerts_120x36", 120, 36, func(m *Model) { m.openModal(ModalAlerts) }},

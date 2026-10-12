@@ -831,26 +831,18 @@ func TestHandleMouseClick_SinglePaneShowDetailsNoOp(t *testing.T) {
 	}
 }
 
-// TestHandleMouseClick_SinglePaneSidebarClickIgnored verifies clicks landing in
-// the shortcuts-sidebar columns (X past bodyWidth) do not select a list row in
-// single-pane layout (bt-bxu6u).
-func TestHandleMouseClick_SinglePaneSidebarClickIgnored(t *testing.T) {
+// TestSinglePaneBodyUsesFullTerminalWidthAfterSidebarRetirement guards against
+// reserving list columns for the retired shortcuts sidebar.
+func TestSinglePaneBodyUsesFullTerminalWidthAfterSidebarRetirement(t *testing.T) {
 	m := NewModel(singlePaneTestIssues(), nil, "", nil, nil)
 	m.width = 120
 	m.height = 30
 	m.mode = ViewList
 	m.isSplitView = false
 	m.showDetails = false
-	m.showShortcutsSidebar = true
-	m.shortcutsSidebar.SetSize(24, 28) // bodyWidth shrinks to 120-24 = 96
 	m.list.SetSize(m.bodyWidth(), 24)
-	m.list.Select(0)
-
-	firstItemY := m.singlePaneListChromeHeight()
-	// X at the first sidebar column (== bodyWidth) is past the list body.
-	got, _ := m.handleMouseClick(tea.MouseClickMsg{X: m.bodyWidth(), Y: firstItemY + 1, Button: tea.MouseLeft})
-	if got.list.Index() != 0 {
-		t.Fatalf("click in sidebar columns should not select a list row, got index %d", got.list.Index())
+	if got := m.bodyWidth(); got != m.width {
+		t.Fatalf("single-pane body width = %d, want full terminal width %d", got, m.width)
 	}
 }
 

@@ -181,19 +181,8 @@ const (
 	TabNotifications
 )
 
-// bodyWidth returns the width available to the main content area, reserving
-// space for the shortcuts sidebar when it is visible (bt-lin9). Modals,
-// footer, and other full-terminal surfaces should keep using m.width directly.
-func (m Model) bodyWidth() int {
-	if !m.showShortcutsSidebar {
-		return m.width
-	}
-	w := m.width - m.shortcutsSidebar.Width()
-	if w < 20 {
-		w = 20
-	}
-	return w
-}
+// bodyWidth returns the full terminal width available to the main content.
+func (m Model) bodyWidth() int { return m.width }
 
 // shouldDeferRefresh reports whether a watcher-driven data refresh should be
 // deferred because the user has an interactive modal open (bt-cl2m). Re-rendering
@@ -217,7 +206,6 @@ func (m *Model) openModal(t ModalType) {
 		m.resetSeq()
 	}
 	if t == ModalHelp {
-		m.helpLegend = false
 		m.helpScroll = 0
 	}
 }
@@ -803,7 +791,6 @@ type Model struct {
 	pluginPrompt       *pluginPrompt             // open plugin prompt, action menu or status popup (ModalPluginPrompt)
 	labelDashboard     LabelDashboardModel
 	velocityComparison VelocityComparisonModel // bv-125
-	shortcutsSidebar   ShortcutsSidebar        // bv-3qi5
 	graphView          GraphModel
 	tree               TreeModel // Hierarchical tree view (bv-gllx)
 	insightsPanel      InsightsModel
@@ -830,7 +817,6 @@ type Model struct {
 	showDetails              bool
 	fullscreen               fullscreenPane // bt-530vn: on-demand per-pane fullscreen (2/3 keys), any width
 	helpScroll               int            // Scroll offset for help overlay
-	helpLegend               bool           // Icon legend tab within the help overlay
 	ready                    bool
 	width                    int
 	height                   int
@@ -842,7 +828,6 @@ type Model struct {
 	labelDrilldownIssues     []model.Issue
 	labelDrilldownCache      map[string][]model.Issue
 	labelGraphAnalysisResult *LabelGraphAnalysisResult
-	showShortcutsSidebar     bool // bv-3qi5 toggleable shortcuts sidebar
 	showWisps                bool // bt-9kdo: toggle wisp visibility (default: hide)
 	showDebugDims            bool // ctrl+p: top-right WxH overlay for dimension-sensitive bug screenshots; undocumented in help
 	labelHealthCached        bool
@@ -1339,7 +1324,6 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 	labelDashboard := NewLabelDashboardModel(theme)
 	labelDashboard.SetSize(defaultWidth, defaultHeight-1)
 	velocityComparison := NewVelocityComparisonModel(theme) // bv-125
-	shortcutsSidebar := NewShortcutsSidebar(theme)          // bv-3qi5
 	ins := graphStats.GenerateInsights(len(issues))         // allow UI to show as many as fit
 	insightsPanel := NewInsightsModel(ins, issueMap, theme)
 	insightsPanel.SetSize(defaultWidth, defaultHeight-1)
@@ -1600,7 +1584,6 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 		board:                  board,
 		labelDashboard:         labelDashboard,
 		velocityComparison:     velocityComparison,
-		shortcutsSidebar:       shortcutsSidebar,
 		graphView:              graphView,
 		tree:                   treeModel,
 		slotRegistry:           slotRegistry,
@@ -1690,7 +1673,6 @@ func (m *Model) refreshThemeConsumers() {
 	m.board.theme = t
 	m.labelDashboard.theme = t
 	m.velocityComparison.theme = t
-	m.shortcutsSidebar.theme = t
 	m.graphView.theme = t
 	m.tree.theme = t
 	m.insightsPanel.theme = t

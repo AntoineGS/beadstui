@@ -123,17 +123,6 @@ func rawKeyCases() []rawKeyCase {
 			want: func(m Model) bool { return m.activeModal == ModalNone },
 		},
 		{
-			name: "help legend toggle",
-			setup: func(t *testing.T) Model {
-				m := seedModel()
-				m.openModal(ModalHelp)
-				m.focused = focusHelp
-				return m
-			},
-			key: keyRune('l'), id: "help.legend",
-			want: func(m Model) bool { return m.activeModal == ModalHelp && m.helpLegend },
-		},
-		{
 			name: "cass close",
 			setup: func(t *testing.T) Model {
 				m := seedModel()

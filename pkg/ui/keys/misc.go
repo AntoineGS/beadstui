@@ -34,7 +34,7 @@ func (k MemoriesNormalKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.Search, k.Open}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k MemoriesNormalKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down},
@@ -62,7 +62,7 @@ func (k MemoriesSearchKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Confirm, k.Cancel}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k MemoriesSearchKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{{k.Confirm, k.Cancel}}
 }
@@ -76,7 +76,6 @@ type HelpKeys struct {
 	PageUp     key.Binding `action:"nav.page_up"`
 	JumpTop    key.Binding `action:"nav.top"`
 	JumpBottom key.Binding `action:"nav.bottom"`
-	Legend     key.Binding `action:"help.legend"`
 	Close      key.Binding `action:"help.close"`
 	Tutorial   key.Binding `action:"help.tutorial"`
 }
@@ -90,7 +89,6 @@ func NewHelpKeys() HelpKeys {
 		PageUp:     key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("⌃u", "scroll page up")),
 		JumpTop:    key.NewBinding(key.WithKeys("home", "g"), key.WithHelp("home/g", "jump to top")),
 		JumpBottom: key.NewBinding(key.WithKeys("G", "end"), key.WithHelp("end/G", "jump to bottom")),
-		Legend:     key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "toggle legend")),
 		Close:      key.NewBinding(key.WithKeys("esc", "?", "f1"), key.WithHelp("esc", "close help")),
 		Tutorial:   key.NewBinding(key.WithKeys("space"), key.WithHelp("space", "open tutorial")),
 	}
@@ -101,11 +99,11 @@ func (k HelpKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.Tutorial, k.Close}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k HelpKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.PageDown, k.PageUp, k.JumpTop, k.JumpBottom},
-		{k.Legend, k.Tutorial, k.Close},
+		{k.Tutorial, k.Close},
 	}
 }
 
@@ -132,7 +130,7 @@ func (k CassKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.Copy, k.Close}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k CassKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{{k.Up, k.Down}, {k.Copy, k.Close}}
 }
@@ -167,7 +165,7 @@ func (k AgentPromptKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Yes, k.No, k.Never}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k AgentPromptKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{{k.Prev, k.Next, k.Select}, {k.Yes, k.No, k.Never, k.Dismiss}}
 }
@@ -218,7 +216,7 @@ func (k TutorialKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.NextPage, k.PrevPage, k.ToggleTOC, k.Close}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 // Columns: Pages, Scroll, Contents, Exit.
 func (k TutorialKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
@@ -249,7 +247,7 @@ func (k UpdateKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Confirm, k.Cancel}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k UpdateKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{{k.Confirm, k.Cancel}}
 }

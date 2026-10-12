@@ -170,17 +170,17 @@ func (p perBeadActions) Invoke(context.Context, plugin.Action, *model.Issue, str
 	return plugin.ActionResult{}
 }
 
-func sidebarKeys(m Model) map[string]string {
+func localHelpKeys(m Model) map[string]string {
 	out := map[string]string{}
-	for _, g := range m.sidebarHelpGroups() {
-		for _, b := range g {
-			out[b.Help().Key] = b.Help().Desc
+	for _, g := range m.helpGroups() {
+		for _, row := range g.rows {
+			out[row.left] = row.right
 		}
 	}
 	return out
 }
 
-func TestPluginActionKeysInFooterAndSidebar(t *testing.T) {
+func TestPluginActionKeysInFooterAndHelp(t *testing.T) {
 	m := newSizedModel(t, pluginTestIssues(), 160, 40)
 	jump := plugin.Action{Plugin: "tsk", ID: "jump", Label: "Jump", Key: "J"}
 	unkeyed := plugin.Action{Plugin: "tsk", ID: "stop", Label: "Stop"}
@@ -198,12 +198,21 @@ func TestPluginActionKeysInFooterAndSidebar(t *testing.T) {
 	if out := ansi.Strip(fd.Render()); !strings.Contains(out, "D Dispatch") || !strings.Contains(out, "J Jump") {
 		t.Fatalf("footer missing plugin keys:\n%s", out)
 	}
-	keys := sidebarKeys(m)
+	keys := localHelpKeys(m)
 	if keys["D"] != "Dispatch" || keys["J"] != "Jump" {
-		t.Fatalf("sidebar keys = %v, want D Dispatch and J Jump", keys)
+		t.Fatalf("local help keys = %v, want D Dispatch and J Jump", keys)
 	}
 	if keys["j"] == "Down" {
-		t.Fatal("sidebar lists a plugin key bt binds")
+		t.Fatal("local help lists a plugin key bt binds")
+	}
+
+	helpModel, _ := sendMsg(m, keyRune('?'))
+	if helpModel.activeModal != ModalHelp || helpModel.focused != focusHelp {
+		t.Fatalf("? did not open help: modal=%v focus=%v", helpModel.activeModal, helpModel.focused)
+	}
+	help := ansi.Strip(helpModel.renderHelpOverlay())
+	if !strings.Contains(help, "LIST PLUGINS") || !strings.Contains(help, "Dispatch") || !strings.Contains(help, "Jump") {
+		t.Fatalf("help overlay omitted the selected bead's plugin keys:\n%s", help)
 	}
 
 	m, _ = sendMsg(m, keyRune('j'))
@@ -214,8 +223,8 @@ func TestPluginActionKeysInFooterAndSidebar(t *testing.T) {
 	if len(fd.PluginHints) != 0 || strings.Contains(ansi.Strip(fd.Render()), "Dispatch") {
 		t.Fatalf("footer shows plugin keys for a bead without actions: %+v", fd.PluginHints)
 	}
-	if keys := sidebarKeys(m); keys["D"] != "" || keys["J"] != "" {
-		t.Fatalf("sidebar shows plugin keys for a bead without actions: %v", keys)
+	if keys := localHelpKeys(m); keys["D"] != "" || keys["J"] != "" {
+		t.Fatalf("local help shows plugin keys for a bead without actions: %v", keys)
 	}
 
 	m, _ = sendMsg(m, keyRune('k'))

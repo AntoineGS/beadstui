@@ -118,7 +118,7 @@ func (k FieldSelectKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.Open, k.Cancel}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 // Columns: Navigate / Accelerators / Long-form / Lifecycle / Exit.
 func (k FieldSelectKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
@@ -173,7 +173,7 @@ func (k FieldPickerKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.Apply, k.Cancel}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k FieldPickerKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down},
@@ -209,7 +209,7 @@ func (k FieldInputKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Apply, k.Cancel}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k FieldInputKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Apply, k.Cancel},
@@ -274,7 +274,7 @@ func (k LongformEditKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Commit, k.Escalate, k.Cancel}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k LongformEditKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Commit, k.Escalate, k.Cancel},

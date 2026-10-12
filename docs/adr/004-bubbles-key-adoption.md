@@ -14,6 +14,8 @@ related-beads: [bt-xavk, bt-oiaj, bt-dx7k, bt-ktcr]
 
 ## Status
 
+Superseded in part by [docs/design/2026-10-10-bt-i4k-leader-keymap.md](../design/2026-10-10-bt-i4k-leader-keymap.md), which retains the per-view key-map structure while replacing the help-surface composition and default key layout.
+
 **Proposed (2026-05-07).** Awaiting user signoff. Once accepted, gates 13 child issues under bt-ift6 (foundation, spine, parallel fan-out, surface rewires, cleanup). The spike branch `bt-ift6.0-spike` carries this ADR plus a worked example; the worked example is reference material, not merged to main. The ADR itself is cherry-picked onto main as part of bt-ift6.1.
 
 ### v1 — revisit during UX unification pass

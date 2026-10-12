@@ -75,8 +75,8 @@ A configuration error is printed and makes the command exit non-zero; the valid
 entries are still listed.
 
 Inside the TUI, the plugin status popup shows the same information live,
-restarts included: open it from the last row of the `P` action menu, or press `P`
-when the selected bead has no plugin actions.
+restarts included: open it from the last row of the `SPC x` action menu, or press
+`SPC x` when the selected bead has no plugin actions.
 
 ## Lifecycle
 
@@ -321,19 +321,19 @@ No params. The plugin should exit promptly.
 
 ## Keys and the action menu
 
-`P` opens the plugin action menu in the list, board, tree and epics views. It
-lists the actions available on the selected bead, grouped by plugin, with their
-keys. Every action is reachable from the menu, even when its key is disabled or
-taken.
+`SPC x` opens the plugin action menu in the list, board, tree and epics views.
+It lists the actions available on the selected bead, grouped by plugin, with
+their keys. Every action is reachable from the menu, even when its key is
+disabled or taken.
 
 An action also binds its key directly in those views. The key is the `keys`
 override from the config, else the manifest's default; `none` removes the key
 and leaves the action in the menu only. A key bt itself binds in a view, or that
-an earlier plugin in the config claimed, is not bound. `P` itself always opens
-the menu. `bt plugins` and the plugin status popup list these key conflicts.
+an earlier plugin in the config claimed, is not bound. `SPC x` opens the menu.
+`bt plugins` and the plugin status popup list these key conflicts.
 
-The footer and the `;` shortcuts sidebar list the bound action keys the selected
-bead offers. The footer drops them first when the terminal is narrow.
+The footer and the `?` local-key reference list the bound action keys the
+selected bead offers. The footer drops them first when the terminal is narrow.
 
 ## `--popup`
 

@@ -331,23 +331,14 @@ func TestHandleMouseClick_TreeDoubleClickWindowExpired(t *testing.T) {
 	}
 }
 
-// TestHandleMouseClick_TreeSidebarColumnIgnored verifies clicks landing at or
-// past bodyWidth (the shortcuts sidebar's reserved columns) do not select a
-// tree row, mirroring clickListPane's single-pane sidebar guard (bt-bxu6u).
-func TestHandleMouseClick_TreeSidebarColumnIgnored(t *testing.T) {
+// TestTreeBodyUsesFullTerminalWidthAfterSidebarRetirement guards against
+// reserving body columns for the retired shortcuts sidebar.
+func TestTreeBodyUsesFullTerminalWidthAfterSidebarRetirement(t *testing.T) {
 	m := treeMouseTestModel(flatTreeIssues(20))
 	m.width = 120
-	m.showShortcutsSidebar = true
-	m.shortcutsSidebar.SetSize(24, 28) // bodyWidth shrinks to 120-24 = 96
 	m.tree.SetSize(m.bodyWidth(), m.height-1)
-	m.focused = focusList
-
-	got, _ := m.handleMouseClick(tea.MouseClickMsg{X: m.bodyWidth(), Y: 3, Button: tea.MouseLeft})
-	if got.focused != focusList {
-		t.Fatalf("click in sidebar columns should not focus the tree, got %v", got.focused)
-	}
-	if got.tree.cursor != 0 {
-		t.Fatalf("click in sidebar columns should not move the tree cursor, got %d", got.tree.cursor)
+	if got := m.bodyWidth(); got != m.width {
+		t.Fatalf("tree body width = %d, want full terminal width %d", got, m.width)
 	}
 }
 

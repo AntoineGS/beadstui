@@ -9,8 +9,8 @@ import (
 // sizedFullscreenModel builds a Model sized to w x h, driving the WindowSizeMsg
 // that sets isSplitView so the two-stage (wide) vs direct-toggle (narrow)
 // branches of toggleFullscreenPane are exercised through the real sizing path.
-// Sidebar is off by default, so bodyWidth == width and SplitViewThreshold (100)
-// governs directly: 120 -> split, 90 -> narrow.
+// No sidebar width is reserved, so bodyWidth == width and SplitViewThreshold
+// (100) governs directly: 120 -> split, 90 -> narrow.
 func sizedFullscreenModel(t *testing.T, w, h int) Model {
 	t.Helper()
 	m := NewModel(harnessIssues(), nil, "", nil, nil)

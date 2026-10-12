@@ -93,7 +93,7 @@ func TestSupportingPlainTextRoles(t *testing.T) {
 	if got := (Section{Title: "Plain heading"}).Render(theme, 40); !strings.Contains(got, plain.Render("Plain heading")) {
 		t.Fatal("plain heading acquired local attributes")
 	}
-	if got := RenderContextHelp(ContextList, theme, 100, 40); !strings.Contains(got, plain.Render("Press ` for full tutorial │ Esc to close")) {
+	if got := RenderContextHelp(ContextList, theme, 100, 40); !strings.Contains(got, plain.Render("Esc to close · SPC T for tutorial")) {
 		t.Fatal("plain help hint acquired local attributes")
 	}
 }

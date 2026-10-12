@@ -70,7 +70,7 @@ func (k GraphKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.MoveLeft, k.MoveRight, k.JumpToIssue, k.SwarmToggle}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 // Columns: Navigate / Actions.
 func (k GraphKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{

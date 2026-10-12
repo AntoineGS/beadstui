@@ -235,6 +235,30 @@ func TestWhichKey_ZeroDelayShowsAtOnce(t *testing.T) {
 	}
 }
 
+func TestWhichKeyPanelBoundsLongDescriptions(t *testing.T) {
+	m := leaderModel(t)
+	m.width = 24
+	m.height = 9
+	children := make([]*keys.SeqNode, 12)
+	for i := range children {
+		children[i] = &keys.SeqNode{Key: string(rune('a' + i)), ID: "app.refresh", Desc: strings.Repeat("refresh action ", 8)}
+	}
+	m.seq = seqState{
+		prefix:    keys.LeaderPrefix,
+		node:      &keys.SeqNode{Children: children},
+		showPanel: true,
+	}
+	out := m.renderWhichKey()
+	for i, line := range strings.Split(ansi.Strip(out), "\n") {
+		if width := ansi.StringWidth(line); width > m.width {
+			t.Errorf("which-key row %d is %d cells at terminal width %d: %q", i, width, m.width, line)
+		}
+	}
+	if height := len(strings.Split(out, "\n")); height > m.height/3 {
+		t.Fatalf("which-key panel height is %d including borders at terminal height %d, want <= %d", height, m.height, m.height/3)
+	}
+}
+
 func TestWhichKey_OffNeverTicks(t *testing.T) {
 	m := leaderModel(t)
 	m.whichKeyOff = true

@@ -211,7 +211,7 @@ func (k ListNormalKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Enter, k.FieldEdit, k.CopyID, k.CycleSort}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 // Columns: Move / Detail & Pane / Sort / Time / Actions.
 func (k ListNormalKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
@@ -278,7 +278,7 @@ func (k ListSearchKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Apply, k.Cancel, k.Up, k.Down}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay
+// FullHelp returns column-grouped bindings consumed by the local ? overlay
 // during filter mode. Columns: Move / Resolve.
 func (k ListSearchKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{

@@ -205,21 +205,46 @@ func renderLens(fd FooterData, lvl lensLevel) string {
 	return strings.Join(segs, sep)
 }
 
-// renderStaticHints returns the Zone-3 discoverability pair (bt-2vshd). Full form
-// is "? help · ; shortcuts" ("keys" named the key, not the surface — renamed
-// bt-x5lvp); the compact form drops the labels to "? ;" under width pressure.
-// The ? overlay and ; sidebar are the two surfaces that actually teach
-// navigation, so the per-view action pills were retired from the footer chrome —
-// the per-view key.Maps now feed only those two surfaces.
+// renderStaticHints returns the leader and help affordances for callers that
+// do not have view-specific hints.
 func renderStaticHints(compact bool) string {
+	return renderLeaderHelpHints("SPC", compact)
+}
+
+func renderFooterHints(hints []FooterHint, leaderLabel string, compact bool) string {
+	if leaderLabel == "" {
+		leaderLabel = "SPC"
+	}
+	keyStyle := ActiveTextStyles.Heading
+	labelStyle := ActiveTextStyles.Metadata
+	sep := ActiveTextStyles.Metadata.Render(" " + activeGlyphs.Sep + " ")
+	var parts []string
+	for _, hint := range hints {
+		if hint.Key == "" {
+			continue
+		}
+		part := keyStyle.Render(hint.Key)
+		if !compact && hint.Desc != "" {
+			part += labelStyle.Render(" " + hint.Desc)
+		}
+		parts = append(parts, part)
+	}
+	static := renderLeaderHelpHints(leaderLabel, compact)
+	if len(parts) == 0 {
+		return static
+	}
+	return strings.Join(parts, sep) + sep + static
+}
+
+func renderLeaderHelpHints(leaderLabel string, compact bool) string {
 	keyStyle := ActiveTextStyles.Heading
 	if compact {
-		return keyStyle.Render("?") + " " + keyStyle.Render(";")
+		return keyStyle.Render(leaderLabel) + " " + keyStyle.Render("?")
 	}
 	labelStyle := ActiveTextStyles.Metadata
 	sep := ActiveTextStyles.Metadata.Render(" " + activeGlyphs.Sep + " ")
-	return keyStyle.Render("?") + labelStyle.Render(" help") + sep +
-		keyStyle.Render(";") + labelStyle.Render(" shortcuts")
+	return keyStyle.Render(leaderLabel) + labelStyle.Render(" leader") + sep +
+		keyStyle.Render("?") + labelStyle.Render(" help")
 }
 
 // renderPluginHints renders the selected bead's plugin action keys in the

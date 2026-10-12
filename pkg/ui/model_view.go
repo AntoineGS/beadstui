@@ -9,6 +9,7 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 
+	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
@@ -197,8 +198,6 @@ func (m Model) View() tea.View {
 		if m.data.snapshotInitPending && m.data.snapshot == nil {
 			body = m.renderLoadingScreen()
 		} else {
-			// Body surfaces use bodyWidth so the shortcuts sidebar (when
-			// visible) gets reserved space rather than overflowing (bt-lin9).
 			bodyW := m.bodyWidth()
 			// Route by ViewMode enum
 			switch m.mode {
@@ -267,33 +266,15 @@ func (m Model) View() tea.View {
 		}
 	}
 
-	// Add shortcuts sidebar if enabled (bv-3qi5)
-	if m.showShortcutsSidebar {
-		// Feed the sidebar the active view's / modal's FullHelp() groups so it
-		// consumes the same key.Map source as the L1 footer and ? overlay
-		// (bt-ift6.10).
-		m.shortcutsSidebar.SetBindings(m.sidebarHelpGroups())
-		// Match the body height convention every view above sizes to
-		// (m.height-1, reserving 1 row for the footer) rather than m.height-2.
-		// The mismatch left the sidebar's panel box 1 row short of the body
-		// it's joined against (lipgloss.JoinHorizontal(Top, ...) then pads the
-		// shorter column with a blank row rather than growing the box), so the
-		// sidebar's bottom border sat one row above the true bottom edge on
-		// board/history/tree/flow-matrix (bt-xavk.2).
-		m.shortcutsSidebar.SetSize(m.shortcutsSidebar.Width(), m.height-1)
-		sidebar := m.shortcutsSidebar.View()
-		body = lipgloss.JoinHorizontal(lipgloss.Top, body, sidebar)
-	}
-
 	// Overlay modals that float on top of the background. All modal overlays
 	// use OverlayCenterDimBackdrop so the surrounding cells visually recede,
 	// matching the alerts/notifications pop-up aesthetic introduced by bt-v8he
 	// and unified across all modals by bt-o1hs. The non-dim OverlayCenter is
 	// reserved for non-modal overlays (debug, transient hints).
 	if m.activeModal == ModalHelp {
-		// The ? help card floats over the dimmed current view (bt-dx7k.1 dogfood),
+		// The local-key reference floats over the dimmed current view (bt-dx7k.1 dogfood),
 		// matching the pop-up aesthetic of every other modal. renderHelpOverlay
-		// returns the bare card (mini or full sheet); this centers + dims.
+		// returns the bare card; this centers + dims.
 		body = OverlayCenterDimBackdrop(body, m.renderHelpOverlay(), m.width, m.height-1)
 	}
 	if m.activeModal == ModalRepoPicker {
@@ -575,7 +556,7 @@ func issueListColumnHeader(layout issueListLayout) string {
 // badge). The old build joined header+list+pageLine with no border, diverging
 // visually from every other pane. m.list is sized to the inner width (bodyW-4)
 // by applyListDetailSizing's single-pane branch, so outerWidth (+4) fills the
-// body while leaving the shortcuts-sidebar columns (folded into bodyWidth) free.
+// full body width without reserving columns for a shortcuts sidebar.
 func (m Model) renderListWithHeader() string {
 	outerWidth := m.list.Width() + 4
 	panelHeight := m.height - 1
@@ -742,15 +723,14 @@ func (m Model) renderFullscreenDetails() string {
 }
 
 // helpRow is one display row in the ? overlay: key token on the left,
-// description on the right. Sourced from the Global key.Map's FullHelp() via
-// helpGlobalGroups so the overlay text cannot drift from the ; sidebar / footer
-// (bt-ift6.11). The status legend supplies its own literal rows.
+// description on the right.
 type helpRow struct{ left, right string }
 
 // helpGroup is a titled section of helpRows rendered in the ? overlay.
 type helpGroup struct {
-	title string
-	rows  []helpRow
+	title    string
+	rows     []helpRow
+	bindings []key.Binding
 }
 
 // helpOverlayColumns returns the task-panel column count for the ? overlay at the
@@ -766,69 +746,116 @@ func helpOverlayColumns(width int) int {
 	}
 }
 
-// helpGlobalGroups projects m.keys.Global.FullHelp() into task-headed helpGroup
-// slices for the single-box ? overlay renderer (bt-dx7k.1). Key on the left,
-// desc on the right (yazi render_col orientation). FullHelp() returns 4 fixed
-// groups: [0]Help&Chrome [1]Views [2]Workspace [3]Actions. Display order puts
-// the most-used (view switching) first; the STATUS glyph legend is appended as
-// a literal group (no key.Map source).
-func (m Model) helpGlobalGroups() []helpGroup {
-	g := m.keys.Global.FullHelp()
-
-	// project converts a binding slice-of-slices into flat helpRows: enabled
-	// bindings with non-empty help only. Key on left, desc on right.
-	project := func(bindings [][]key.Binding) []helpRow {
-		var rows []helpRow
-		for _, group := range bindings {
-			for _, b := range group {
-				if !b.Enabled() {
-					continue
-				}
-				h := b.Help()
-				if h.Key == "" {
-					continue
-				}
-				rows = append(rows, helpRow{left: h.Key, right: h.Desc})
+// helpGroups projects direct Global bindings and the active view or modal map
+// into the single ? reference. When help itself is open, its underlying view
+// supplies the local map. Tokens and sequences are removed from copies while
+// the configured Help.Key display labels are retained.
+func (m Model) helpGroups() []helpGroup {
+	var global []key.Binding
+	for _, group := range m.keys.Global.FullHelp() {
+		for _, binding := range group {
+			if direct, ok := directHelpBinding(binding); ok {
+				global = append(global, direct)
 			}
 		}
-		return rows
-	}
-
-	taskOrder := []struct {
-		title    string
-		bindings [][]key.Binding
-	}{
-		{"SWITCH VIEWS", [][]key.Binding{g[1]}},
-		{"DO THINGS", [][]key.Binding{g[3]}},
-		{"WORKSPACE", [][]key.Binding{g[2]}},
-		{"CHROME", [][]key.Binding{g[0]}},
 	}
 
 	var groups []helpGroup
-	for _, tg := range taskOrder {
-		rows := project(tg.bindings)
-		if len(rows) > 0 {
-			groups = append(groups, helpGroup{title: tg.title, rows: rows})
+	if rows := helpRows(global); len(rows) > 0 {
+		groups = append(groups, helpGroup{title: "GLOBAL", rows: rows, bindings: global})
+	}
+
+	var active help.KeyMap
+	switch m.activeModal {
+	case ModalHelp:
+		viewModel := m
+		viewModel.activeModal = ModalNone
+		viewModel.focused = viewModel.focusBeforeHelp
+		active = viewModel.viewSpecificKeyMap()
+	case ModalNone:
+		active = m.viewSpecificKeyMap()
+	default:
+		active = m.modalKeyMap()
+	}
+	if active != nil {
+		var bindings []key.Binding
+		for _, group := range active.FullHelp() {
+			for _, binding := range group {
+				if direct, ok := directHelpBinding(binding); ok {
+					bindings = append(bindings, direct)
+				}
+			}
+		}
+		if rows := helpRows(bindings); len(rows) > 0 {
+			groups = append(groups, helpGroup{title: m.helpContextTitle(), rows: rows, bindings: bindings})
 		}
 	}
 
-	// STATUS legend: explains footer status glyphs; no key.Map source.
-	// Orientation matches the keybind rows: glyph/phrase on left, meaning on right.
-	groups = append(groups, helpGroup{
-		title: "STATUS",
-		rows: []helpRow{
-			{left: "◌ metrics", right: "Phase 2 metrics computing"},
-			{left: activeGlyphs.Warning + " age", right: "Snapshot getting stale"},
-			{left: activeGlyphs.Warning + " STALE", right: "Snapshot is stale"},
-			{left: activeGlyphs.Cross + " bg", right: "Background worker errors"},
-			{left: "↻ recov", right: "Worker self-healed"},
-			{left: activeGlyphs.Warning + " dead", right: "Worker unresponsive"},
-			{left: "polling", right: "Live reload uses polling"},
-		},
-	})
-
-	groups = append(groups, helpGroup{title: "ICONS", rows: []helpRow{{left: "l", right: "icon legend"}}})
+	if m.activeModal == ModalNone || m.activeModal == ModalHelp {
+		pluginModel := m
+		if pluginModel.activeModal == ModalHelp {
+			pluginModel.activeModal = ModalNone
+			pluginModel.focused = pluginModel.focusBeforeHelp
+		}
+		var plugins []key.Binding
+		for _, binding := range pluginModel.pluginKeyBindings() {
+			if direct, ok := directHelpBinding(binding); ok {
+				plugins = append(plugins, direct)
+			}
+		}
+		if rows := helpRows(plugins); len(rows) > 0 {
+			groups = append(groups, helpGroup{title: m.helpViewTitle() + " PLUGINS", rows: rows, bindings: plugins})
+		}
+	}
 	return groups
+}
+
+func helpRows(bindings []key.Binding) []helpRow {
+	rows := make([]helpRow, 0, len(bindings))
+	for _, binding := range bindings {
+		help := binding.Help()
+		if help.Key != "" {
+			rows = append(rows, helpRow{left: help.Key, right: help.Desc})
+		}
+	}
+	return rows
+}
+
+func (m Model) helpContextTitle() string {
+	if m.activeModal == ModalHelp {
+		return m.helpViewTitle()
+	}
+	if m.activeModal != ModalNone {
+		modal := map[ModalType]string{
+			ModalHelp: "HELP", ModalAlerts: "ALERTS", ModalRecipePicker: "RECIPES",
+			ModalLabelPicker: "LABEL PICKER", ModalRepoPicker: "PROJECT PICKER",
+			ModalBQLQuery: "BQL", ModalTimeTravelInput: "TIME TRAVEL",
+			ModalEpicCard: "EPIC CARD", ModalFieldSelect: "FIELD SELECT",
+			ModalFieldPicker: "FIELD PICKER", ModalFieldInput: "FIELD INPUT",
+			ModalLongformEdit: "LONGFORM EDIT", ModalPluginPrompt: "PLUGIN",
+			ModalCassSession: "CASS", ModalAgentPrompt: "AGENT PROMPT",
+			ModalUpdate: "UPDATE", ModalLabelHealthDetail: "LABEL HEALTH",
+			ModalLabelDrilldown: "LABEL DRILLDOWN", ModalLabelGraphAnalysis: "LABEL GRAPH",
+		}
+		if title := modal[m.activeModal]; title != "" {
+			return title
+		}
+	}
+	return m.helpViewTitle()
+}
+
+func (m Model) helpViewTitle() string {
+	view := map[ViewMode]string{
+		ViewList: "LIST", ViewBoard: "BOARD", ViewGraph: "GRAPH",
+		ViewInsights: "INSIGHTS", ViewActionable: "ACTIONABLE",
+		ViewFlowMatrix: "FLOW MATRIX", ViewHistory: "HISTORY", ViewEpics: "EPICS",
+		ViewTree: "TREE", ViewLabelDashboard: "LABELS", ViewAttention: "ATTENTION",
+		ViewMemories: "MEMORIES",
+	}
+	if title := view[m.mode]; title != "" {
+		return title
+	}
+	return "VIEW"
 }
 
 // renderHelpGroupColumn renders a stack of helpGroups as terminal lines for one
@@ -856,6 +883,7 @@ func renderHelpGroupColumn(groups []helpGroup, colWidth, keyW int, t Theme) []st
 			rpad = 0
 		}
 		div := strings.Repeat("─", lpad) + label + strings.Repeat("─", rpad)
+		div = ansi.Truncate(div, colWidth, "")
 		lines = append(lines, headerStyle.Render(div))
 
 		// Rows: rjust(key, keyW) + "  " + desc (yazi row shape)
@@ -867,26 +895,23 @@ func renderHelpGroupColumn(groups []helpGroup, colWidth, keyW int, t Theme) []st
 			}
 			row := keyStyle.Render(strings.Repeat(" ", pad)+r.left) +
 				descStyle.Render("  "+r.right)
+			row = ansi.Truncate(row, colWidth, "")
 			lines = append(lines, row)
 		}
 	}
 	return lines
 }
 
-// helpOverlayBodyLines distributes the global task groups across the responsive
+// helpOverlayBodyLines distributes the local direct-key groups across the responsive
 // column grid and returns flat terminal lines (pre-scroll) for the single-box
 // ? overlay (bt-dx7k.1). It picks the FEWEST columns whose rendered height fits
 // the available body: fewer columns means a taller, wider layout that fills the
 // vertical space we have and stops truncating long descriptions (bt-dx7k.1
-// dogfood). helpOverlayColumns(width) is the width-imposed upper bound; if no
-// column count fits, it returns the widest (shortest) layout so the tier
-// selector in renderHelpOverlay falls back to the mini.
+// dogfood). helpOverlayColumns(width) is the width-imposed upper bound; the
+// scroll window handles content that still exceeds the available height.
 // The same flat-lines contract the scroll window consumes.
 func (m Model) helpOverlayBodyLines() []string {
-	if m.helpLegend {
-		return m.helpOverlayBodyLinesForCols(iconLegendGroups(), 1)
-	}
-	groups := m.helpGlobalGroups()
+	groups := m.helpGroups()
 	if len(groups) == 0 {
 		return nil
 	}
@@ -914,7 +939,7 @@ func (m Model) helpOverlayBodyLines() []string {
 	return lines
 }
 
-// helpOverlayBodyLinesForCols renders the global task groups into exactly n
+// helpOverlayBodyLinesForCols renders the local help groups into exactly n
 // columns and returns the flat terminal lines (pre-scroll). Column widths are
 // sized to fit within the terminal. helpOverlayBodyLines selects n by trying the
 // fewest columns that fit the height (bt-dx7k.1).
@@ -1061,10 +1086,12 @@ func (m Model) helpOverlayAvailBody() int {
 }
 
 func (m Model) helpPopupOpts() PopupOpts {
-	if m.helpLegend {
-		return PopupOpts{Title: "icon legend", Theme: m.theme, Available: &PopupSize{m.width, max(0, m.height-1)}, Footer: []string{"l shortcuts"}}
+	return PopupOpts{
+		Title:     "shortcuts",
+		Theme:     m.theme,
+		Available: &PopupSize{m.width, max(0, m.height-1)},
+		Footer:    []string{fmt.Sprintf("%s  leader menu", m.leaderLabel())},
 	}
-	return PopupOpts{Title: "shortcuts", Theme: m.theme, Available: &PopupSize{m.width, max(0, m.height-1)}, Footer: []string{"; per-view"}}
 }
 
 // helpScrollMax is the maximum helpScroll offset for the current dimensions.
@@ -1076,135 +1103,14 @@ func (m Model) helpScrollMax() int {
 	return max
 }
 
-// helpMiniRows returns the curated mini-card projection of GlobalKeys for the
-// compact help tier (bt-dx7k.1 Task 2). Key and desc are sourced from each
-// binding's Help() — no literal strings, so the mini cannot drift from the Map.
-// Disabled bindings are skipped. Order is chosen so a 2-col layout reads
-// board/graph, insights/search, labels/<projects>, help/quit.
-//
-// Task 3 will insert ProjectsOrWisps between LabelPicker and Help when the
-// scope is multi-project, completing the labels/<projects> display row.
-func (m Model) helpMiniRows() []helpRow {
-	g := m.keys.Global
-	var rows []helpRow
-	add := func(b key.Binding) {
-		if !b.Enabled() {
-			return
-		}
-		h := b.Help()
-		if h.Key == "" {
-			return
-		}
-		rows = append(rows, helpRow{left: h.Key, right: h.Desc})
-	}
-	add(g.Board)
-	add(g.Graph)
-	add(g.Insights)
-	add(g.SearchBounce)
-	add(g.LabelPicker)
-	if m.workspaceMode {
-		add(g.ProjectsOrWisps)
-	}
-	add(g.Help)
-	add(g.Back)
-	return rows
-}
-
-// renderHelpMini renders the compact non-scrolling mini help card for short
-// terminals (bt-dx7k.1 Task 2). Lays helpMiniRows into a fixed 2-column grid
-// using the shared Body/Metadata roles. A centered nudge
-// line communicates the tier relationship; the footer close hint matches the
-// full sheet. Wrapped in ONE RenderTitledPanel.
-func (m Model) renderHelpMini() string {
-	t := m.theme
-	rows := m.helpMiniRows()
-	if len(rows) == 0 {
-		return ""
-	}
-
-	// Share the same roles as the full help sheet.
-	keyStyle := t.Text.Body
-	descStyle := t.Text.Metadata
-	dimStyle := t.Text.Metadata
-
-	// keyW: max visible width of any key token (uniform right-justification, yazi rjust).
-	keyW := 1
-	for _, r := range rows {
-		if w := lipgloss.Width(r.left); w > keyW {
-			keyW = w
-		}
-	}
-
-	// leftColW: content width of the left column, sized to the widest left-side desc
-	// (even-indexed rows) so right-column cells always start at the same offset.
-	leftDescW := 0
-	for i, r := range rows {
-		if i%2 == 0 {
-			if w := lipgloss.Width(r.right); w > leftDescW {
-				leftDescW = w
-			}
-		}
-	}
-	leftColW := min(keyW+2+leftDescW, max(1, (m.width-8)/2))
-
-	const colGap = "  " // 2-space gap between columns
-
-	// Build display rows: pair rows[2i] (left) with rows[2i+1] (right, optional).
-	numDisplay := (len(rows) + 1) / 2
-	var lines []string
-	for i := 0; i < numDisplay; i++ {
-		lr := rows[2*i]
-		kpad := keyW - lipgloss.Width(lr.left)
-		if kpad < 0 {
-			kpad = 0
-		}
-		leftCell := keyStyle.Render(strings.Repeat(" ", kpad)+lr.left) +
-			descStyle.Render("  "+lr.right)
-		leftCell = ansi.Truncate(leftCell, leftColW, "")
-		// Pad left cell to leftColW so the right column aligns vertically.
-		if w := lipgloss.Width(leftCell); w < leftColW {
-			leftCell += strings.Repeat(" ", leftColW-w)
-		}
-
-		if 2*i+1 < len(rows) {
-			rr := rows[2*i+1]
-			kpad2 := keyW - lipgloss.Width(rr.left)
-			if kpad2 < 0 {
-				kpad2 = 0
-			}
-			rightCell := keyStyle.Render(strings.Repeat(" ", kpad2)+rr.left) +
-				descStyle.Render("  "+rr.right)
-			rightCell = ansi.Truncate(rightCell, leftColW, "")
-			lines = append(lines, leftCell+colGap+rightCell)
-		} else {
-			lines = append(lines, leftCell)
-		}
-	}
-
-	// Nudge line: communicates the tier relationship (grow terminal → full sheet).
-	nudge := dimStyle.Render("l legend · ↓ expand · ; per-view")
-
-	lines = append(lines, nudge)
-	opts := m.helpPopupOpts()
-	opts.MinBodyRows = len(lines)
-	return RenderPopup(lines, opts)
-}
-
-// renderHelpOverlay renders the ? help card (mini or full sheet) as a single
-// rounded box (bt-dx7k.1). The box interior holds the windowed body lines (from
+// renderHelpOverlay renders the single ? local-key reference as one rounded box.
+// The box interior holds the windowed body lines (from
 // helpOverlayBodyLines, panned by helpScroll) plus a centered dim footer line as
 // the last interior row. The outer border carries the "shortcuts" title. ONE
 // RenderTitledPanel wraps the modal; View() composites the returned card centered
 // over the dimmed background via OverlayCenterDimBackdrop (it does not Place here).
 func (m *Model) renderHelpOverlay() string {
 	bodyLines := m.helpOverlayBodyLines()
-
-	// Mini tier: when the full body overflows the available height, render the
-	// compact non-scrolling mini card instead. Mirrors yazi's (area.h-2) < POPUP_H
-	// selector — size-driven, no new keypress or toggle.
-	if !m.helpLegend && len(bodyLines) > m.helpOverlayAvailBody() {
-		return m.renderHelpMini()
-	}
 
 	avail := m.helpOverlayAvailBody()
 	maxScroll := len(bodyLines) - avail
@@ -1227,16 +1133,7 @@ func (m *Model) renderHelpOverlay() string {
 		window = bodyLines[scroll:end]
 	}
 
-	// Footer: the ; cross-ref plus scroll position. Scroll and close keys are
-	// assumed; must NOT contain "shortcuts" (FOOTER WORDING CAVEAT, bt-dx7k.1).
-	footerText := "; per-view"
-	if maxScroll > 0 {
-		footerText = fmt.Sprintf("; per-view  -  %d%%", scroll*100/maxScroll)
-	}
 	opts := m.helpPopupOpts()
-	if !m.helpLegend {
-		opts.Footer = []string{footerText, "; per-view"}
-	}
 	return RenderPopup(window, opts)
 }
 

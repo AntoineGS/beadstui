@@ -247,12 +247,12 @@ func TestLensAnomalyBadgeAbsentAtZero(t *testing.T) {
 func TestLensStaticHintsDegrade(t *testing.T) {
 	setGlyphs(t, asciiGlyphs)
 	wide := ansi.Strip(richLensFixture(160).Render())
-	if !strings.Contains(wide, "? help") || !strings.Contains(wide, "; shortcuts") {
-		t.Errorf("wide footer should show the full ? help · ; shortcuts pair: %q", wide)
+	if !strings.Contains(wide, "SPC leader") || !strings.Contains(wide, "? help") || strings.Contains(wide, "; shortcuts") {
+		t.Errorf("wide footer should show SPC leader and ? help, without a sidebar hint: %q", wide)
 	}
 	narrow := ansi.Strip(richLensFixture(46).Render())
-	if !strings.Contains(narrow, "?") || !strings.Contains(narrow, ";") {
-		t.Errorf("narrow footer must still show the bare ? ; pair: %q", narrow)
+	if !strings.Contains(narrow, "SPC") || !strings.Contains(narrow, "?") || strings.Contains(narrow, ";") {
+		t.Errorf("narrow footer must still show the bare SPC ? pair: %q", narrow)
 	}
 	if strings.Contains(narrow, "help") {
 		t.Errorf("narrow footer should drop the hint labels: %q", narrow)
@@ -396,21 +396,20 @@ func TestLensScopeBareNerdFont(t *testing.T) {
 	}
 }
 
-// --- bt-x5lvp: the sidebar hint says what it opens ---
+// --- Help and leader hints ---
 
-// TestStaticHintsShortcutsLabel: the wide-width hint pair reads
-// "? help · ; shortcuts" - "keys" named the key, not the surface
-// (maintainer pick, 2026-07-17). Compact tier stays "? ;".
-func TestStaticHintsShortcutsLabel(t *testing.T) {
+// TestStaticHintsDescribeLocalHelpAndLeader: the wide-width affordances name
+// the leader menu and local help; compact mode keeps only their keys.
+func TestStaticHintsDescribeLocalHelpAndLeader(t *testing.T) {
 	wide := ansi.Strip(renderStaticHints(false))
-	if !strings.Contains(wide, "; shortcuts") {
-		t.Errorf("wide hints should read \"; shortcuts\": %q", wide)
+	if !strings.Contains(wide, "SPC leader") || !strings.Contains(wide, "? help") {
+		t.Errorf("wide hints should read SPC leader and ? help: %q", wide)
 	}
-	if strings.Contains(wide, "; keys") {
-		t.Errorf("the old \"; keys\" label must be gone: %q", wide)
+	if strings.Contains(wide, ";") {
+		t.Errorf("retired sidebar hint must be absent: %q", wide)
 	}
-	if compact := ansi.Strip(renderStaticHints(true)); strings.Contains(compact, "shortcuts") {
-		t.Errorf("compact hints must stay the bare pair: %q", compact)
+	if compact := ansi.Strip(renderStaticHints(true)); compact != "SPC ?" {
+		t.Errorf("compact hints must stay the bare SPC ? pair: %q", compact)
 	}
 }
 
