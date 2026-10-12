@@ -402,6 +402,11 @@ if !reflect.DeepEqual(got, want) { t.Fatalf("suggestions differ:\ngot %#v\nwant 
   ready candidate coverage.
 - Initial whole-branch review findings are implemented; final controller
   re-review is pending and is not claimed as passed.
+- The scoped final re-review confirmed all three readiness findings addressed
+  and found that history export had been widened to the full readiness corpus.
+  The correction now keeps history on repo-scoped candidates before closed-row
+  filtering; a focused scope regression covers this distinction. Re-review of
+  this correction remains pending.
 - Verification: `go test ./...`, `go build ./...`, and `go vet ./...` passed.
   Focused race tests for changed UI/readiness/analysis/export paths passed. A
   broader `go test -race ./pkg/ui ./pkg/model ./pkg/analysis ./cmd/bt` run had

@@ -127,15 +127,8 @@ var exportPagesCmd = &cobra.Command{
 			}
 			fmt.Printf("  -> Loading %d issues\n", len(readinessSource))
 
-			exportIssues := candidateSource
+			historyIssues, exportIssues, readinessIssues := exportIssueScopes(candidateSource, readinessSource, includeClosed)
 			if !includeClosed {
-				var openIssues []model.Issue
-				for _, issue := range candidateSource {
-					if issue.Status != model.StatusClosed {
-						openIssues = append(openIssues, issue)
-					}
-				}
-				exportIssues = openIssues
 				fmt.Printf("  -> Filtering to %d open issues\n", len(exportIssues))
 			}
 
@@ -162,7 +155,7 @@ var exportPagesCmd = &cobra.Command{
 
 			fmt.Println("  -> Running graph analysis...")
 			evaluatedAt := time.Now()
-			analyzer, triage := buildExportAnalysis(exportIssues, readinessSource, evaluatedAt)
+			analyzer, triage := buildExportAnalysis(exportIssues, readinessIssues, evaluatedAt)
 			stats := analyzer.AnalyzeAsync(context.Background())
 			stats.WaitForPhase2()
 
@@ -209,7 +202,7 @@ var exportPagesCmd = &cobra.Command{
 
 			if includeHistory {
 				fmt.Println("  -> Generating time-travel history data...")
-				if historyReport, err := generateHistoryForExport(readinessSource); err == nil && historyReport != nil {
+				if historyReport, err := generateHistoryForExport(historyIssues); err == nil && historyReport != nil {
 					historyPath := filepath.Join(outputDir, "data", "history.json")
 					if historyJSON, err := json.MarshalIndent(historyReport, "", "  "); err == nil {
 						if err := os.WriteFile(historyPath, historyJSON, 0644); err != nil {
@@ -262,6 +255,23 @@ var exportPagesCmd = &cobra.Command{
 		fmt.Printf("  open %s/index.html\n", outputDir)
 		return nil
 	},
+}
+
+// exportIssueScopes keeps history within candidate scope, before optional
+// closed-row filtering, while preserving the full source for readiness.
+func exportIssueScopes(candidateSource, readinessSource []model.Issue, includeClosed bool) (historyIssues, exportIssues, readinessIssues []model.Issue) {
+	historyIssues = candidateSource
+	readinessIssues = readinessSource
+	if includeClosed {
+		return historyIssues, candidateSource, readinessIssues
+	}
+	exportIssues = make([]model.Issue, 0, len(candidateSource))
+	for _, issue := range candidateSource {
+		if issue.Status != model.StatusClosed {
+			exportIssues = append(exportIssues, issue)
+		}
+	}
+	return historyIssues, exportIssues, readinessIssues
 }
 
 // bt export preview

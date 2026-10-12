@@ -92,6 +92,29 @@ func TestExportWatchReplacementRebuildsFullReadiness(t *testing.T) {
 	}
 }
 
+func TestExportHistoryMembershipUsesRepoScopeBeforeClosedFilter(t *testing.T) {
+	fullSource := []model.Issue{
+		{ID: "api-open", Status: model.StatusOpen},
+		{ID: "api-closed", Status: model.StatusClosed},
+		{ID: "web-hidden", Status: model.StatusOpen},
+	}
+	candidates := filterByRepo(fullSource, "api")
+	historyIssues, exportIssues, readinessIssues := exportIssueScopes(candidates, fullSource, false)
+
+	if len(historyIssues) != 2 {
+		t.Fatalf("history membership = %+v, want only the two repo-scoped rows", historyIssues)
+	}
+	if got := []string{historyIssues[0].ID, historyIssues[1].ID}; !reflect.DeepEqual(got, []string{"api-open", "api-closed"}) {
+		t.Fatalf("history membership = %v, want repo-scoped rows before closed filtering", got)
+	}
+	if len(exportIssues) != 1 || exportIssues[0].ID != "api-open" {
+		t.Fatalf("export membership = %+v, want only open repo candidate", exportIssues)
+	}
+	if len(readinessIssues) != len(fullSource) || readinessIssues[2].ID != "web-hidden" {
+		t.Fatalf("readiness membership = %+v, want the complete source including hidden repo", readinessIssues)
+	}
+}
+
 func TestClaimableRecommendationsExcludeNonClaimableIssues(t *testing.T) {
 	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
 	deferUntil := now.Add(time.Hour)
