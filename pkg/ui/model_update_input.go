@@ -61,6 +61,15 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		m.commitFilterIfTyping()
 	}
 
+	// Help temporarily replaces the plugin prompt's active modal, but quit
+	// still belongs to that prompt: restore it first so its handler can answer
+	// outstanding confirm/select requests with nil before returning tea.Quit.
+	if m.activeModal == ModalHelp && m.helpOriginModal == ModalPluginPrompt && m.pluginPrompt != nil &&
+		key.Matches(msg, m.keys.Global.Quit, m.keys.PluginSelect.Close) {
+		m.closeHelp()
+		return m.handlePluginPromptKeys(msg)
+	}
+
 	// ctrl+c quits from everywhere, text fields and modals included; q quits
 	// at once from anywhere no text field has focus (bt-i4k). The plugin
 	// prompt answers its plugin first, so it handles both itself; a pending
