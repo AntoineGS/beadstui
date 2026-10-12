@@ -111,6 +111,24 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			return m, nil
 		}
 	}
+	if keys.IsToken(msg.Text) && m.activeModal == ModalNone && m.focused == focusList &&
+		m.mode == ViewList && m.list.FilterState() == list.Filtering {
+		// Bubbles' filtering handler sends every key that is not its own
+		// apply/cancel binding to FilterInput. Route action tokens here so they
+		// remain actions rather than becoming literal query text.
+		switch {
+		case key.Matches(msg, m.keys.ListSearch.Up):
+			m.list.CursorUp()
+		case key.Matches(msg, m.keys.ListSearch.Down):
+			m.list.CursorDown()
+		case key.Matches(msg, m.keys.ListSearch.Apply):
+			m.applyListSearchToken()
+		case key.Matches(msg, m.keys.ListSearch.Cancel):
+			m.list.ResetFilter()
+		}
+		m.swallowKey = true
+		return m, nil
+	}
 
 	// Handle AGENTS.md prompt modal (bv-i8dk)
 	if m.activeModal == ModalAgentPrompt {
@@ -1572,6 +1590,25 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 	}
 	return m, tea.Batch(cmds...)
+}
+
+func (m *Model) applyListSearchToken() {
+	if strings.TrimSpace(m.list.FilterInput.Value()) == "" {
+		m.list.ResetFilter()
+		return
+	}
+	if len(m.list.Items()) == 0 {
+		return
+	}
+	if len(m.list.VisibleItems()) == 0 {
+		m.list.ResetFilter()
+		return
+	}
+
+	selected := m.list.Index()
+	m.list.SetFilterState(list.FilterApplied)
+	m.list.FilterInput.Blur()
+	m.list.Select(selected)
 }
 
 func keyMapMatches(msg tea.KeyPressMsg, keyMap any) bool {

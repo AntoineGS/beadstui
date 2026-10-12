@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 
@@ -193,6 +194,99 @@ func TestNewModelBubblesFilterIncludesSearchActionToken(t *testing.T) {
 	filterKeys := m.list.KeyMap.Filter.Keys()
 	if !slices.Contains(filterKeys, "/") || !slices.Contains(filterKeys, keys.Token("app.search")) {
 		t.Fatalf("default Bubbles Filter keys = %v, want slash and app.search token", filterKeys)
+	}
+}
+
+func TestNewModelBubblesFilterActionsRetainDefaultsAndTokens(t *testing.T) {
+	m := NewModel([]model.Issue{{ID: "bt-1", Title: "One", Status: model.StatusOpen}}, nil, "", nil, nil)
+	for _, tc := range []struct {
+		name    string
+		binding key.Binding
+		aliases []string
+		token   string
+	}{
+		{
+			name:    "apply",
+			binding: m.list.KeyMap.AcceptWhileFiltering,
+			aliases: []string{"enter", "tab", "shift+tab", "ctrl+k", "up", "ctrl+j", "down"},
+			token:   keys.Token("list_search.apply"),
+		},
+		{
+			name:    "cancel",
+			binding: m.list.KeyMap.CancelWhileFiltering,
+			aliases: []string{"esc"},
+			token:   keys.Token("list_search.cancel"),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.binding.Keys()
+			for _, want := range tc.aliases {
+				if !slices.Contains(got, want) {
+					t.Errorf("Bubbles keys = %v, lost default alias %q", got, want)
+				}
+			}
+			if !slices.Contains(got, tc.token) {
+				t.Errorf("Bubbles keys = %v, missing action token %q", got, tc.token)
+			}
+		})
+	}
+}
+
+func filteredListSearchModel(t *testing.T) Model {
+	t.Helper()
+	m := actionTestModel(t)
+	m.SetKeyConfig(keys.Config{}, nil)
+	m.list.SetFilterText("open")
+	m.list.SetFilterState(list.Filtering)
+	if got := len(m.list.VisibleItems()); got != 2 {
+		t.Fatalf("setup: visible matches = %d, want 2", got)
+	}
+	return m
+}
+
+func TestDefaultListSearchApplyTokenPreservesNonemptyQuery(t *testing.T) {
+	m := filteredListSearchModel(t)
+	wantQuery := m.list.FilterValue()
+
+	m = runKey(t, m, tokenMsg("list_search.apply"))
+	if got := m.list.FilterState(); got != list.FilterApplied {
+		t.Errorf("filter state = %v, want FilterApplied", got)
+	}
+	if got := m.list.FilterValue(); got != wantQuery {
+		t.Errorf("filter query = %q, want preserved query %q", got, wantQuery)
+	}
+}
+
+func TestDefaultListSearchCancelTokenClearsNonemptyQuery(t *testing.T) {
+	m := filteredListSearchModel(t)
+
+	m = runKey(t, m, tokenMsg("list_search.cancel"))
+	if got := m.list.FilterState(); got != list.Unfiltered {
+		t.Errorf("filter state = %v, want Unfiltered", got)
+	}
+	if got := m.list.FilterValue(); got != "" {
+		t.Errorf("filter query = %q, want cancel to clear it without inserting the token", got)
+	}
+}
+
+func TestDefaultListSearchNavigationTokensMoveResultsWithoutEditingQuery(t *testing.T) {
+	m := filteredListSearchModel(t)
+	wantQuery := m.list.FilterValue()
+
+	m = runKey(t, m, tokenMsg("nav.down"))
+	if got := m.list.Index(); got != 1 {
+		t.Errorf("nav.down result index = %d, want 1", got)
+	}
+	if got := m.list.FilterValue(); got != wantQuery {
+		t.Errorf("nav.down changed filter query to %q, want %q", got, wantQuery)
+	}
+
+	m = runKey(t, m, tokenMsg("nav.up"))
+	if got := m.list.Index(); got != 0 {
+		t.Errorf("nav.up result index = %d, want 0", got)
+	}
+	if got := m.list.FilterValue(); got != wantQuery {
+		t.Errorf("nav.up changed filter query to %q, want %q", got, wantQuery)
 	}
 }
 

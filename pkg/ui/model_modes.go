@@ -295,6 +295,28 @@ func (m *Model) syncBubblesKeyBindings(cfg keys.Config, applyErrs []error, shado
 			setListKeyBinding(binding.target, binding.source)
 		}
 	}
+	appendListKeyTokens(&m.list.KeyMap.AcceptWhileFiltering, m.keys.ListSearch.Apply)
+	appendListKeyTokens(&m.list.KeyMap.CancelWhileFiltering, m.keys.ListSearch.Cancel)
+}
+
+func appendListKeyTokens(target *key.Binding, source key.Binding) {
+	physicalKeys := target.Keys()
+	for _, actionKey := range source.Keys() {
+		if !keys.IsToken(actionKey) {
+			continue
+		}
+		found := false
+		for _, existing := range physicalKeys {
+			if existing == actionKey {
+				found = true
+				break
+			}
+		}
+		if !found {
+			physicalKeys = append(physicalKeys, actionKey)
+		}
+	}
+	target.SetKeys(physicalKeys...)
 }
 
 func hasBindingApplyError(errs []error, id string) bool {
