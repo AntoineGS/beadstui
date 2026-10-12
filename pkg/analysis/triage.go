@@ -304,6 +304,12 @@ type TriageOptions struct {
 
 	// History report for staleness analysis
 	History *correlation.HistoryReport
+
+	// Readiness is built from the full loaded source corpus; SelectedIDs scopes
+	// emitted candidates only. A non-nil empty slice means select nothing.
+	Readiness   *model.ReadinessIndex
+	SelectedIDs []string
+	EvaluatedAt time.Time
 }
 
 // TrackRecommendationGroup groups recommendations by execution track (bv-87)
@@ -332,8 +338,29 @@ func ComputeTriageWithOptions(issues []model.Issue, opts TriageOptions) TriageRe
 
 // ComputeTriageWithOptionsAndTime generates triage with a deterministic clock (testing).
 func ComputeTriageWithOptionsAndTime(issues []model.Issue, opts TriageOptions, now time.Time) TriageResult {
+	if opts.SelectedIDs != nil {
+		selected := make(map[string]bool, len(opts.SelectedIDs))
+		for _, id := range opts.SelectedIDs {
+			selected[id] = true
+		}
+		candidates := make([]model.Issue, 0, len(opts.SelectedIDs))
+		for _, issue := range issues {
+			if selected[issue.ID] {
+				candidates = append(candidates, issue)
+			}
+		}
+		issues = candidates
+	}
+	if !opts.EvaluatedAt.IsZero() {
+		now = opts.EvaluatedAt
+	}
+	readiness := opts.Readiness
+	if readiness == nil {
+		readiness = model.NewReadinessIndex(issues)
+	}
+	opts.Readiness = readiness
 	// Build analyzer and stats
-	analyzer := NewAnalyzer(issues)
+	analyzer := NewAnalyzerWithReadiness(issues, readiness, now)
 
 	// bv-perf: Check if there are any open issues before computing Phase 2
 	// Phase 2 metrics (PageRank, Betweenness) are only used for scoring open issues.
@@ -384,6 +411,16 @@ func ComputeTriageWithOptionsAndTime(issues []model.Issue, opts TriageOptions, n
 // The outputs match ComputeTriageWithOptionsAndTime given equivalent inputs.
 func ComputeTriageFromAnalyzer(analyzer *Analyzer, stats *GraphStats, issues []model.Issue, opts TriageOptions, now time.Time) TriageResult {
 	start := time.Now()
+	readiness := opts.Readiness
+	if readiness == nil && analyzer != nil {
+		readiness = analyzer.readiness
+	}
+	if readiness == nil {
+		readiness = model.NewReadinessIndex(issues)
+	}
+	if !opts.EvaluatedAt.IsZero() {
+		now = opts.EvaluatedAt
+	}
 
 	// Set defaults
 	if opts.TopN <= 0 {
@@ -417,18 +454,31 @@ func ComputeTriageFromAnalyzer(analyzer *Analyzer, stats *GraphStats, issues []m
 	recommendations := buildRecommendationsFromTriageScores(triageScores, triageCtx, opts.TopN)
 
 	// Build quick wins
-	quickWins := buildQuickWins(impactScores, unblocksMap, opts.QuickWinN)
+	readyScores := make([]ImpactScore, 0, len(impactScores))
+	for _, score := range impactScores {
+		if readiness.Ready(score.IssueID, now) {
+			readyScores = append(readyScores, score)
+		}
+	}
+	quickWins := buildQuickWins(readyScores, unblocksMap, opts.QuickWinN)
 
 	// Build blockers to clear (uses cached actionable issues)
 	blockersToClear := buildBlockersToClearWithContext(triageCtx, unblocksMap, opts.BlockerN)
 
-	// Build top picks for quick ref
-	topPicks := buildTopPicks(recommendations, 3)
+	// Immediate picks are stricter than general priority recommendations:
+	// they must be claimable as a new item, not merely ready or in flight.
+	claimableRecs := make([]Recommendation, 0, len(recommendations))
+	for _, rec := range recommendations {
+		if readiness.Claimable(rec.ID, now) {
+			claimableRecs = append(claimableRecs, rec)
+		}
+	}
+	topPicks := buildTopPicks(claimableRecs, 3)
 
 	// Determine top issue for commands
 	topID := ""
-	if len(recommendations) > 0 {
-		topID = recommendations[0].ID
+	if len(topPicks) > 0 {
+		topID = topPicks[0].ID
 	}
 
 	elapsed := time.Since(start)
@@ -439,9 +489,15 @@ func ComputeTriageFromAnalyzer(analyzer *Analyzer, stats *GraphStats, issues []m
 	var recsByLabel []LabelRecommendationGroup
 	if opts.GroupByTrack {
 		recsByTrack = buildRecommendationsByTrack(recommendations, analyzer, unblocksMap)
+		for i := range recsByTrack {
+			recsByTrack[i].TopPick, recsByTrack[i].ClaimCommand = claimableGroupPick(recsByTrack[i].Recommendations, readiness, now, unblocksMap)
+		}
 	}
 	if opts.GroupByLabel {
 		recsByLabel = buildRecommendationsByLabel(recommendations, unblocksMap)
+		for i := range recsByLabel {
+			recsByLabel[i].TopPick, recsByLabel[i].ClaimCommand = claimableGroupPick(recsByLabel[i].Recommendations, readiness, now, unblocksMap)
+		}
 	}
 
 	// Calculate staleness if history is available
@@ -478,6 +534,23 @@ func ComputeTriageFromAnalyzer(analyzer *Analyzer, stats *GraphStats, issues []m
 		},
 		Commands: buildCommands(topID),
 	}
+}
+
+func claimableGroupPick(recs []Recommendation, readiness *model.ReadinessIndex, now time.Time, unblocks map[string][]string) (*TopPick, string) {
+	var best *Recommendation
+	for i := range recs {
+		if !readiness.Claimable(recs[i].ID, now) {
+			continue
+		}
+		if best == nil || recs[i].Score > best.Score {
+			best = &recs[i]
+		}
+	}
+	if best == nil {
+		return nil, ""
+	}
+	return &TopPick{ID: best.ID, Title: best.Title, Score: best.Score, Reasons: best.Reasons, Unblocks: len(unblocks[best.ID])},
+		fmt.Sprintf("CI=1 br update %s --status in_progress --json", best.ID)
 }
 
 // ComputeStaleness calculates staleness metrics from history

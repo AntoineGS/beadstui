@@ -1173,6 +1173,8 @@ type Analyzer struct {
 	blockerCounts    []int
 	blockerCountsMax int
 	config           *AnalysisConfig // Optional custom config, nil means use size-based defaults
+	readiness        *model.ReadinessIndex
+	evaluatedAt      time.Time
 }
 
 // SetConfig sets a custom analysis configuration.
@@ -1242,6 +1244,12 @@ func (a *Analyzer) graphStructureHash() string {
 }
 
 func NewAnalyzer(issues []model.Issue) *Analyzer {
+	return NewAnalyzerWithReadiness(issues, model.NewReadinessIndex(issues), time.Now())
+}
+
+// NewAnalyzerWithReadiness keeps graph candidates scoped while consulting an
+// immutable index built from the complete loaded source corpus.
+func NewAnalyzerWithReadiness(issues []model.Issue, readiness *model.ReadinessIndex, evaluatedAt time.Time) *Analyzer {
 	g := newCompactDirectedGraph(len(issues))
 	// Pre-allocate maps for efficiency
 	idToNode := make(map[string]int64, len(issues))
@@ -1322,6 +1330,8 @@ func NewAnalyzer(issues []model.Issue) *Analyzer {
 		issueMap:         issueMap,
 		blockerCounts:    blockerCounts,
 		blockerCountsMax: maxBlockers,
+		readiness:        readiness,
+		evaluatedAt:      evaluatedAt,
 	}
 }
 
@@ -2413,6 +2423,13 @@ func (a *Analyzer) GetActionableIssues() []model.Issue {
 	var actionable []model.Issue
 	for _, id := range ids {
 		issue := a.issueMap[id]
+		if a.readiness != nil {
+			if !a.readiness.Ready(id, a.evaluatedAt) {
+				continue
+			}
+			actionable = append(actionable, issue)
+			continue
+		}
 		if isClosedLikeStatus(issue.Status) {
 			continue
 		}
@@ -2435,6 +2452,9 @@ func (a *Analyzer) GetIssue(id string) *model.Issue {
 
 // GetBlockers returns the IDs of issues that block the given issue
 func (a *Analyzer) GetBlockers(issueID string) []string {
+	if a != nil && a.readiness != nil {
+		return a.readiness.Blockers(issueID)
+	}
 	issue, ok := a.issueMap[issueID]
 	if !ok {
 		return nil
@@ -2453,6 +2473,9 @@ func (a *Analyzer) GetBlockers(issueID string) []string {
 
 // GetOpenBlockers returns the IDs of non-closed issues that block the given issue
 func (a *Analyzer) GetOpenBlockers(issueID string) []string {
+	if a != nil && a.readiness != nil {
+		return a.readiness.Blockers(issueID)
+	}
 	issue, ok := a.issueMap[issueID]
 	if !ok {
 		return nil

@@ -13,7 +13,7 @@ import (
 // runForecast handles --robot-forecast (bv-158).
 func (rc *robotCtx) runForecast(forecastTarget, forecastLabel string, forecastAgents int) {
 	// Build graph stats for depth calculation
-	analyzer := analysis.NewAnalyzer(rc.analysisIssues())
+	analyzer := rc.newAnalyzer()
 	graphStats := analyzer.Analyze()
 
 	// Filter issues by label if specified
@@ -36,7 +36,7 @@ func (rc *robotCtx) runForecast(forecastTarget, forecastLabel string, forecastAg
 		targetIssues = append(targetIssues, iss)
 	}
 
-	now := time.Now()
+	now := rc.evaluatedAt
 	agents := forecastAgents
 	if agents <= 0 {
 		agents = 1
@@ -64,7 +64,7 @@ func (rc *robotCtx) runForecast(forecastTarget, forecastLabel string, forecastAg
 	if forecastTarget == "all" {
 		// Forecast all open issues
 		for _, iss := range targetIssues {
-			if iss.Status == model.StatusClosed {
+			if !rc.readiness.Ready(iss.ID, rc.evaluatedAt) {
 				continue
 			}
 			eta, err := analysis.EstimateETAForIssue(rc.issues, &graphStats, iss.ID, agents, now)
@@ -75,12 +75,14 @@ func (rc *robotCtx) runForecast(forecastTarget, forecastLabel string, forecastAg
 		}
 	} else {
 		// Single issue forecast
-		eta, err := analysis.EstimateETAForIssue(rc.issues, &graphStats, forecastTarget, agents, now)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+		if rc.readiness.Ready(forecastTarget, rc.evaluatedAt) {
+			eta, err := analysis.EstimateETAForIssue(rc.issues, &graphStats, forecastTarget, agents, now)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			forecasts = append(forecasts, eta)
 		}
-		forecasts = append(forecasts, eta)
 	}
 
 	// Build summary if multiple forecasts
@@ -137,7 +139,7 @@ func (rc *robotCtx) runForecast(forecastTarget, forecastLabel string, forecastAg
 // runCapacity handles --robot-capacity (bv-160).
 func (rc *robotCtx) runCapacity(capacityAgents int, capacityLabel string) {
 	// Build graph stats for analysis
-	analyzer := analysis.NewAnalyzer(rc.analysisIssues())
+	analyzer := rc.newAnalyzer()
 	graphStats := analyzer.Analyze()
 
 	// Filter issues by label if specified
@@ -160,12 +162,12 @@ func (rc *robotCtx) runCapacity(capacityAgents int, capacityLabel string) {
 	issueMap := make(map[string]model.Issue)
 	for _, iss := range targetIssues {
 		issueMap[iss.ID] = iss
-		if iss.Status != model.StatusClosed {
+		if rc.readiness.Ready(iss.ID, rc.evaluatedAt) {
 			openIssues = append(openIssues, iss)
 		}
 	}
 
-	now := time.Now()
+	now := rc.evaluatedAt
 	agents := capacityAgents
 	if agents <= 0 {
 		agents = 1

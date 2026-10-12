@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"time"
 
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
@@ -12,7 +13,9 @@ import (
 // pflag vars and are accessed directly by handlers.
 type robotCtx struct {
 	issues            []model.Issue
-	issuesForSearch   []model.Issue         // pre-label-scope issues for search
+	issuesForSearch   []model.Issue // pre-label-scope issues for search
+	readiness         *model.ReadinessIndex
+	evaluatedAt       time.Time
 	enc               robotEncoder          // output encoder (json or toon)
 	cwd               string                // working directory
 	beadsPath         string                // path to beads file (for file-based sources)
@@ -24,9 +27,15 @@ type robotCtx struct {
 
 // newRobotCtx constructs a robotCtx from loaded/computed state.
 func newRobotCtx(issues, issuesForSearch []model.Issue, dataHash, cwd, beadsPath, projectDir string, labelScopeContext *analysis.LabelHealth) *robotCtx {
+	if issuesForSearch == nil {
+		issuesForSearch = issues
+	}
+	evaluatedAt := time.Now()
 	return &robotCtx{
 		issues:            issues,
 		issuesForSearch:   issuesForSearch,
+		readiness:         model.NewReadinessIndex(analysis.ResolveExternalDeps(issuesForSearch)),
+		evaluatedAt:       evaluatedAt,
 		enc:               newRobotEncoder(os.Stdout),
 		cwd:               cwd,
 		beadsPath:         beadsPath,
@@ -53,8 +62,39 @@ func (rc *robotCtx) newEncoder() robotEncoder {
 // composes INSIDE this function — it wraps the existing chain, it does not
 // add a sibling rc.Xissues() helper. One pipeline, not N helpers.
 func (rc *robotCtx) analysisIssues() []model.Issue {
-	if !isCrossProjectScope() {
-		return rc.issues
+	corpus := rc.issuesForSearch
+	if corpus == nil {
+		corpus = rc.issues
 	}
-	return analysis.ResolveExternalDeps(rc.issues)
+	resolved := analysis.ResolveExternalDeps(corpus)
+	selected := make(map[string]bool, len(rc.issues))
+	for _, issue := range rc.issues {
+		selected[issue.ID] = true
+	}
+	out := make([]model.Issue, 0, len(rc.issues))
+	for _, issue := range resolved {
+		if selected[issue.ID] {
+			out = append(out, issue)
+		}
+	}
+	return out
+}
+
+func (rc *robotCtx) selectedIDs() []string {
+	ids := make([]string, 0, len(rc.issues))
+	for _, issue := range rc.issues {
+		ids = append(ids, issue.ID)
+	}
+	return ids
+}
+
+func (rc *robotCtx) newAnalyzer() *analysis.Analyzer {
+	return analysis.NewAnalyzerWithReadiness(rc.analysisIssues(), rc.readiness, rc.evaluatedAt)
+}
+
+func (rc *robotCtx) triageOptions(opts analysis.TriageOptions) analysis.TriageOptions {
+	opts.Readiness = rc.readiness
+	opts.SelectedIDs = rc.selectedIDs()
+	opts.EvaluatedAt = rc.evaluatedAt
+	return opts
 }

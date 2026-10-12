@@ -73,9 +73,8 @@ func TestUnblocksInvariance_MixedStatuses(t *testing.T) {
 	an := NewAnalyzer(issues)
 	unblocks := an.ComputeUnblocks("blocker")
 
-	// Closed issues should NOT appear in unblocks (they're already done)
-	// All non-closed dependents should become actionable
-	expected := []string{"blocked1", "in_progress1", "open1"}
+	// Closed and otherwise ineligible status rows do not become Ready.
+	expected := []string{"in_progress1", "open1"}
 	if !stringSlicesEqual(unblocks, expected) {
 		t.Errorf("expected blocker to unblock %v, got %v", expected, unblocks)
 	}
@@ -108,8 +107,8 @@ func TestUnblocksInvariance_BlockingVsNonBlocking(t *testing.T) {
 	}
 }
 
-// TestUnblocksInvariance_MissingDependencyIDs tests that missing blocker IDs
-// are handled gracefully (don't block).
+// TestUnblocksInvariance_MissingDependencyIDs verifies missing blocker IDs
+// remain unknown and withhold readiness without changing graph calculations.
 func TestUnblocksInvariance_MissingDependencyIDs(t *testing.T) {
 	issues := []model.Issue{
 		{ID: "has_missing_dep", Status: model.StatusOpen, Dependencies: []*model.Dependency{
@@ -123,7 +122,6 @@ func TestUnblocksInvariance_MissingDependencyIDs(t *testing.T) {
 
 	an := NewAnalyzer(issues)
 
-	// has_missing_dep is actionable (missing blocker doesn't block)
 	actionable := an.GetActionableIssues()
 	actionableIDs := make([]string, len(actionable))
 	for i, iss := range actionable {
@@ -131,8 +129,8 @@ func TestUnblocksInvariance_MissingDependencyIDs(t *testing.T) {
 	}
 	sort.Strings(actionableIDs)
 
-	// blocker and has_missing_dep should be actionable
-	expected := []string{"blocker", "has_missing_dep"}
+	// Only blocker is ready; missing required evidence is unknown.
+	expected := []string{"blocker"}
 	if !stringSlicesEqual(actionableIDs, expected) {
 		t.Errorf("expected actionable %v, got %v", expected, actionableIDs)
 	}

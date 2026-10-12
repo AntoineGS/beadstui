@@ -123,6 +123,13 @@ func (a *Analyzer) computeUnblocks(issueID string) []string {
 		if !hasBlockingDep(dependentIssue, issueID) {
 			continue
 		}
+		if a.readiness != nil {
+			if !a.readiness.ReadyAfter(dependentID, a.evaluatedAt, map[string]bool{issueID: true}) {
+				continue
+			}
+			unblocks = append(unblocks, dependentID)
+			continue
+		}
 
 		// Check if this dependent is still blocked by OTHER open blocking dependencies.
 		// We consult the issue's dependency list directly rather than graph edges,

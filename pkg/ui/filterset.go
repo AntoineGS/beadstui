@@ -3,6 +3,7 @@ package ui
 import (
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/bql"
@@ -36,18 +37,26 @@ type FilterSpec struct {
 
 // FilterEnv is what Apply needs beyond the issues themselves.
 type FilterEnv struct {
-	IssueMap map[string]*model.Issue // ready / actionable blocker lookups
-	BQL      *bql.MemoryExecutor
-	BQLOpts  bql.ExecuteOpts
-	Stats    *analysis.GraphStats // recipe sort order
+	IssueMap    map[string]*model.Issue // ready / actionable blocker lookups
+	BQL         *bql.MemoryExecutor
+	BQLOpts     bql.ExecuteOpts
+	Stats       *analysis.GraphStats // recipe sort order
+	Readiness   *model.ReadinessIndex
+	EvaluatedAt time.Time
 }
 
 // Apply returns the issues that pass every dimension, in the primary
 // filter's order: recipe sort, BQL ORDER BY, else input order.
 func (s FilterSpec) Apply(issues []model.Issue, env FilterEnv) []model.Issue {
+	if env.Readiness == nil {
+		env.Readiness = model.NewReadinessIndex(issues)
+	}
+	if env.EvaluatedAt.IsZero() {
+		env.EvaluatedAt = time.Now()
+	}
 	out := make([]model.Issue, 0, len(issues))
 	for _, issue := range issues {
-		if s.passesBase(issue) && s.passesPrimary(issue, env.IssueMap) {
+		if s.passesBase(issue) && s.passesPrimary(issue, env) {
 			out = append(out, issue)
 		}
 	}
@@ -85,14 +94,14 @@ func (s FilterSpec) passesBase(issue model.Issue) bool {
 	return true
 }
 
-func (s FilterSpec) passesPrimary(issue model.Issue, issueMap map[string]*model.Issue) bool {
+func (s FilterSpec) passesPrimary(issue model.Issue, env FilterEnv) bool {
 	switch {
 	case s.BQL != nil:
 		return true // BQL runs over the whole surviving set in Apply
 	case s.Recipe != nil:
-		return issueMatchesRecipe(issue, issueMap, s.Recipe)
+		return issueMatchesRecipe(issue, s.Recipe, env.Readiness, env.EvaluatedAt)
 	default:
-		return matchesStatusFilter(issue, s.Status, issueMap)
+		return matchesStatusFilter(issue, s.Status, env.Readiness, env.EvaluatedAt)
 	}
 }
 
@@ -171,7 +180,7 @@ func hasAnyLabel(issue model.Issue, labels []string) bool {
 }
 
 // matchesStatusFilter is the status / ready primary filter.
-func matchesStatusFilter(issue model.Issue, status string, issueMap map[string]*model.Issue) bool {
+func matchesStatusFilter(issue model.Issue, status string, readiness *model.ReadinessIndex, now time.Time) bool {
 	switch status {
 	case "", "all":
 		return true
@@ -186,19 +195,7 @@ func matchesStatusFilter(issue model.Issue, status string, issueMap map[string]*
 	case "closed":
 		return isClosedLikeStatus(issue.Status)
 	case "ready":
-		// Ready = not closed, not blocked, and no open blocking dependency.
-		if isClosedLikeStatus(issue.Status) || issue.Status == model.StatusBlocked {
-			return false
-		}
-		for _, dep := range issue.Dependencies {
-			if dep == nil || !dep.Type.IsBlocking() {
-				continue
-			}
-			if blocker, ok := issueMap[dep.DependsOnID]; ok && !isClosedLikeStatus(blocker.Status) {
-				return false
-			}
-		}
-		return true
+		return readiness != nil && readiness.Ready(issue.ID, now)
 	default:
 		return false
 	}

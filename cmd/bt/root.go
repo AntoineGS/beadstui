@@ -297,14 +297,14 @@ func loadIssues() error {
 	}
 
 	appCtx.loadDuration = time.Since(loadStart).Seconds()
+	appCtx.issuesCorpus = append([]model.Issue(nil), appCtx.issues...)
+	appCtx.issuesForSearch = appCtx.issuesCorpus
+	appCtx.readiness = model.NewReadinessIndex(analysis.ResolveExternalDeps(appCtx.issuesCorpus))
 
 	// Apply --repo filter.
 	if flagRepo != "" {
 		appCtx.issues = filterByRepo(appCtx.issues, flagRepo)
 	}
-
-	// Snapshot for search before further mutations.
-	appCtx.issuesForSearch = appCtx.issues
 
 	return nil
 }
@@ -449,7 +449,7 @@ func runRootTUI(cmd *cobra.Command) {
 
 	// Handle --as-of for TUI mode.
 	if flagAsOf != "" {
-		m := ui.NewModel(appCtx.issues, activeRecipe, "", nil, appCtx.routeTable)
+		m := ui.NewModel(appCtx.issues, activeRecipe, "", nil, appCtx.routeTable, appCtx.readiness)
 		defer m.Stop()
 		if err := runTUIProgram(m); err != nil {
 			fmt.Printf("Error running beads viewer: %v\n", err)
@@ -484,7 +484,7 @@ func runRootTUI(cmd *cobra.Command) {
 	}
 
 	// Build TUI model.
-	m := ui.NewModel(appCtx.issues, activeRecipe, appCtx.beadsPath, appCtx.selectedSource, appCtx.routeTable)
+	m := ui.NewModel(appCtx.issues, activeRecipe, appCtx.beadsPath, appCtx.selectedSource, appCtx.routeTable, appCtx.readiness)
 
 	// Set project name for footer.
 	if beadsDir, err := loader.GetBeadsDir(""); err == nil {

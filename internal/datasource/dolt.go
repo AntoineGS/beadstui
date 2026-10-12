@@ -182,7 +182,7 @@ func (r *DoltReader) LoadIssuesFiltered(filter func(*model.Issue) bool) ([]model
 	for rows.Next() {
 		var issue model.Issue
 		var estimatedMinutes, compactionLevel, originalSize sql.NullInt64
-		var createdAt, updatedAt, dueAt, closedAt, compactedAt sql.NullTime
+		var createdAt, updatedAt, dueAt, deferUntil, closedAt, compactedAt sql.NullTime
 		var description, assignee, externalRef, design, acceptanceCriteria, notes, sourceRepo, compactedAtCommit, closeReason sql.NullString
 		var issueType string
 
@@ -202,7 +202,7 @@ func (r *DoltReader) LoadIssuesFiltered(filter func(*model.Issue) bool) ([]model
 		err := rows.Scan(
 			&issue.ID, &issue.Title, &description, &issue.Status, &issue.Priority, &issueType,
 			&assignee, &estimatedMinutes, &createdAt, &updatedAt,
-			&dueAt, &closedAt, &externalRef, &compactionLevel,
+			&dueAt, &deferUntil, &closedAt, &externalRef, &compactionLevel,
 			&compactedAt, &compactedAtCommit, &originalSize,
 			&design, &acceptanceCriteria, &notes, &sourceRepo,
 			&closeReason,
@@ -235,6 +235,10 @@ func (r *DoltReader) LoadIssuesFiltered(filter func(*model.Issue) bool) ([]model
 		if dueAt.Valid {
 			t := dueAt.Time
 			issue.DueDate = &t
+		}
+		if deferUntil.Valid {
+			t := deferUntil.Time
+			issue.DeferUntil = &t
 		}
 		if closedAt.Valid {
 			t := closedAt.Time

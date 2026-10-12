@@ -105,18 +105,22 @@ func TestResolveExternalDeps_RewritesResolvedRefs(t *testing.T) {
 	}
 }
 
-func TestResolveExternalDeps_DropsUnresolvedAndMalformed(t *testing.T) {
+func TestResolveExternalDeps_RetainsUnresolvedAndMalformed(t *testing.T) {
 	issues := loadExternalFixture(t, "unresolved_external.json")
 	got := ResolveExternalDeps(issues)
 
 	bta := getIssue(t, got, "bt-a")
-	// Only the bt-b dep should survive: unresolved external:cass:ghost
-	// and all three malformed forms get dropped.
-	if len(bta.Dependencies) != 1 {
-		t.Fatalf("bt-a deps after drop: got %d, want 1 (bt-b only)", len(bta.Dependencies))
+	if len(bta.Dependencies) != 5 {
+		t.Fatalf("bt-a deps after resolution: got %d, want 5", len(bta.Dependencies))
 	}
-	if bta.Dependencies[0].DependsOnID != "bt-b" {
-		t.Errorf("bt-a surviving dep: got %q, want bt-b", bta.Dependencies[0].DependsOnID)
+	foundBTB := false
+	for _, dep := range bta.Dependencies {
+		if dep.DependsOnID == "bt-b" {
+			foundBTB = true
+		}
+	}
+	if !foundBTB {
+		t.Fatal("non-external bt-b dependency was lost")
 	}
 }
 
@@ -219,10 +223,10 @@ func TestResolveExternalDeps_LogsUnresolvedAtDebug(t *testing.T) {
 
 func TestParseExternalRef(t *testing.T) {
 	cases := []struct {
-		in           string
-		wantProject  string
-		wantSuffix   string
-		wantOK       bool
+		in          string
+		wantProject string
+		wantSuffix  string
+		wantOK      bool
 	}{
 		{"external:cass:x", "cass", "x", true},
 		{"external:bt:mhwy.5", "bt", "mhwy.5", true},
@@ -246,10 +250,10 @@ func TestParseExternalRef(t *testing.T) {
 
 func TestSplitID(t *testing.T) {
 	cases := []struct {
-		in           string
-		wantPrefix   string
-		wantSuffix   string
-		wantOK       bool
+		in         string
+		wantPrefix string
+		wantSuffix string
+		wantOK     bool
 	}{
 		{"bt-mhwy.5", "bt", "mhwy.5", true},
 		{"cass-x", "cass", "x", true},

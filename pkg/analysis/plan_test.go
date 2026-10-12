@@ -372,7 +372,7 @@ func TestGetExecutionPlanItemHasDetails(t *testing.T) {
 
 func TestGetExecutionPlanMissingBlocker(t *testing.T) {
 	// A depends on "nonexistent" which doesn't exist
-	// Should NOT block A since the blocker doesn't exist
+	// Missing required evidence is unknown, so A is not ready.
 	issues := []model.Issue{
 		{ID: "A", Title: "Task A", Status: model.StatusOpen, Priority: 1, Dependencies: []*model.Dependency{
 			{DependsOnID: "nonexistent", Type: model.DepBlocks},
@@ -382,12 +382,24 @@ func TestGetExecutionPlanMissingBlocker(t *testing.T) {
 	an := analysis.NewAnalyzer(issues)
 	plan := an.GetExecutionPlan()
 
-	// A should be actionable because the blocker doesn't exist
-	if plan.TotalActionable != 1 {
-		t.Errorf("Expected 1 actionable (missing blocker shouldn't block), got %d", plan.TotalActionable)
+	if plan.TotalActionable != 0 {
+		t.Errorf("Expected 0 actionable (missing blocker is unknown), got %d", plan.TotalActionable)
 	}
-	if plan.TotalBlocked != 0 {
-		t.Errorf("Expected 0 blocked, got %d", plan.TotalBlocked)
+	if plan.TotalBlocked != 1 {
+		t.Errorf("Expected 1 blocked, got %d", plan.TotalBlocked)
+	}
+}
+
+func TestComputeUnblocksDoesNotIgnoreAnotherUnknownGate(t *testing.T) {
+	issues := []model.Issue{
+		{ID: "gate", Status: model.StatusOpen},
+		{ID: "unknown-dependent", Status: model.StatusOpen, Dependencies: []*model.Dependency{
+			{DependsOnID: "gate", Type: model.DepBlocks},
+			{DependsOnID: "missing", Type: model.DepBlocks},
+		}},
+	}
+	if got := analysis.NewAnalyzer(issues).ComputeUnblocks("gate"); len(got) != 0 {
+		t.Fatalf("closing gate made unknown-dependent appear ready: %v", got)
 	}
 }
 

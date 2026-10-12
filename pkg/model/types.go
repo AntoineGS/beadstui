@@ -8,38 +8,39 @@ import (
 
 // Issue represents a trackable work item
 type Issue struct {
-	ID                 string        `json:"id"`
-	ContentHash        string        `json:"-"`
-	Title              string        `json:"title"`
-	Description        string        `json:"description"`
-	Design             string        `json:"design,omitempty"`
-	AcceptanceCriteria string        `json:"acceptance_criteria,omitempty"`
-	Notes              string        `json:"notes,omitempty"`
-	Status             Status        `json:"status"`
-	Priority           int           `json:"priority"`
-	IssueType          IssueType     `json:"issue_type"`
-	Assignee           string        `json:"assignee,omitempty"`
+	ID                 string    `json:"id"`
+	ContentHash        string    `json:"-"`
+	Title              string    `json:"title"`
+	Description        string    `json:"description"`
+	Design             string    `json:"design,omitempty"`
+	AcceptanceCriteria string    `json:"acceptance_criteria,omitempty"`
+	Notes              string    `json:"notes,omitempty"`
+	Status             Status    `json:"status"`
+	Priority           int       `json:"priority"`
+	IssueType          IssueType `json:"issue_type"`
+	Assignee           string    `json:"assignee,omitempty"`
 	// Author is the creation-time actor, sourced from the beads `created_by`
 	// column (populated from `bd create --actor`, `$BEADS_ACTOR`, or git
 	// user.name). Immutable after creation — distinct from Assignee (current
 	// holder) and from the legacy `owner` column (GitHub email identity).
 	// See bt-aw4h and upstream bd-c39 for the terminology rationale.
-	Author string `json:"author,omitempty"`
-	EstimatedMinutes   *int          `json:"estimated_minutes,omitempty"`
-	CreatedAt          time.Time     `json:"created_at"`
-	UpdatedAt          time.Time     `json:"updated_at"`
-	DueDate            *time.Time    `json:"due_date,omitempty"`
-	ClosedAt           *time.Time    `json:"closed_at,omitempty"`
-	CloseReason        *string       `json:"close_reason,omitempty"`
-	ExternalRef        *string       `json:"external_ref,omitempty"`
-	CompactionLevel    int           `json:"compaction_level,omitempty"`
-	CompactedAt        *time.Time    `json:"compacted_at,omitempty"`
-	CompactedAtCommit  *string       `json:"compacted_at_commit,omitempty"`
-	OriginalSize       int           `json:"original_size,omitempty"`
-	Labels             []string      `json:"labels,omitempty"`
-	Dependencies       []*Dependency `json:"dependencies,omitempty"`
-	Comments           []*Comment    `json:"comments,omitempty"`
-	SourceRepo         string        `json:"source_repo,omitempty"`
+	Author            string        `json:"author,omitempty"`
+	EstimatedMinutes  *int          `json:"estimated_minutes,omitempty"`
+	CreatedAt         time.Time     `json:"created_at"`
+	UpdatedAt         time.Time     `json:"updated_at"`
+	DueDate           *time.Time    `json:"due_date,omitempty"`
+	DeferUntil        *time.Time    `json:"defer_until,omitempty"`
+	ClosedAt          *time.Time    `json:"closed_at,omitempty"`
+	CloseReason       *string       `json:"close_reason,omitempty"`
+	ExternalRef       *string       `json:"external_ref,omitempty"`
+	CompactionLevel   int           `json:"compaction_level,omitempty"`
+	CompactedAt       *time.Time    `json:"compacted_at,omitempty"`
+	CompactedAtCommit *string       `json:"compacted_at_commit,omitempty"`
+	OriginalSize      int           `json:"original_size,omitempty"`
+	Labels            []string      `json:"labels,omitempty"`
+	Dependencies      []*Dependency `json:"dependencies,omitempty"`
+	Comments          []*Comment    `json:"comments,omitempty"`
+	SourceRepo        string        `json:"source_repo,omitempty"`
 
 	// Gate fields (blocking coordination)
 	AwaitType *string `json:"await_type,omitempty"`
@@ -82,6 +83,7 @@ func (i *Issue) UnmarshalJSON(data []byte) error {
 		*alias
 		CreatedBy string     `json:"created_by"`
 		DueAt     *time.Time `json:"due_at"`
+		DeferBy   *time.Time `json:"defer_until"`
 	}{
 		alias: (*alias)(i),
 	}
@@ -93,6 +95,9 @@ func (i *Issue) UnmarshalJSON(data []byte) error {
 	}
 	if i.DueDate == nil && aux.DueAt != nil {
 		i.DueDate = aux.DueAt
+	}
+	if i.DeferUntil == nil && aux.DeferBy != nil {
+		i.DeferUntil = aux.DeferBy
 	}
 	return nil
 }
@@ -116,6 +121,10 @@ func (i Issue) Clone() Issue {
 	if i.DueDate != nil {
 		v := *i.DueDate
 		clone.DueDate = &v
+	}
+	if i.DeferUntil != nil {
+		v := *i.DeferUntil
+		clone.DeferUntil = &v
 	}
 	if i.ExternalRef != nil {
 		v := *i.ExternalRef
@@ -307,16 +316,18 @@ type IssueMetrics struct {
 type DependencyType string
 
 const (
-	DepBlocks         DependencyType = "blocks"
-	DepRelated        DependencyType = "related"
-	DepParentChild    DependencyType = "parent-child"
-	DepDiscoveredFrom DependencyType = "discovered-from"
+	DepBlocks            DependencyType = "blocks"
+	DepConditionalBlocks DependencyType = "conditional-blocks"
+	DepWaitsFor          DependencyType = "waits-for"
+	DepRelated           DependencyType = "related"
+	DepParentChild       DependencyType = "parent-child"
+	DepDiscoveredFrom    DependencyType = "discovered-from"
 )
 
 // IsValid returns true if the dependency type is a recognized value
 func (d DependencyType) IsValid() bool {
 	switch d {
-	case DepBlocks, DepRelated, DepParentChild, DepDiscoveredFrom:
+	case DepBlocks, DepConditionalBlocks, DepWaitsFor, DepRelated, DepParentChild, DepDiscoveredFrom:
 		return true
 	}
 	return false
@@ -327,7 +338,7 @@ func (d DependencyType) IsValid() bool {
 // legacy beads data that predates the typed dependency system. This means dependencies
 // created without an explicit type will block by default.
 func (d DependencyType) IsBlocking() bool {
-	return d == "" || d == DepBlocks
+	return d == "" || d == DepBlocks || d == DepConditionalBlocks || d == DepWaitsFor
 }
 
 // IsGraphEdge returns true if this dependency type should appear as an edge

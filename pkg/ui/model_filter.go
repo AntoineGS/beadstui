@@ -83,10 +83,12 @@ func (m *Model) filterSpec() FilterSpec {
 
 func (m *Model) filterEnv() FilterEnv {
 	return FilterEnv{
-		IssueMap: m.data.issueMap,
-		BQL:      m.filter.bqlEngine,
-		BQLOpts:  m.bqlExecuteOpts(),
-		Stats:    m.data.analysis,
+		IssueMap:    m.data.issueMap,
+		Readiness:   m.data.readiness,
+		EvaluatedAt: time.Now(),
+		BQL:         m.filter.bqlEngine,
+		BQLOpts:     m.bqlExecuteOpts(),
+		Stats:       m.data.analysis,
 	}
 }
 
@@ -171,7 +173,7 @@ func (m *Model) ensureTriageForVisible(force bool) {
 	if m.ac.triageWaitPhase2 && !force {
 		return
 	}
-	triage := analysis.ComputeTriageWithOptions(m.filter.visible, analysis.TriageOptions{WaitForPhase2: true})
+	triage := analysis.ComputeTriageWithOptions(m.filter.visible, analysis.TriageOptions{WaitForPhase2: true, Readiness: m.data.readiness, EvaluatedAt: time.Now()})
 	m.setTriage(&triage)
 	m.ac.triageKey = m.filter.visibleKey
 }
@@ -290,7 +292,7 @@ func (m *Model) refreshFlowMatrix() {
 
 // refreshActionableView builds the execution plan from the visible set.
 func (m *Model) refreshActionableView() {
-	plan := analysis.NewAnalyzer(m.filter.visible).GetExecutionPlan()
+	plan := analysis.NewAnalyzerWithReadiness(m.filter.visible, m.data.readiness, time.Now()).GetExecutionPlan()
 	m.actionableView = NewActionableModel(plan, m.theme)
 	m.actionableView.SetSize(m.width, m.height-2)
 }

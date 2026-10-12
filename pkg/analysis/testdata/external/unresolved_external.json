@@ -1,5 +1,5 @@
 {
-  "description": "bt-a has one unresolved external ref (external:cass:ghost with no matching cass-ghost) plus malformed external refs (external:, external::, external:bt:). All should be dropped from the post-resolution deps and surfaced at debug log level. The non-external dep on bt-b must be preserved.",
+  "description": "bt-a has one unresolved external ref (external:cass:ghost with no matching cass-ghost) plus malformed external refs (external:, external::, external:bt:). All references should be retained and surfaced at debug log level. The non-external dep on bt-b must be preserved.",
   "issues": [
     {
       "id": "bt-a",

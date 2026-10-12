@@ -15,8 +15,7 @@ const externalPrefix = "external:"
 
 // ResolveExternalDeps returns a copy of issues with external:<project>:<id>
 // dependencies rewritten to point at the canonical issue ID resolved against
-// the input slice. Unresolved external refs are dropped from the returned
-// issues' Dependencies and logged at debug. The input slice and its issues
+// the input slice. Unresolved or ambiguous refs are retained verbatim. The input slice and its issues
 // are not mutated. Safe for nil and empty inputs. Idempotent: calling twice
 // produces the same result as calling once.
 //
@@ -30,6 +29,7 @@ func ResolveExternalDeps(issues []model.Issue) []model.Issue {
 	// byIDPrefix: ID prefix -> suffix -> canonical full ID. One map instead
 	// of two so misses cost a single lookup.
 	byIDPrefix := make(map[string]map[string]string, 8)
+	ambiguous := make(map[string]map[string]bool, 8)
 	for _, issue := range issues {
 		prefix, suffix, ok := SplitID(issue.ID)
 		if !ok {
@@ -39,8 +39,13 @@ func ResolveExternalDeps(issues []model.Issue) []model.Issue {
 		if !exists {
 			bucket = make(map[string]string)
 			byIDPrefix[prefix] = bucket
+			ambiguous[prefix] = make(map[string]bool)
 		}
-		bucket[suffix] = issue.ID
+		if previous, exists := bucket[suffix]; exists && previous != issue.ID {
+			ambiguous[prefix][suffix] = true
+		} else {
+			bucket[suffix] = issue.ID
+		}
 	}
 
 	out := make([]model.Issue, len(issues))
@@ -70,11 +75,15 @@ func ResolveExternalDeps(issues []model.Issue) []model.Issue {
 			project, suffix, ok := parseExternalRef(dep.DependsOnID)
 			if !ok {
 				unresolved = append(unresolved, dep.DependsOnID)
+				resolved := *dep
+				rewritten = append(rewritten, &resolved)
 				continue
 			}
 			canonical, found := byIDPrefix[project][suffix]
-			if !found {
+			if !found || ambiguous[project][suffix] {
 				unresolved = append(unresolved, dep.DependsOnID)
+				resolved := *dep
+				rewritten = append(rewritten, &resolved)
 				continue
 			}
 			resolved := *dep
@@ -82,14 +91,10 @@ func ResolveExternalDeps(issues []model.Issue) []model.Issue {
 			rewritten = append(rewritten, &resolved)
 		}
 		out[i].Dependencies = rewritten
-
 		if len(unresolved) > 0 {
-			slog.Debug("external dep resolution: dropped refs",
-				"issue", issue.ID,
-				"count", len(unresolved),
-				"refs", unresolved,
-			)
+			slog.Debug("external dep resolution: retained unresolved refs", "issue", issue.ID, "count", len(unresolved), "refs", unresolved)
 		}
+
 	}
 
 	return out

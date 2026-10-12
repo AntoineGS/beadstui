@@ -65,7 +65,7 @@ func limitSlice(s []string, limit int) []string {
 
 // runInsights handles --robot-insights.
 func (rc *robotCtx) runInsights(forceFullAnalysis bool, asOf, asOfResolved, labelScope string) {
-	analyzer := analysis.NewAnalyzer(rc.analysisIssues())
+	analyzer := rc.newAnalyzer()
 	if forceFullAnalysis {
 		cfg := analysis.FullAnalysisConfig()
 		analyzer.SetConfig(&cfg)
@@ -176,7 +176,7 @@ func (rc *robotCtx) runInsights(forceFullAnalysis bool, asOf, asOfResolved, labe
 
 // runPlan handles --robot-plan.
 func (rc *robotCtx) runPlan(forceFullAnalysis bool, asOf, asOfResolved, labelScope string) {
-	analyzer := analysis.NewAnalyzer(rc.analysisIssues())
+	analyzer := rc.newAnalyzer()
 	// For --robot-plan we primarily need Phase 1 metrics (degree/topo/density).
 	// However, we still emit a stable status contract for agents. If the user
 	// explicitly asks for full analysis, honor it; otherwise, skip expensive
@@ -244,7 +244,7 @@ func (rc *robotCtx) runPlan(forceFullAnalysis bool, asOf, asOfResolved, labelSco
 
 // runPriority handles --robot-priority.
 func (rc *robotCtx) runPriority(forceFullAnalysis bool, asOf, asOfResolved, labelScope string, robotMinConf float64, robotMaxResults int, robotByLabel, robotByAssignee string) {
-	analyzer := analysis.NewAnalyzer(rc.analysisIssues())
+	analyzer := rc.newAnalyzer()
 	cfg := analysis.ConfigForSize(len(rc.issues), countEdges(rc.issues))
 	if forceFullAnalysis {
 		cfg = analysis.FullAnalysisConfig()

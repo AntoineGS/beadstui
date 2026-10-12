@@ -135,9 +135,11 @@ type DataSnapshot struct {
 	ViewIssues []model.Issue
 
 	// Graph analysis
-	Analyzer *analysis.Analyzer
-	Analysis *analysis.GraphStats
-	Insights analysis.Insights
+	Analyzer    *analysis.Analyzer
+	Readiness   *model.ReadinessIndex
+	EvaluatedAt time.Time
+	Analysis    *analysis.GraphStats
+	Insights    analysis.Insights
 
 	// Computed statistics
 	CountOpen    int
@@ -268,11 +270,13 @@ func (l *GraphLayout) UpdatePhase2Ranks(stats *analysis.GraphStats) {
 // SnapshotBuilder constructs DataSnapshots from raw data.
 // This is used by the BackgroundWorker to build new snapshots.
 type SnapshotBuilder struct {
-	issues   []model.Issue
-	analyzer *analysis.Analyzer
-	analysis *analysis.GraphStats
-	recipe   *recipe.Recipe
-	cfg      snapshotBuildConfig
+	issues      []model.Issue
+	analyzer    *analysis.Analyzer
+	readiness   *model.ReadinessIndex
+	evaluatedAt time.Time
+	analysis    *analysis.GraphStats
+	recipe      *recipe.Recipe
+	cfg         snapshotBuildConfig
 
 	prevSnapshot  *DataSnapshot
 	diff          *analysis.IssueDiff
@@ -282,10 +286,14 @@ type SnapshotBuilder struct {
 
 // NewSnapshotBuilder creates a builder for constructing a DataSnapshot.
 func NewSnapshotBuilder(issues []model.Issue) *SnapshotBuilder {
+	readiness := model.NewReadinessIndex(issues)
+	evaluatedAt := time.Now()
 	return &SnapshotBuilder{
-		issues:   issues,
-		analyzer: analysis.NewAnalyzer(issues),
-		cfg:      snapshotBuildConfigDefault(),
+		issues:      issues,
+		analyzer:    analysis.NewAnalyzerWithReadiness(issues, readiness, evaluatedAt),
+		readiness:   readiness,
+		evaluatedAt: evaluatedAt,
+		cfg:         snapshotBuildConfigDefault(),
 	}
 }
 
@@ -401,7 +409,7 @@ func (b *SnapshotBuilder) Build() *DataSnapshot {
 	if b.recipe != nil {
 		viewIssues = make([]model.Issue, 0, len(issues))
 		for i := range issues {
-			if issueMatchesRecipe(issues[i], issueMap, b.recipe) {
+			if issueMatchesRecipe(issues[i], b.recipe, b.readiness, b.evaluatedAt) {
 				viewIssues = append(viewIssues, issues[i])
 			}
 		}
@@ -503,6 +511,8 @@ func (b *SnapshotBuilder) Build() *DataSnapshot {
 		IssueMap:      issueMap,
 		ViewIssues:    viewIssues,
 		Analyzer:      b.analyzer,
+		Readiness:     b.readiness,
+		EvaluatedAt:   b.evaluatedAt,
 		Analysis:      graphStats,
 		Insights:      insights,
 		CountOpen:     cOpen,
@@ -643,7 +653,7 @@ func isChangedID(changed map[string]struct{}, id string) bool {
 	return ok
 }
 
-func issueMatchesRecipe(issue model.Issue, issueMap map[string]*model.Issue, r *recipe.Recipe) bool {
+func issueMatchesRecipe(issue model.Issue, r *recipe.Recipe, readiness *model.ReadinessIndex, now time.Time) bool {
 	if r == nil {
 		return true
 	}
@@ -694,13 +704,8 @@ func issueMatchesRecipe(issue model.Issue, issueMap map[string]*model.Issue, r *
 
 	// Actionable filter (true = no open blockers)
 	if r.Filters.Actionable != nil && *r.Filters.Actionable {
-		for _, dep := range issue.Dependencies {
-			if dep == nil || !dep.Type.IsBlocking() {
-				continue
-			}
-			if blocker, exists := issueMap[dep.DependsOnID]; exists && !isClosedLikeStatus(blocker.Status) {
-				return false
-			}
+		if readiness == nil || !readiness.Ready(issue.ID, now) {
+			return false
 		}
 	}
 
