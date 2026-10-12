@@ -968,6 +968,8 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				}
 				m.mode = ViewList
 				m.focused = focusList
+				m.restoreFlowOriginDetail()
+				m.swallowKey = true
 				return m, nil
 			}
 			if m.mode == ViewGraph {
@@ -1992,7 +1994,11 @@ func (m Model) handleMouseWheel(msg tea.MouseWheelMsg) (Model, tea.Cmd) {
 				m.historyView.MoveUp()
 			}
 		case focusFlowMatrix:
-			m.flowMatrix.MoveUp()
+			if m.flowMatrix.Inspecting() {
+				m.flowMatrix.ScrollInspection(3)
+			} else {
+				m.flowMatrix.MoveUp()
+			}
 		}
 		return m, nil
 	case tea.MouseWheelDown:
@@ -2037,7 +2043,11 @@ func (m Model) handleMouseWheel(msg tea.MouseWheelMsg) (Model, tea.Cmd) {
 				m.historyView.MoveDown()
 			}
 		case focusFlowMatrix:
-			m.flowMatrix.MoveDown()
+			if m.flowMatrix.Inspecting() {
+				m.flowMatrix.ScrollInspection(3)
+			} else {
+				m.flowMatrix.MoveDown()
+			}
 		}
 		return m, nil
 	}
@@ -2128,6 +2138,7 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (Model, tea.Cmd) {
 	// updateViewportContent are deferred to phase 2 so per-event cost during
 	// a drag is negligible.
 	m.applyListDetailSizing(bodyW, bodyHeight)
+	m.flowMatrix.SetSize(bodyW, max(0, m.height-1))
 	m.updateListDelegate()
 	m.labelDashboard.SetSize(bodyW, bodyHeight)
 	popupWidth, popupHeight := max(0, m.width), max(0, m.height-1)
@@ -2232,7 +2243,12 @@ func (m Model) applyWindowSizeHeavy() Model {
 	debug.LogTiming("applyHeavy.insightsPanel.SetSize", time.Since(insightsStart))
 
 	vpStart := time.Now()
-	m.updateViewportContent()
+	if m.mode == ViewFlowMatrix && m.flowMatrix.Inspecting() {
+		m.flowMatrix.SetSize(bodyW, max(0, m.height-1))
+		m.renderFlowInspection()
+	} else {
+		m.updateViewportContent()
+	}
 	debug.LogTiming("applyHeavy.updateViewportContent", time.Since(vpStart))
 
 	m.lastHeavyWidth = bodyW

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -38,7 +39,9 @@ type FlowMatrixModel struct {
 	drilldownTitle  string
 	drilldownLabel  string
 	inspecting      bool
-	inspectionView  string
+	inspectionVP    viewport.Model
+	originDetailVP  viewport.Model
+	hasOriginDetail bool
 	initialized     bool
 }
 
@@ -65,10 +68,11 @@ type labelFlowStats struct {
 // NewFlowMatrixModel creates a new flow matrix dashboard
 func NewFlowMatrixModel(theme Theme) FlowMatrixModel {
 	return FlowMatrixModel{
-		keys:        keys.NewFlowMatrixKeys(),
-		theme:       theme,
-		focusPanel:  0,
-		initialized: true,
+		keys:         keys.NewFlowMatrixKeys(),
+		theme:        theme,
+		focusPanel:   0,
+		inspectionVP: viewport.New(),
+		initialized:  true,
 	}
 }
 
@@ -118,18 +122,63 @@ func (m *FlowMatrixModel) SetData(flow *analysis.CrossLabelFlow, issues []model.
 	}
 }
 
-func (m *FlowMatrixModel) BeginInspection(content string) {
-	m.inspecting, m.inspectionView = true, content
+func (m *FlowMatrixModel) BeginInspection(vp viewport.Model) {
+	vp.SetWidth(max(0, m.width))
+	vp.SetHeight(max(0, m.height))
+	vp.GotoTop()
+	m.inspectionVP = vp
+	m.inspecting = true
 }
 
-func (m *FlowMatrixModel) EndInspection() { m.inspecting, m.inspectionView = false, "" }
+func (m *FlowMatrixModel) UpdateInspectionViewport(vp viewport.Model) {
+	offset := m.inspectionVP.YOffset()
+	if m.inspecting {
+		vp.SetYOffset(offset)
+	} else {
+		vp.GotoTop()
+	}
+	vp.SetWidth(max(0, m.width))
+	vp.SetHeight(max(0, m.height))
+	m.inspectionVP = vp
+}
+
+func (m *FlowMatrixModel) EndInspection() { m.inspecting = false }
 
 func (m *FlowMatrixModel) Inspecting() bool { return m.inspecting }
 
+func (m *FlowMatrixModel) SaveOriginDetail(vp viewport.Model) {
+	m.originDetailVP = vp
+	m.hasOriginDetail = true
+}
+
+func (m *FlowMatrixModel) OriginDetail() (viewport.Model, bool) {
+	return m.originDetailVP, m.hasOriginDetail
+}
+
+func (m *FlowMatrixModel) ClearOriginDetail() { m.hasOriginDetail = false }
+
+func (m *FlowMatrixModel) UpdateInspection(msg tea.Msg) tea.Cmd {
+	var cmd tea.Cmd
+	m.inspectionVP, cmd = m.inspectionVP.Update(msg)
+	return cmd
+}
+
+func (m *FlowMatrixModel) ScrollInspection(delta int) {
+	if delta < 0 {
+		m.inspectionVP.ScrollUp(-delta)
+		return
+	}
+	m.inspectionVP.ScrollDown(delta)
+}
+
 // SetSize sets the available rendering dimensions
 func (m *FlowMatrixModel) SetSize(width, height int) {
-	m.width = width
-	m.height = height
+	m.width = max(0, width)
+	m.height = max(0, height)
+	if m.inspecting {
+		m.inspectionVP.SetWidth(m.width)
+		m.inspectionVP.SetHeight(m.height)
+	}
 }
 
 // computeStats builds per-label statistics from the flow matrix
@@ -218,6 +267,9 @@ func (m *FlowMatrixModel) computeStats() {
 
 // Update handles keyboard input
 func (m *FlowMatrixModel) Update(msg tea.KeyMsg) tea.Cmd {
+	if m.inspecting {
+		return m.UpdateInspection(msg)
+	}
 	if m.showDrilldown {
 		return m.updateDrilldown(msg)
 	}
@@ -256,8 +308,7 @@ func (m *FlowMatrixModel) updateDrilldown(msg tea.KeyMsg) tea.Cmd {
 	switch {
 	case key.Matches(msg, k.Close):
 		if m.inspecting {
-			m.inspecting = false
-			m.inspectionView = ""
+			m.EndInspection()
 		} else {
 			m.showDrilldown = false
 		}
@@ -300,14 +351,11 @@ func (m *FlowMatrixModel) ensureVisible() {
 }
 
 func (m *FlowMatrixModel) ensureDrilldownVisible() {
-	visible := m.height - 8
-	if visible < 3 {
-		visible = 3
-	}
+	visible := max(0, m.height-2)
 	if m.drilldownCursor < m.drilldownScroll {
 		m.drilldownScroll = m.drilldownCursor
 	}
-	if m.drilldownCursor >= m.drilldownScroll+visible {
+	if visible > 0 && m.drilldownCursor >= m.drilldownScroll+visible {
 		m.drilldownScroll = m.drilldownCursor - visible + 1
 	}
 }
@@ -821,36 +869,37 @@ func (m FlowMatrixModel) renderFooter() string {
 
 func (m FlowMatrixModel) renderDrilldown() string {
 	if m.inspecting {
-		if m.inspectionView != "" {
-			return m.inspectionView
-		}
-		if issue := m.SelectedDrilldownIssue(); issue != nil {
-			return m.theme.Text.Heading.Render(issue.ID + " - " + issue.Title)
-		}
+		return m.inspectionVP.View()
 	}
-	var b strings.Builder
+	width, height := max(0, m.width), max(0, m.height)
+	if width == 0 || height == 0 {
+		return ""
+	}
+	lines := make([]string, 0, height)
 	pairSet := make(map[flowPairKey]struct{}, len(m.drilldownIssues))
 	for _, endpoint := range m.drilldownIssues {
 		pairSet[endpoint.key] = struct{}{}
 	}
-	b.WriteString(m.theme.Text.Heading.Render(fmt.Sprintf("Blocking relationships for %s (%d)", m.drilldownLabel, len(pairSet))))
-	b.WriteString("\n")
-
-	borderStyle := lipgloss.NewStyle().Foreground(m.theme.Border)
-	b.WriteString(borderStyle.Render(strings.Repeat("─", m.width)))
-	b.WriteString("\n\n")
+	header := m.theme.Text.Heading.Render(fmt.Sprintf("Blocking relationships for %s (%d)", m.drilldownLabel, len(pairSet)))
+	lines = append(lines, ansi.Truncate(header, width, "…"))
+	if len(lines) < height {
+		borderStyle := lipgloss.NewStyle().Foreground(m.theme.Border)
+		lines = append(lines, ansi.Truncate(borderStyle.Render(strings.Repeat("─", width)), width, ""))
+	}
 
 	if len(m.drilldownIssues) == 0 {
-		b.WriteString(m.theme.Text.Metadata.Render("No blocking relationships"))
-		return b.String()
+		if len(lines) < height {
+			empty := m.theme.Text.Metadata.Render("No blocking relationships")
+			lines = append(lines, ansi.Truncate(empty, width, "…"))
+		}
+		return strings.Join(lines, "\n")
 	}
 
-	// Visible rows
-	visible := m.height - 8
-	if visible < 3 {
-		visible = 3
-	}
+	visible := max(0, height-len(lines))
 	start := m.drilldownScroll
+	if start > len(m.drilldownIssues) {
+		start = len(m.drilldownIssues)
+	}
 	end := start + visible
 	if end > len(m.drilldownIssues) {
 		end = len(m.drilldownIssues)
@@ -870,21 +919,18 @@ func (m FlowMatrixModel) renderDrilldown() string {
 		}
 		text := fmt.Sprintf("%sBLOCKER → BLOCKED | %s %s %s [%s] %s", marker,
 			GetStatusIcon(string(iss.Status)), iss.ID, role, iss.Status, iss.Title)
-		row := ansi.Truncate(text, max(1, m.width-1), "…")
+		row := ansi.Truncate(text, width, "…")
 
 		if selected {
-			row = renderSelectedRow(m.theme, row, m.width)
+			row = renderSelectedRow(m.theme, row, width)
 		} else {
 			row = m.theme.Text.Body.Render(row)
 		}
 
-		b.WriteString(row)
-		if i < end-1 {
-			b.WriteString("\n")
-		}
+		lines = append(lines, ansi.Truncate(row, width, "…"))
 	}
 
-	return b.String()
+	return strings.Join(lines, "\n")
 }
 
 // MoveUp moves the cursor up by one

@@ -300,11 +300,53 @@ func (m *Model) refreshFlowMatrix() {
 	m.flowMatrix.keys = m.keys.FlowMatrix
 	// Resolve endpoints against the same scoped corpus as the relationship graph.
 	m.flowMatrix.SetData(&flow, flowIssues)
-	m.flowMatrix.SetSize(m.width, max(3, m.height-2))
+	m.flowMatrix.SetSize(m.width, max(0, m.height-2))
 	if m.mode == ViewFlowMatrix && m.flowMatrix.Inspecting() {
-		m.updateViewportContent()
-		m.flowMatrix.BeginInspection(m.viewport.View())
+		m.renderFlowInspection()
 	}
+}
+
+// renderFlowInspection reuses the normal issue detail renderer at the flow
+// pane's dimensions, but keeps its viewport independent of the list detail.
+func (m *Model) renderFlowInspection() {
+	if m.flowMatrix.SelectedDrilldownIssue() == nil {
+		return
+	}
+	if _, saved := m.flowMatrix.OriginDetail(); !saved {
+		m.flowMatrix.SaveOriginDetail(m.viewport)
+	}
+	originViewport := m.viewport
+	originWidth := originViewport.Width()
+	width := max(1, m.bodyWidth())
+	height := max(0, m.height-1)
+	m.viewport.SetWidth(width)
+	m.viewport.SetHeight(height)
+	m.renderer.SetWidthWithTheme(width, m.theme)
+	m.updateViewportContent()
+	inspection := m.viewport
+	m.viewport = originViewport
+	m.renderer.SetWidthWithTheme(max(1, originWidth), m.theme)
+	if m.flowMatrix.Inspecting() {
+		m.flowMatrix.UpdateInspectionViewport(inspection)
+	} else {
+		m.flowMatrix.BeginInspection(inspection)
+	}
+}
+
+func (m *Model) restoreFlowOriginDetail() {
+	origin, ok := m.flowMatrix.OriginDetail()
+	if !ok {
+		return
+	}
+	layout := m.viewport
+	offset := origin.YOffset()
+	origin.SetWidth(max(0, layout.Width()))
+	origin.SetHeight(max(0, layout.Height()))
+	m.viewport = origin
+	m.renderer.SetWidthWithTheme(max(1, m.viewport.Width()), m.theme)
+	m.updateViewportContent()
+	m.viewport.SetYOffset(offset)
+	m.flowMatrix.ClearOriginDetail()
 }
 
 // refreshActionableView builds the execution plan from the visible set.

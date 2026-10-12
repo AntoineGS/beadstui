@@ -2158,7 +2158,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// fullscreen pane is active (bt-530vn) so the details pane is ready with
 	// current content whenever the user toggles to it, even at widths where
 	// isSplitView is false.
-	if (m.isSplitView || m.fullscreen != fullscreenNone) && m.focused == focusList {
+	if !swallowed && (m.isSplitView || m.fullscreen != fullscreenNone) && m.focused == focusList {
 		m.updateViewportContent()
 	}
 
