@@ -794,6 +794,7 @@ func runSearchCommand(issues, issuesForSearch []model.Issue, robotSearch bool) {
 }
 
 func runTUIProgram(m ui.Model) error {
+	m.SetClipboardTerminalOutput(term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())))
 	// Suppress log output while TUI is running.
 	log.SetOutput(io.Discard)
 

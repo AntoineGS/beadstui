@@ -2,8 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"os/exec"
-	"runtime"
 	"strings"
 	"time"
 
@@ -77,11 +75,7 @@ func (m CassSessionModal) Update(msg tea.Msg) (CassSessionModal, tea.Cmd) {
 				m.selected--
 			}
 		case key.Matches(msg, m.keys.Copy):
-			// Copy search command to clipboard
-			if err := copyToClipboard(m.searchCmd); err == nil {
-				m.copied = true
-				m.copiedAt = time.Now()
-			}
+			return m, func() tea.Msg { return cassClipboardRequestMsg{text: m.searchCmd} }
 		}
 	}
 	return m, nil
@@ -242,42 +236,4 @@ func (m CassSessionModal) HasSessions() bool {
 	return len(m.sessions) > 0
 }
 
-// copyToClipboard copies text to the system clipboard.
-// It uses platform-specific commands and fails silently if unavailable.
-func copyToClipboard(text string) error {
-	var cmd *exec.Cmd
-
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("pbcopy")
-	case "linux":
-		// Try xclip first, then xsel
-		if _, err := exec.LookPath("xclip"); err == nil {
-			cmd = exec.Command("xclip", "-selection", "clipboard")
-		} else if _, err := exec.LookPath("xsel"); err == nil {
-			cmd = exec.Command("xsel", "--clipboard", "--input")
-		} else {
-			return fmt.Errorf("no clipboard utility found")
-		}
-	case "windows":
-		cmd = exec.Command("clip")
-	default:
-		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
-	}
-
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return err
-	}
-
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-
-	if _, err := stdin.Write([]byte(text)); err != nil {
-		return err
-	}
-	stdin.Close()
-
-	return cmd.Wait()
-}
+type cassClipboardRequestMsg struct{ text string }

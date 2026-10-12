@@ -111,11 +111,7 @@ func (m Model) handleBoardKeys(msg tea.KeyMsg) Model {
 	// Copy ID to clipboard (bv-yg39)
 	case key.Matches(msg, kn.CopyID):
 		if selected := m.board.SelectedIssue(); selected != nil {
-			if err := writeClipboard(selected.ID); err != nil {
-				m.setNotice(fmt.Sprintf("Clipboard error: %v", err))
-			} else {
-				m.setStatus(fmt.Sprintf("Copied %s to clipboard", selected.ID))
-			}
+			m.requestClipboard(selected.ID, fmt.Sprintf("Copied %s to clipboard", selected.ID))
 		}
 
 	case key.Matches(msg, kn.FieldEdit):

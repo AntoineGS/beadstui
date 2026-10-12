@@ -215,10 +215,14 @@ func TestCassSessionModal_Update_CopyCommand(t *testing.T) {
 		t.Errorf("Search command should contain keywords, got: %s", modal.searchCmd)
 	}
 
-	// Press 'y' to copy - note: actual clipboard copy may fail in test environment
-	// but the copied flag should be set if successful, we mainly test it doesn't panic
-	modal, _ = modal.Update(tea.KeyPressMsg{Code: 'y', Text: string('y')})
-	// Can't reliably test clipboard in CI, just verify no panic
+	_, cmd := modal.Update(tea.KeyPressMsg{Code: 'y', Text: string('y')})
+	if cmd == nil {
+		t.Fatal("copy key should request parent clipboard operation")
+	}
+	msg, ok := cmd().(cassClipboardRequestMsg)
+	if !ok || msg.text != modal.searchCmd {
+		t.Fatalf("copy request = %#v, want captured command %q", msg, modal.searchCmd)
+	}
 }
 
 func TestCassSessionModal_View_RendersCorrectly(t *testing.T) {
@@ -614,11 +618,12 @@ func TestCassSessionModal_CopyFeedbackTiming(t *testing.T) {
 		t.Error("copied should be false initially")
 	}
 
-	// Simulate copy (may fail in CI but should set the flag if clipboard available)
-	modal, _ = modal.Update(tea.KeyPressMsg{Code: 'y', Text: string('y')})
+	_, cmd := modal.Update(tea.KeyPressMsg{Code: 'y', Text: string('y')})
+	if cmd == nil {
+		t.Fatal("copy did not request clipboard operation")
+	}
 
-	// If clipboard is available, copied should be true and copiedAt set
-	// We can't reliably test this in CI, but the View() shouldn't panic
+	// The modal remains renderable while the parent model performs the async copy.
 	view := modal.View()
 	if view == "" {
 		t.Error("View should render after copy attempt")

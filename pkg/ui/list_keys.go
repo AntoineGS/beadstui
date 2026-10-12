@@ -163,11 +163,7 @@ func (m Model) handleListKeys(msg tea.KeyMsg) Model {
 			m.setNotice("No issue selected")
 		} else if issueItem, ok := selectedItem.(IssueItem); ok {
 			id := issueIDForClipboard(issueItem)
-			if err := writeClipboard(id); err != nil {
-				m.setNotice(fmt.Sprintf("Clipboard error: %v", err))
-			} else {
-				m.setStatus(fmt.Sprintf("Copied %s to clipboard", id))
-			}
+			m.requestClipboard(id, fmt.Sprintf("Copied %s to clipboard", id))
 		}
 	case key.Matches(msg, k.SplitFocusToggle):
 		// Split-view focus toggle. Moved from the global dispatcher per

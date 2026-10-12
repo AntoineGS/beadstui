@@ -779,6 +779,9 @@ type DataState struct {
 
 // Model is the main Bubble Tea model for the beads viewer
 type Model struct {
+	clipboard          *clipboardController
+	clipboardCmd       tea.Cmd
+	clipboardRequestID uint64
 	// Core data, analysis engine, and data loading infrastructure.
 	data *DataState
 
@@ -2032,6 +2035,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case writeResultMsg:
 		return m.handleWriteResult(msg)
 
+	case clipboardResultMsg:
+		return m.handleClipboardResult(msg)
+
+	case cassClipboardRequestMsg:
+		if m.activeModal == ModalCassSession {
+			m.requestClipboard(msg.text, fmt.Sprintf("%s Copied Cass search command to clipboard", activeGlyphs.Clipboard))
+			cmds = append(cmds, m.takeClipboardCmd())
+		}
+
 	case writeSpinnerTickMsg:
 		return m.handleWriteSpinnerTick()
 
@@ -2047,6 +2059,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		m, cmd = m.handleKeyPress(msg)
 		cmds = append(cmds, cmd)
+		cmds = append(cmds, m.takeClipboardCmd())
 
 	case tea.MouseWheelMsg:
 		m, cmd = m.handleMouseWheel(msg)
@@ -2190,6 +2203,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // Stop cleans up resources (file watcher, instance lock, background worker, etc.)
 // Should be called when the program exits
 func (m *Model) Stop() {
+	if m.clipboard != nil {
+		m.clipboard.cancelPending()
+	}
 	if m.data.backgroundWorker != nil {
 		m.data.backgroundWorker.Stop()
 	}

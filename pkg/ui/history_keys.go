@@ -197,11 +197,7 @@ func (m Model) handleHistoryKeys(msg tea.KeyMsg) Model {
 			}
 		}
 		if sha != "" {
-			if err := writeClipboard(sha); err != nil {
-				m.setNotice(fmt.Sprintf("Clipboard error: %v", err))
-			} else {
-				m.setStatus(fmt.Sprintf("Copied %s to clipboard", shortSHA))
-			}
+			m.requestClipboard(sha, fmt.Sprintf("Copied %s to clipboard", shortSHA))
 		} else {
 			m.setNotice("No commit selected")
 		}
