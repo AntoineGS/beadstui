@@ -15,7 +15,11 @@ func (m Model) handleFlowMatrixKeys(msg tea.KeyMsg) Model {
 	case key.Matches(msg, k.Close):
 		// If in drilldown mode, close drilldown first
 		if m.flowMatrix.showDrilldown {
-			m.flowMatrix.showDrilldown = false
+			if m.flowMatrix.Inspecting() {
+				m.flowMatrix.EndInspection()
+			} else {
+				m.flowMatrix.showDrilldown = false
+			}
 			return m
 		}
 		// Close flow matrix view
@@ -27,25 +31,12 @@ func (m Model) handleFlowMatrixKeys(msg tea.KeyMsg) Model {
 	case key.Matches(msg, k.TogglePanel):
 		m.flowMatrix.TogglePanel()
 	case key.Matches(msg, k.Enter):
-		// Open drilldown or jump to issue
+		// Inspect the selected endpoint in place, preserving flow and list state.
 		if m.flowMatrix.showDrilldown {
-			// Jump to selected issue from drilldown
 			if selectedIssue := m.flowMatrix.SelectedDrilldownIssue(); selectedIssue != nil {
-				for i, item := range m.list.Items() {
-					if issueItem, ok := item.(IssueItem); ok && issueItem.Issue.ID == selectedIssue.ID {
-						m.list.Select(i)
-						break
-					}
-				}
-				m.focused = focusList
-				if m.isSplitView {
-					m.focused = focusDetail
-				} else {
-					m.showDetails = true
-					m.focused = focusDetail
-					m.viewport.GotoTop()
-				}
 				m.updateViewportContent()
+				m.viewport.GotoTop()
+				m.flowMatrix.BeginInspection(m.viewport.View())
 			}
 		} else {
 			// Open drilldown for selected label

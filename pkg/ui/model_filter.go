@@ -287,14 +287,24 @@ func (m *Model) refreshAttentionView() {
 	m.insightsPanel.SetSize(m.width, max(3, m.height-2))
 }
 
-// refreshFlowMatrix computes cross-label flow over the visible set.
+// refreshFlowMatrix computes relationships from the active repository scope,
+// before status/label and Bubbles text filters. The issue-list filter must not
+// hide a blocker or blocked endpoint.
 func (m *Model) refreshFlowMatrix() {
 	cfg := analysis.DefaultLabelHealthConfig()
-	flow := analysis.ComputeCrossLabelFlow(m.filter.visible, cfg)
-	m.flowMatrix = NewFlowMatrixModel(m.theme)
+	flowIssues := m.applySpec(m.filterSpec().Without(DimPrimary | DimLabels))
+	flow := analysis.ComputeCrossLabelFlow(flowIssues, cfg)
+	if !m.flowMatrix.initialized {
+		m.flowMatrix = NewFlowMatrixModel(m.theme)
+	}
 	m.flowMatrix.keys = m.keys.FlowMatrix
-	m.flowMatrix.SetData(&flow, m.filter.visible)
+	// Resolve endpoints against the same scoped corpus as the relationship graph.
+	m.flowMatrix.SetData(&flow, flowIssues)
 	m.flowMatrix.SetSize(m.width, max(3, m.height-2))
+	if m.mode == ViewFlowMatrix && m.flowMatrix.Inspecting() {
+		m.updateViewportContent()
+		m.flowMatrix.BeginInspection(m.viewport.View())
+	}
 }
 
 // refreshActionableView builds the execution plan from the visible set.
@@ -857,19 +867,30 @@ func (m *Model) recalculateSplitPaneSizes() {
 }
 
 func (m *Model) updateViewportContent() {
-	selectedItem := m.list.SelectedItem()
-	if selectedItem == nil {
-		m.viewport.SetContent(m.theme.Text.Metadata.Render("No issues selected"))
-		return
+	var item model.Issue
+	var issueItem IssueItem
+	if m.mode == ViewFlowMatrix && m.flowMatrix.showDrilldown {
+		if selected := m.flowMatrix.SelectedDrilldownIssue(); selected != nil {
+			item = *selected
+			issueItem = IssueItem{Issue: item}
+		} else {
+			m.viewport.SetContent(m.theme.Text.Metadata.Render("No issues selected"))
+			return
+		}
+	} else {
+		selectedItem := m.list.SelectedItem()
+		if selectedItem == nil {
+			m.viewport.SetContent(m.theme.Text.Metadata.Render("No issues selected"))
+			return
+		}
+		selectedIssueItem, ok := selectedItem.(IssueItem)
+		if !ok {
+			m.viewport.SetContent(m.theme.Text.Body.Foreground(m.theme.Blocked).Render("Error: invalid item type"))
+			return
+		}
+		issueItem = selectedIssueItem
+		item = issueItem.Issue
 	}
-
-	// Safe type assertion
-	issueItem, ok := selectedItem.(IssueItem)
-	if !ok {
-		m.viewport.SetContent(m.theme.Text.Body.Foreground(m.theme.Blocked).Render("Error: invalid item type"))
-		return
-	}
-	item := issueItem.Issue
 
 	// Detail panel is composed as a []renderSection: "md" fragments are
 	// concatenated and routed through Glamour; "ansi" fragments are pre-

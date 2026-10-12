@@ -819,6 +819,40 @@ func TestFlowMatrixRespectsActiveRepos(t *testing.T) {
 	}
 }
 
+func TestFlowMatrixEndpointInspectionIgnoresListFilter(t *testing.T) {
+	issues := []model.Issue{
+		{ID: "bt-blocker", Title: "Blocker detail", Labels: []string{"api"}, Status: model.StatusOpen},
+		{ID: "bt-blocked", Title: "Blocked detail", Labels: []string{"web"}, Status: model.StatusOpen,
+			Dependencies: []*model.Dependency{{DependsOnID: "bt-blocker", Type: model.DepBlocks}}},
+		{ID: "bt-unrelated", Title: "Unrelated", Labels: []string{"api"}, Status: model.StatusOpen},
+	}
+	m := NewModel(issues, nil, "", nil, nil)
+	m.mode = ViewFlowMatrix
+	m.list.SetFilterText("bt-unrelated")
+	m.refreshFlowMatrix()
+	m.flowMatrix.SetSize(48, 12)
+	if selected := m.list.SelectedItem(); selected == nil || selected.(IssueItem).Issue.ID != "bt-unrelated" {
+		t.Fatalf("fixture list filter did not select unrelated issue: %v", selected)
+	}
+	m.flowMatrix.OpenDrilldown()
+	if got := ansi.Strip(m.flowMatrix.View()); !strings.Contains(got, "bt-blocker") || !strings.Contains(got, "bt-blocked") || strings.Contains(got, "bt-unrelated") {
+		t.Fatalf("flow drilldown should contain only the actual pair:\n%s", got)
+	}
+	m.flowMatrix.MoveDown() // select blocked endpoint
+	m.updateViewportContent()
+	m.flowMatrix.BeginInspection(m.viewport.View())
+	if got := ansi.Strip(m.viewport.View()); !strings.Contains(got, "Blocked detail") {
+		t.Fatalf("hidden endpoint detail not rendered:\n%s", got)
+	}
+	if selected := m.list.SelectedItem(); selected == nil || selected.(IssueItem).Issue.ID != "bt-unrelated" {
+		t.Fatalf("inspection changed the filtered selection: %v", selected)
+	}
+	m.flowMatrix.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+	if got := ansi.Strip(m.flowMatrix.View()); !strings.Contains(got, "BLOCKER → BLOCKED") {
+		t.Fatalf("return from inspection did not restore relationship:\n%s", got)
+	}
+}
+
 // buildSharedLabelFlowFixture returns a bug-blocks-feature dependency pair
 // per project, using the SAME label names ("bug"/"feature") across projects.
 // getCrossFlowsForLabel's return type (labelFlowSummary) aggregates by label

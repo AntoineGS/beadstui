@@ -125,7 +125,10 @@ func TestFlowPlainSelectedTextRole(t *testing.T) {
 	if !strings.Contains(out, theme.Text.Heading.Render("IMPACT SUMMARY")) {
 		t.Error("flow heading ignored role")
 	}
-	m.SetData(&analysis.CrossLabelFlow{Labels: []string{"api", "web"}, FlowMatrix: [][]int{{0, 2}, {0, 0}}, TotalCrossLabelDeps: 2}, []model.Issue{{ID: "ordinary-id", Title: "ordinary title", Labels: []string{"api"}, Status: model.StatusOpen}})
+	m.SetData(&analysis.CrossLabelFlow{
+		Labels: []string{"api", "web"}, FlowMatrix: [][]int{{0, 1}, {0, 0}}, TotalCrossLabelDeps: 1,
+		Dependencies: []analysis.LabelDependency{{FromLabel: "api", ToLabel: "web", BlockingPairs: []analysis.BlockingPair{{BlockerID: "ordinary-id", BlockedID: "blocked-id"}}}}},
+		[]model.Issue{{ID: "ordinary-id", Title: "ordinary title", Status: model.StatusOpen}, {ID: "blocked-id", Title: "blocked title", Status: model.StatusBlocked}})
 	m.OpenDrilldown()
 	out = m.View()
 	if !inSelectedSpan(out, theme, "ordinary-id", "ordinary title") {
@@ -334,6 +337,72 @@ func TestFlowMatrixModelDrilldown(t *testing.T) {
 	view := m.View()
 	if view == "" {
 		t.Error("View() should not be empty after OpenDrilldown")
+	}
+}
+
+func TestFlowMatrixDrillsIntoDeduplicatedBlockingPairs(t *testing.T) {
+	theme := testFlowTheme()
+	flow := &analysis.CrossLabelFlow{
+		Labels:     []string{"a", "b", "c"},
+		FlowMatrix: [][]int{{0, 1, 0}, {0, 0, 0}, {0, 0, 0}},
+		Dependencies: []analysis.LabelDependency{
+			{FromLabel: "a", ToLabel: "b", BlockingPairs: []analysis.BlockingPair{{BlockerID: "bt-blocker", BlockedID: "bt-blocked"}}},
+			{FromLabel: "a", ToLabel: "c", BlockingPairs: []analysis.BlockingPair{{BlockerID: "bt-blocker", BlockedID: "bt-blocked"}}},
+		},
+	}
+	issues := []model.Issue{
+		{ID: "bt-blocker", Title: "Blocker issue", Status: model.StatusOpen},
+		{ID: "bt-blocked", Title: "Blocked issue", Status: model.StatusBlocked},
+		{ID: "bt-unrelated", Title: "Unrelated issue", Status: model.StatusOpen, Labels: []string{"a"}},
+	}
+	m := ui.NewFlowMatrixModel(theme)
+	m.SetData(flow, issues)
+	m.SetSize(48, 12)
+	m.OpenDrilldown()
+
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "bt-blocker") || !strings.Contains(view, "bt-blocked") {
+		t.Fatalf("drilldown must show both relationship endpoints:\n%s", view)
+	}
+	if strings.Contains(view, "bt-unrelated") {
+		t.Fatalf("drilldown included unrelated label member:\n%s", view)
+	}
+	if got := strings.Count(view, "BLOCKER → BLOCKED"); got != 2 {
+		t.Fatalf("deduplicated pair should render two endpoint rows, got %d:\n%s", got, view)
+	}
+	if !strings.Contains(view, "BLOCKER → BLOCKED") {
+		t.Fatalf("pair direction missing from drilldown:\n%s", view)
+	}
+}
+
+func TestFlowMatrixDrilldownRefreshRetainsPairAndEndpoint(t *testing.T) {
+	theme := testFlowTheme()
+	pair := analysis.BlockingPair{BlockerID: "a", BlockedID: "b"}
+	flow := &analysis.CrossLabelFlow{Labels: []string{"api", "web"}, FlowMatrix: [][]int{{0, 1}, {0, 0}}, Dependencies: []analysis.LabelDependency{{FromLabel: "api", ToLabel: "web", BlockingPairs: []analysis.BlockingPair{pair}}}}
+	issues := []model.Issue{{ID: "a", Title: "A"}, {ID: "b", Title: "B"}}
+	m := ui.NewFlowMatrixModel(theme)
+	m.SetData(flow, issues)
+	m.SetSize(80, 20)
+	m.OpenDrilldown()
+	m.MoveDown() // Select the blocked endpoint.
+	m.SetData(flow, issues)
+	if got := m.SelectedDrilldownIssue(); got == nil || got.ID != "b" {
+		t.Fatalf("refresh lost selected endpoint: got %v, want b", got)
+	}
+	m.SetData(&analysis.CrossLabelFlow{Labels: []string{"api", "web"}, FlowMatrix: [][]int{{0, 1}, {0, 0}}}, issues)
+	if got := ansi.Strip(m.View()); !strings.Contains(got, "No blocking relationships") {
+		t.Fatalf("empty refreshed drilldown should be bounded empty state, got:\n%s", got)
+	}
+	m.SetData(flow, issues)
+	m.MoveDown()
+	m.BeginInspection("detail")
+	m.SetData(flow, issues[:1]) // blocked endpoint disappeared; clamp to blocker and unwind detail
+	if m.Inspecting() || m.SelectedDrilldownIssue() == nil || m.SelectedDrilldownIssue().ID != "a" {
+		t.Fatalf("deleted endpoint did not clamp and unwind inspection: selected=%v inspecting=%t", m.SelectedDrilldownIssue(), m.Inspecting())
+	}
+	m.SetData(&analysis.CrossLabelFlow{Labels: []string{"web"}, FlowMatrix: [][]int{{0}}}, issues[:1])
+	if got := ansi.Strip(m.View()); strings.Contains(got, "Blocking relationships for") {
+		t.Fatalf("vanished selected label left drilldown active:\n%s", got)
 	}
 }
 

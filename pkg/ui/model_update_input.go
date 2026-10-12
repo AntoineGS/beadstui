@@ -942,6 +942,10 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keys.Global.Cancel):
 			// esc: context-aware cascade closing modals and going back.
+			if m.mode == ViewFlowMatrix && m.flowMatrix.Inspecting() {
+				m.flowMatrix.EndInspection()
+				return m, nil
+			}
 			if m.fullscreen != fullscreenNone {
 				// Exit the on-demand fullscreen pane first (bt-530vn).
 				m.exitFullscreenPane()
