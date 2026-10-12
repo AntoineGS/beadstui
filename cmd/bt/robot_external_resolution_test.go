@@ -1,6 +1,11 @@
 package main
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -96,6 +101,46 @@ func TestRobotClaimCommandsUseIssueSpecificWorkspaceRoute(t *testing.T) {
 	}
 	if got := global.routedBDCommand("bg-a", "update", "bg-a", "--claim"); got != "" {
 		t.Fatalf("unsupported global write emitted unscoped command %q", got)
+	}
+}
+
+func TestRoutedBDCommandExecutesPosixWithQuotedProjectPath(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Fatal("POSIX sh is required for the routed-command execution test")
+	}
+	root := t.TempDir()
+	project := filepath.Join(root, "project with ' quote")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stubDir := filepath.Join(root, "stub-bin")
+	if err := os.MkdirAll(stubDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(root, "bd.log")
+	stub := "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > \"$BT_BD_LOG\"\n"
+	if err := os.WriteFile(filepath.Join(stubDir, "bd"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rc := &robotCtx{
+		issuesForSearch: []model.Issue{{ID: "bt-a", Status: model.StatusOpen}},
+		routeTable:      bdroute.SingleProject(project),
+	}
+	command := rc.routedBDCommand("bt-a", "show", "bt-a")
+	cmd := exec.Command(sh, "-c", command)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "PATH="+stubDir+string(os.PathListSeparator)+os.Getenv("PATH"), "BT_BD_LOG="+logPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("execute routed command %q: %v\n%s", command, err, out)
+	}
+	got, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read stub log: %v", err)
+	}
+	want := []string{project, "show", "bt-a"}
+	if lines := strings.Split(strings.TrimSuffix(string(got), "\n"), "\n"); !reflect.DeepEqual(lines, want) {
+		t.Fatalf("stub cwd/args = %q, want %q", lines, want)
 	}
 }
 

@@ -228,6 +228,37 @@ func TestSnapshotBuilderReadinessResolvesExternalPrerequisites(t *testing.T) {
 	}
 }
 
+func TestSnapshotInstallAndRefreshReplaceReadinessAuthority(t *testing.T) {
+	issues := []model.Issue{
+		{ID: "candidate", Status: model.StatusOpen, Dependencies: []*model.Dependency{{DependsOnID: "gate", Type: model.DepBlocks}}},
+		{ID: "gate", Status: model.StatusOpen},
+	}
+	m := newSizedModel(t, issues, 100, 30)
+	m.data.snapshotInitPending = true
+	m.SetFilter("ready")
+	first := NewSnapshotBuilder(issues).Build()
+	installed, _ := m.handleSnapshotReady(SnapshotReadyMsg{Snapshot: first})
+	if installed.data.readiness != first.Readiness || !installed.data.readinessEvaluatedAt.Equal(first.EvaluatedAt) {
+		t.Fatal("first snapshot did not install its readiness authority and evaluation time")
+	}
+	for _, issue := range installed.filter.visible {
+		if issue.ID == "candidate" {
+			t.Fatal("first installed snapshot exposed candidate with open gate")
+		}
+	}
+
+	refreshedIssues := append([]model.Issue(nil), issues...)
+	refreshedIssues[1].Status = model.StatusClosed
+	second := NewSnapshotBuilder(refreshedIssues).Build()
+	refreshed, _ := installed.handleSnapshotReady(SnapshotReadyMsg{Snapshot: second})
+	if refreshed.data.readiness != second.Readiness || !refreshed.data.readinessEvaluatedAt.Equal(second.EvaluatedAt) {
+		t.Fatal("later snapshot did not replace readiness authority and evaluation time")
+	}
+	if len(refreshed.filter.visible) != 1 || refreshed.filter.visible[0].ID != "candidate" {
+		t.Fatalf("refreshed snapshot did not expose candidate after gate closure: %v", idsOf(refreshed.filter.visible))
+	}
+}
+
 func TestSnapshotBuilder_TombstoneCounts(t *testing.T) {
 	issues := []model.Issue{
 		{ID: "open-1", Title: "Open", Status: model.StatusOpen},

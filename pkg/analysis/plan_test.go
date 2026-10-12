@@ -218,6 +218,36 @@ func TestExecutionPlanWhatIfIncludesInheritedParentGate(t *testing.T) {
 	t.Fatalf("execution plan did not report child as unblocked by gate: %+v", got.Tracks)
 }
 
+func TestExecutionPlanInheritedUnblockKeepsSharedHiddenGate(t *testing.T) {
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	corpus := []model.Issue{
+		{ID: "gate", Status: model.StatusOpen},
+		{ID: "hidden-gate", Status: model.StatusOpen},
+		{ID: "parent", Status: model.StatusOpen, Dependencies: []*model.Dependency{{DependsOnID: "gate", Type: model.DepBlocks}}},
+		{ID: "child", Status: model.StatusOpen, Dependencies: []*model.Dependency{
+			{DependsOnID: "parent", Type: model.DepParentChild},
+			{DependsOnID: "hidden-gate", Type: model.DepBlocks},
+		}},
+	}
+	selected := []model.Issue{corpus[0], corpus[3]}
+	a := analysis.NewAnalyzerWithReadiness(selected, model.NewReadinessIndex(corpus), now)
+	plan := a.GetExecutionPlan()
+	for _, track := range plan.Tracks {
+		for _, item := range track.Items {
+			if item.ID != "gate" {
+				continue
+			}
+			for _, unblocked := range item.UnblocksIDs {
+				if unblocked == "child" {
+					t.Fatal("completing inherited gate incorrectly ignored the hidden shared prerequisite")
+				}
+			}
+			return
+		}
+	}
+	t.Fatalf("execution plan omitted selected gate: %+v", plan.Tracks)
+}
+
 func TestGenerateTrackID_Unbounded(t *testing.T) {
 	// Spot-check boundaries: 1 -> A, 26 -> Z, 27 -> AA, 52 -> AZ, 53 -> BA, 702 -> ZZ, 703 -> AAA
 	cases := map[int]string{

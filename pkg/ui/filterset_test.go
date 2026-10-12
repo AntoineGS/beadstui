@@ -151,6 +151,19 @@ func TestReplaceIssuesRebuildsReadinessAuthority(t *testing.T) {
 	if m.ac.countReady != 1 {
 		t.Fatalf("footer ready count = %d after gate closure, want 1", m.ac.countReady)
 	}
+	addedBlocker := append([]model.Issue(nil), closed...)
+	addedBlocker[1].Status = model.StatusOpen
+	addedBlocker = append(addedBlocker, model.Issue{ID: "late-blocker", Status: model.StatusOpen})
+	addedBlocker[0].Dependencies = append(addedBlocker[0].Dependencies, &model.Dependency{DependsOnID: "late-blocker", Type: model.DepBlocks})
+	m.replaceIssues(addedBlocker)
+	if len(m.filter.visible) != 2 || m.ac.countReady != 2 {
+		t.Fatalf("new blocker on reload left stale candidate readiness: visible=%v ready=%d", idsOf(m.filter.visible), m.ac.countReady)
+	}
+	for _, issue := range m.filter.visible {
+		if issue.ID == "candidate" {
+			t.Fatalf("candidate remained ready after newly added blocker: %v", idsOf(m.filter.visible))
+		}
+	}
 
 	deferredUntil := time.Now().Add(time.Hour)
 	deferred := []model.Issue{{ID: "new", Status: model.StatusOpen, DeferUntil: &deferredUntil}}
@@ -208,6 +221,42 @@ func TestStatusTickRefreshesExpiredReadiness(t *testing.T) {
 	}
 	if len(next.actionableView.plan.Tracks) != 1 || next.actionableView.plan.Tracks[0].Items[0].ID != "a" {
 		t.Fatalf("open actionable view not refreshed at expiry: %+v", next.actionableView.plan)
+	}
+	if next.ac.countReady != 1 {
+		t.Fatalf("footer ready count after expiry = %d, want 1", next.ac.countReady)
+	}
+	if len(next.ac.triage.QuickWins) == 0 || next.ac.triage.QuickWins[0].ID != "a" {
+		t.Fatalf("quick wins did not refresh at expiry: %+v", next.ac.triage.QuickWins)
+	}
+	next.openInsightsView()
+	if len(next.insightsPanel.topPicks) != 1 || next.insightsPanel.topPicks[0].ID != "a" {
+		t.Fatalf("open insights top picks did not reflect expiry: %+v", next.insightsPanel.topPicks)
+	}
+	if len(next.insightsPanel.recommendations) != 1 || next.insightsPanel.recommendations[0].ID != "a" {
+		t.Fatalf("open insights recommendations did not reflect expiry: %+v", next.insightsPanel.recommendations)
+	}
+}
+
+func TestStatusTickRefreshesOpenInsightsAtExpiry(t *testing.T) {
+	evaluatedAt := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	expiry := evaluatedAt.Add(time.Hour)
+	issue := model.Issue{ID: "insights-expiry", Title: "Deferred insight", Status: model.StatusOpen, IssueType: model.TypeTask, DeferUntil: &expiry}
+	m := newSizedModel(t, []model.Issue{issue}, 140, 40)
+	m.data.readinessEvaluatedAt = evaluatedAt
+	m.data.analyzer = analysis.NewAnalyzerWithReadiness(m.data.issues, m.data.readiness, evaluatedAt)
+	m.ac.triageWaitPhase2 = false
+	m.SetFilter("all")
+	m.applyFilter()
+	m.openInsightsView()
+	if len(m.insightsPanel.topPicks) != 0 {
+		t.Fatalf("precondition: future-deferred issue appeared in insights picks: %+v", m.insightsPanel.topPicks)
+	}
+	next, _ := m.handleStatusTickAt(expiry)
+	if next.mode != ViewInsights || len(next.insightsPanel.topPicks) != 1 || next.insightsPanel.topPicks[0].ID != issue.ID {
+		t.Fatalf("open insights did not refresh top picks at expiry: mode=%v picks=%+v", next.mode, next.insightsPanel.topPicks)
+	}
+	if len(next.insightsPanel.recommendations) != 1 || next.insightsPanel.recommendations[0].ID != issue.ID {
+		t.Fatalf("open insights did not refresh recommendations at expiry: %+v", next.insightsPanel.recommendations)
 	}
 }
 

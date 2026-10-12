@@ -247,6 +247,13 @@ func (rc *robotCtx) runEmitScript(scriptLimit int, scriptFormat string) {
 	if len(recs) > limit {
 		recs = recs[:limit]
 	}
+	routeShell := "posix"
+	if scriptFormat == "fish" {
+		routeShell = "fish"
+	}
+	routedCommand := func(issueID string, args ...string) string {
+		return rc.routedBDCommandForShell(issueID, routeShell, args...)
+	}
 
 	// Build script header with hash/config
 	var sb strings.Builder
@@ -283,9 +290,9 @@ func (rc *robotCtx) runEmitScript(scriptLimit int, scriptFormat string) {
 			}
 
 			// Claim command
-			claimCommand := rc.routedBDCommand(rec.ID, "update", rec.ID, "--status=in_progress")
+			claimCommand := routedCommand(rec.ID, "update", rec.ID, "--status=in_progress")
 			sb.WriteString(fmt.Sprintf("# To claim: %s\n", claimCommand))
-			showCommand := rc.routedBDCommand(rec.ID, "show", rec.ID)
+			showCommand := routedCommand(rec.ID, "show", rec.ID)
 			sb.WriteString(showCommand + "\n")
 			sb.WriteString("\n")
 		}
@@ -294,12 +301,12 @@ func (rc *robotCtx) runEmitScript(scriptLimit int, scriptFormat string) {
 		sb.WriteString("# === Quick Actions ===\n")
 		sb.WriteString("# To claim the top pick:\n")
 		if len(recs) > 0 {
-			sb.WriteString("# " + rc.routedBDCommand(recs[0].ID, "update", recs[0].ID, "--status=in_progress") + "\n")
+			sb.WriteString("# " + routedCommand(recs[0].ID, "update", recs[0].ID, "--status=in_progress") + "\n")
 		}
 		sb.WriteString("#\n")
 		sb.WriteString("# To claim all listed items (uncomment to enable):\n")
 		for _, rec := range recs {
-			sb.WriteString("# " + rc.routedBDCommand(rec.ID, "update", rec.ID, "--status=in_progress") + "\n")
+			sb.WriteString("# " + routedCommand(rec.ID, "update", rec.ID, "--status=in_progress") + "\n")
 		}
 	}
 

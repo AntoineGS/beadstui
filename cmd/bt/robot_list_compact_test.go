@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -227,6 +228,123 @@ func TestEmitScriptDoesNotSuggestClaimsForNonclaimableIssues(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "No actionable recommendations available") {
 		t.Fatalf("emit-script omitted no-pick output:\n%s", out)
+	}
+}
+
+func TestRobotListActionableRecipeUsesFullReadinessAndScopesCandidates(t *testing.T) {
+	dir := t.TempDir()
+	beadsDir := filepath.Join(dir, ".beads")
+	if err := os.MkdirAll(beadsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture := `{"id":"bt-open","title":"Open blocker","status":"open","issue_type":"task"}
+{"id":"bt-closed-gate","title":"Closed gate","status":"closed","issue_type":"task"}
+{"id":"bt-tomb-gate","title":"Tombstone gate","status":"tombstone","issue_type":"task"}
+{"id":"cass-x","title":"Closed alias gate","status":"closed","issue_type":"task"}
+{"id":"cass-y","title":"Open alias gate","status":"open","issue_type":"task"}
+{"id":"bt-parent","title":"Parent","status":"open","issue_type":"epic","dependencies":[{"depends_on_id":"bt-parent-gate","type":"blocks"}]}
+{"id":"bt-parent-gate","title":"Parent gate","status":"open","issue_type":"task"}
+{"id":"bt-open-dep","title":"Open dependency candidate","status":"open","issue_type":"task","labels":["area:cli"],"dependencies":[{"depends_on_id":"bt-open","type":"blocks"}]}
+{"id":"bt-missing-dep","title":"Missing dependency candidate","status":"open","issue_type":"task","labels":["area:cli"],"dependencies":[{"depends_on_id":"bt-absent","type":"blocks"}]}
+{"id":"bt-closed-dep","title":"Closed dependency candidate","status":"open","issue_type":"task","labels":["area:cli"],"dependencies":[{"depends_on_id":"bt-closed-gate","type":"blocks"}]}
+{"id":"bt-tomb-dep","title":"Tombstone dependency candidate","status":"open","issue_type":"task","labels":["area:cli"],"dependencies":[{"depends_on_id":"bt-tomb-gate","type":"blocks"}]}
+{"id":"bt-alias-closed","title":"Closed external alias candidate","status":"open","issue_type":"task","labels":["area:cli"],"dependencies":[{"depends_on_id":"external:cass:x","type":"blocks"}]}
+{"id":"bt-alias-open","title":"Open external alias candidate","status":"open","issue_type":"task","labels":["area:cli"],"dependencies":[{"depends_on_id":"external:cass:y","type":"blocks"}]}
+{"id":"bt-child","title":"Parent gate candidate","status":"open","issue_type":"task","labels":["area:cli"],"dependencies":[{"depends_on_id":"bt-parent","type":"parent-child"}]}
+{"id":"bt-deferred","title":"Deferred candidate","status":"open","issue_type":"task","labels":["area:cli"],"defer_until":"2099-01-01T00:00:00Z"}
+{"id":"bt-ready","title":"Ready candidate","status":"open","issue_type":"task","labels":["area:cli"]}
+{"id":"other-ready","title":"Other source candidate","status":"open","issue_type":"task","labels":["area:cli"]}
+`
+	if err := os.WriteFile(filepath.Join(beadsDir, "beads.jsonl"), []byte(fixture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := buildTestBinary(t)
+	cmd := exec.Command(exe, "robot", "list", "--source", "bt", "--label", "area:cli", "--bql", "status=open", "--recipe", "actionable")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "BT_TEST_MODE=1", "BT_NO_BROWSER=1")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("robot list actionable recipe failed: %v\n%s", err, out)
+	}
+	var payload struct {
+		Count  int `json:"count"`
+		Issues []struct {
+			ID string `json:"id"`
+		} `json:"issues"`
+	}
+	if err := json.Unmarshal(out, &payload); err != nil {
+		t.Fatalf("decode actionable recipe list: %v\n%s", err, out)
+	}
+	got := make([]string, 0, len(payload.Issues))
+	for _, issue := range payload.Issues {
+		got = append(got, issue.ID)
+	}
+	sort.Strings(got)
+	want := []string{"bt-alias-closed", "bt-closed-dep", "bt-ready", "bt-tomb-dep"}
+	if !reflect.DeepEqual(got, want) || payload.Count != len(want) {
+		t.Fatalf("actionable recipe list IDs=%v count=%d, want %v", got, payload.Count, want)
+	}
+	repoScoped := exec.Command(exe, "robot", "list", "--repo", "bt", "--recipe", "actionable")
+	repoScoped.Dir = dir
+	repoScoped.Env = cmd.Env
+	repoOut, err := repoScoped.Output()
+	if err != nil {
+		t.Fatalf("repo-scoped actionable list failed: %v\n%s", err, repoOut)
+	}
+	var repoPayload struct {
+		Issues []struct {
+			ID string `json:"id"`
+		} `json:"issues"`
+	}
+	if err := json.Unmarshal(repoOut, &repoPayload); err != nil {
+		t.Fatalf("decode repo-scoped list: %v\n%s", err, repoOut)
+	}
+	for _, issue := range repoPayload.Issues {
+		if strings.HasPrefix(issue.ID, "cass-") || strings.HasPrefix(issue.ID, "other-") {
+			t.Fatalf("--repo bt leaked candidate %q: %s", issue.ID, repoOut)
+		}
+	}
+	if len(repoPayload.Issues) == 0 {
+		t.Fatalf("--repo bt removed every actionable candidate: %s", repoOut)
+	}
+	triageCmd := exec.Command(exe, "robot", "triage", "--source", "bt", "--label", "area:cli")
+	triageCmd.Dir = dir
+	triageCmd.Env = cmd.Env
+	triageOut, err := triageCmd.Output()
+	if err != nil {
+		t.Fatalf("scoped triage failed: %v\n%s", err, triageOut)
+	}
+	var triagePayload struct {
+		Triage struct {
+			Meta struct {
+				IssueCount int `json:"issue_count"`
+			} `json:"meta"`
+		} `json:"triage"`
+	}
+	if err := json.Unmarshal(triageOut, &triagePayload); err != nil {
+		t.Fatalf("decode scoped triage: %v\n%s", err, triageOut)
+	}
+	if triagePayload.Triage.Meta.IssueCount != 9 {
+		t.Fatalf("triage --source bt --label area:cli issue_count = %d, want 9", triagePayload.Triage.Meta.IssueCount)
+	}
+	emptyTriage := exec.Command(exe, "robot", "triage", "--source", "bt", "--label", "not-present")
+	emptyTriage.Dir = dir
+	emptyTriage.Env = cmd.Env
+	emptyOut, err := emptyTriage.Output()
+	if err != nil {
+		t.Fatalf("empty scoped triage failed: %v\n%s", err, emptyOut)
+	}
+	if err := json.Unmarshal(emptyOut, &triagePayload); err != nil {
+		t.Fatalf("decode empty scoped triage: %v\n%s", err, emptyOut)
+	}
+	if triagePayload.Triage.Meta.IssueCount != 0 {
+		t.Fatalf("empty triage label scope issue_count = %d, want 0", triagePayload.Triage.Meta.IssueCount)
+	}
+	unknown := exec.Command(exe, "robot", "list", "--recipe", "not-a-recipe")
+	unknown.Dir = dir
+	unknown.Env = cmd.Env
+	if out, err := unknown.CombinedOutput(); err == nil || !strings.Contains(string(out), "unknown recipe") {
+		t.Fatalf("unknown recipe was not rejected: err=%v output=%s", err, out)
 	}
 }
 

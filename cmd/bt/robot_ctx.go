@@ -117,6 +117,10 @@ func claimableRecommendations(recommendations []analysis.Recommendation, readine
 }
 
 func (rc *robotCtx) routedBDCommand(issueID string, args ...string) string {
+	return rc.routedBDCommandForShell(issueID, "posix", args...)
+}
+
+func (rc *robotCtx) routedBDCommandForShell(issueID, shell string, args ...string) string {
 	if rc == nil || rc.routeTable == nil {
 		return ""
 	}
@@ -135,6 +139,12 @@ func (rc *robotCtx) routedBDCommand(issueID string, args ...string) string {
 		parts := make([]string, 0, len(args)+1)
 		parts = append(parts, "bd")
 		parts = append(parts, args...)
+		if shell == "fish" {
+			for i := 1; i < len(parts); i++ {
+				parts[i] = fishQuote(parts[i])
+			}
+			return "begin; if pushd -- " + fishQuote(target.Dir) + " >/dev/null; command bd " + strings.Join(parts[1:], " ") + "; set -l __bt_command_status $status; popd >/dev/null; test $__bt_command_status -eq 0; else; false; end; end"
+		}
 		for i := range parts {
 			parts[i] = shellQuote(parts[i])
 		}
@@ -145,4 +155,10 @@ func (rc *robotCtx) routedBDCommand(issueID string, args ...string) string {
 
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
+func fishQuote(value string) string {
+	value = strings.ReplaceAll(value, "\\", "\\\\")
+	value = strings.ReplaceAll(value, "'", "\\'")
+	return "'" + value + "'"
 }

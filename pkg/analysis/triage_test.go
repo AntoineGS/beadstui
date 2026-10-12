@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -52,6 +53,21 @@ func TestTriageClaimablePickIsNotLimitedByRecommendationTopN(t *testing.T) {
 	}
 }
 
+func TestTriageGroupedPickIsNotLimitedByRecommendationTopN(t *testing.T) {
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	issues := []model.Issue{
+		{ID: "assigned", Title: "Assigned", Status: model.StatusInProgress, Assignee: "worker", IssueType: model.TypeTask, Priority: 0, Labels: []string{"area:cli"}},
+		{ID: "claimable", Title: "Claimable", Status: model.StatusOpen, IssueType: model.TypeTask, Priority: 4, Labels: []string{"area:cli"}},
+	}
+	got := ComputeTriageWithOptionsAndTime(issues, TriageOptions{TopN: 1, GroupByLabel: true, EvaluatedAt: now}, now)
+	if len(got.Recommendations) != 1 || got.Recommendations[0].ID != "assigned" {
+		t.Fatalf("precondition: display recommendations = %+v, want only assigned highest-ranked issue", got.Recommendations)
+	}
+	if len(got.RecommendationsByLabel) != 1 || got.RecommendationsByLabel[0].TopPick == nil || got.RecommendationsByLabel[0].TopPick.ID != "claimable" {
+		t.Fatalf("grouped pick lost claimable candidate below TopN: %+v", got.RecommendationsByLabel)
+	}
+}
+
 func TestTriageAllNonclaimableRecommendationsHaveNoPicks(t *testing.T) {
 	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
 	issues := []model.Issue{
@@ -68,6 +84,32 @@ func TestTriageAllNonclaimableRecommendationsHaveNoPicks(t *testing.T) {
 	group := got.RecommendationsByLabel[0]
 	if group.TopPick != nil || group.ClaimCommand != "" {
 		t.Fatalf("all-nonclaimable group produced claim output: pick=%+v command=%q", group.TopPick, group.ClaimCommand)
+	}
+}
+
+func TestAnalyzerUnblockCandidateFrontierIsEmptyForEdgelessCorpus(t *testing.T) {
+	const issueCount = 10_000
+	issues := make([]model.Issue, issueCount)
+	for i := range issues {
+		issues[i] = model.Issue{ID: fmt.Sprintf("leaf-%05d", i), Status: model.StatusOpen}
+	}
+	readiness := model.NewReadinessIndex(issues)
+	analyzer := NewAnalyzerWithReadiness(issues, readiness, time.Unix(0, 0))
+	if got := analyzer.unblockCandidates(issues[0].ID); len(got) != 0 {
+		t.Fatalf("edgeless selected candidate frontier size = %d, want 0", len(got))
+	}
+}
+
+func TestAnalyzerUnblockCandidateFrontierIntersectsSelectedIssues(t *testing.T) {
+	corpus := []model.Issue{
+		{ID: "gate", Status: model.StatusOpen},
+		{ID: "parent", Status: model.StatusOpen, Dependencies: []*model.Dependency{{DependsOnID: "gate", Type: model.DepBlocks}}},
+		{ID: "child", Status: model.StatusOpen, Dependencies: []*model.Dependency{{DependsOnID: "parent", Type: model.DepParentChild}}},
+	}
+	selected := []model.Issue{corpus[0]}
+	analyzer := NewAnalyzerWithReadiness(selected, model.NewReadinessIndex(corpus), time.Unix(0, 0))
+	if got := analyzer.unblockCandidates("gate"); len(got) != 0 {
+		t.Fatalf("unselected corpus candidates leaked into plan frontier: %v", got)
 	}
 }
 

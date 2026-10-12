@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -173,6 +174,36 @@ func TestReadinessBlockersReportsParentCycleLazily(t *testing.T) {
 	})
 	if got := r.Blockers("a"); len(got) != 1 || got[0] != "a" {
 		t.Fatalf("cycle blockers = %v, want [a]", got)
+	}
+}
+
+func TestReadinessAffectedByCompletionIncludesDirectGatesAndParentDescendants(t *testing.T) {
+	r := NewReadinessIndex([]Issue{
+		{ID: "gate", Status: StatusOpen},
+		{ID: "direct", Status: StatusOpen, Dependencies: []*Dependency{{DependsOnID: "gate", Type: DepBlocks}}},
+		{ID: "parent", Status: StatusOpen, Dependencies: []*Dependency{{DependsOnID: "gate", Type: DepBlocks}}},
+		{ID: "child", Status: StatusOpen, Dependencies: []*Dependency{{DependsOnID: "parent", Type: DepParentChild}}},
+		{ID: "grandchild", Status: StatusOpen, Dependencies: []*Dependency{{DependsOnID: "child", Type: DepParentChild}}},
+		{ID: "unrelated", Status: StatusOpen},
+	})
+	got := r.AffectedByCompletion("gate")
+	want := []string{"child", "direct", "grandchild", "parent"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("completion frontier = %v, want %v", got, want)
+	}
+}
+
+func TestReadinessAffectedByCompletionFrontierStaysEmptyForEdgelessCorpus(t *testing.T) {
+	const issueCount = 10_000
+	issues := make([]Issue, issueCount)
+	for i := range issues {
+		issues[i] = Issue{ID: fmt.Sprintf("leaf-%05d", i), Status: StatusOpen}
+	}
+	r := NewReadinessIndex(issues)
+	for _, id := range []string{"leaf-00000", "leaf-05000", "leaf-09999"} {
+		if got := r.AffectedByCompletion(id); len(got) != 0 {
+			t.Fatalf("edgeless completion %s frontier size = %d, want 0", id, len(got))
+		}
 	}
 }
 
