@@ -123,7 +123,7 @@ func (k HistoryNormalKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.ToggleMode, k.Search, k.CopySHA, k.ExitHistory}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 // Columns: Nav / Cross-panel / Scroll / Focus / Mode / Actions / Exit.
 func (k HistoryNormalKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
@@ -174,7 +174,7 @@ func (k HistorySearchKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Confirm, k.Cancel}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay
+// FullHelp returns column-grouped bindings consumed by the local ? overlay
 // during history search mode.
 func (k HistorySearchKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
@@ -240,7 +240,7 @@ func (k HistoryFileTreeKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.ExpandOrSelect, k.Collapse, k.FocusBack, k.ExitFileTree}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay
+// FullHelp returns column-grouped bindings consumed by the local ? overlay
 // during file-tree focus.
 func (k HistoryFileTreeKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{

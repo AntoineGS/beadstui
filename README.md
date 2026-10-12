@@ -96,13 +96,14 @@ Two notes:
 
 | Key | View | What it shows |
 |-----|------|---------------|
-| `esc` | **List** | Issue list with detail panel (default; `esc` returns here from other views) |
-| SPC v b | **Board** | Kanban columns by status |
-| SPC v g | **Graph** | Dependency graph |
-| SPC v i | **Insights** | PageRank, critical path, cycle detection |
-| SPC v h | **History** | Bead-to-commit correlation timeline |
-| SPC v a | **Actionable** | Execution plan grouped into parallel tracks |
-| SPC v f | **Flow matrix** | How labels block each other (cross-label dependency flow) |
+| `SPC v l` | **List** | Return to the issue list |
+| `SPC v b` | **Board** | Kanban columns by status |
+| `SPC v g` | **Graph** | Dependency graph |
+| `SPC v i` | **Insights** | PageRank, critical path, cycle detection |
+| `SPC v h` | **History** | Bead-to-commit correlation timeline |
+| `SPC v a` | **Actionable** | Execution plan grouped into parallel tracks |
+| `SPC v f` | **Flow matrix** | How labels block each other (cross-label dependency flow) |
+| `SPC v t` / `SPC v e` / `SPC v L` / `SPC v A` / `SPC v m` | **Tree / Epics / Labels / Attention / Memories** | Additional project views |
 
 ![Board view](docs/screenshots/03-kanban.webp)
 
@@ -110,7 +111,7 @@ Two notes:
 
 **Board and detail views** - Navigate issues with vim-style keys. Expand any issue to see full markdown-rendered detail (via Glamour). Board view shows kanban columns grouped by status.
 
-**Filter and search** - Pick labels with the `l` modal picker, narrow by status with `o`/`c`/`r`, and filter by priority, type, assignee, or anything else with BQL (`:`). Fuzzy-search across the full label taxonomy.
+**Filter and search** - Pick labels with `SPC f l`, narrow by status with `SPC f o/c/r`, and filter by priority, type, assignee, or anything else with BQL (`:`). Fuzzy-search across the full label taxonomy.
 
 ![Label filter](docs/screenshots/04-label-filter.webp)
 
@@ -136,26 +137,46 @@ Supports `=`, `!=`, `<`, `>`, `~` (substring), `in`, `not in`, `and`/`or`/`not`,
 
 ## Key bindings
 
+### Direct keys
+
 | Key | Action |
 |-----|--------|
-| `j`/`k` or arrows | Navigate |
+| `j` / `k`, `up` / `down` | Navigate |
+| `gg` / `home`, `G` / `end` | Jump to top / bottom |
 | `Enter` | Open detail (focuses the detail pane in split view) |
-| `h` / `l` or `left` / `right` | Move between the list and the details |
+| `h` / `l`, `left` / `right` | Move between list and details; view-specific horizontal navigation |
 | `,` / `.` | Page the details up / down from either pane |
-| SPC v b / g / i / h | Board / Graph / Insights / History |
-| SPC v a | Actionable view |
-| SPC v f | Flow matrix |
 | `/` | Search |
 | `:` | BQL query |
-| SPC f o / c / r | Toggle open (the default) / closed / ready issues; press again for all |
-| SPC f l | Label picker |
-| SPC n h | Priority hints |
-| SPC t | Time travel |
-| SPC s s | Cycle sort |
-| `?` | Help |
-| `esc` | Back / cancel |
+| `e` | Edit the selected issue |
+| `y` | Copy issue ID (commit SHA in History) |
+| `?` / `f1` | Local key reference |
+| `esc` | Cancel / go back |
 | `q` | Quit |
-| `ctrl+c` | Quit |
+| `ctrl+c` | Force quit |
+
+### Leader menu (press `Space` in a view)
+
+| Key | Action |
+|-----|--------|
+| `SPC v l` / `SPC v b` / `SPC v g` | List / Board / Graph |
+| `SPC v i` / `SPC v h` / `SPC v a` / `SPC v f` | Insights / History / Actionable / Flow matrix |
+| `SPC v t` / `SPC v e` / `SPC v L` / `SPC v A` / `SPC v m` | Tree / Epics / Labels / Attention / Memories |
+| `SPC f o` / `SPC f c` / `SPC f r` | Open / closed / ready filters |
+| `SPC f s` / `SPC f l` / `SPC f R` / `SPC f x` | Cycle status / labels / recipes / clear filters |
+| `SPC s s` / `SPC s S` / `SPC s t` | Cycle sort / reverse sort / triage recipe |
+| `SPC b m` / `SPC b Y` / `SPC b o` / `SPC b c` | Claim / copy issue / open in editor / cass session |
+| `SPC b x` / `SPC b E` / `SPC b g` | Export markdown / epic card / history bead in graph |
+| `SPC p p` / `SPC p h` / `SPC p w` | Projects / home-all / toggle wisps |
+| `SPC w h` / `SPC w l` / `SPC w <` / `SPC w >` | Focus or resize list pane |
+| `SPC w 1` / `SPC w 2` | Fullscreen issues / details pane |
+| `SPC n n` / `SPC n a` / `SPC n h` | Notifications / alerts / priority hints |
+| `SPC / m` / `SPC / h` | Search ranking / hybrid preset |
+| `SPC x` / `SPC r` / `SPC t` | Plugin actions / refresh / time travel |
+| `SPC ,` / `SPC T` / `SPC U` | Settings / tutorial / self-update |
+
+Press `?` for the current view's direct keys. Pause after pressing `Space` to
+see leader actions in the which-key panel.
 
 ## Configuration
 
@@ -179,7 +200,7 @@ The most common knobs are the Dolt-connection and freshness vars below. For the 
 
 ### Plugins
 
-bt can run out-of-process plugins, configured under `plugins:` in `~/.config/bt/config.yaml`, that add row badges, detail sections, BQL fields and bead actions. `P` opens the plugin action menu and `bt plugins` lists what is configured. See [docs/plugins.md](docs/plugins.md) for the protocol and configuration.
+bt can run out-of-process plugins, configured under `plugins:` in `~/.config/bt/config.yaml`, that add row badges, detail sections, BQL fields and bead actions. `SPC x` opens the plugin action menu and `bt plugins` lists what is configured. See [docs/plugins.md](docs/plugins.md) for the protocol and configuration.
 
 ## Robot mode
 

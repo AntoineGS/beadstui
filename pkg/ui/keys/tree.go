@@ -95,7 +95,7 @@ func (k TreeKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.Toggle, k.Back}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 // Columns: Move, Operate, Page, Exit.
 func (k TreeKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{

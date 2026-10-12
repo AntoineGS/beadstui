@@ -86,7 +86,7 @@ func TestFooterExcludesToastContent(t *testing.T) {
 	if strings.Contains(out, "write failed: db locked") {
 		t.Errorf("footer must not render toast content; got %q", out)
 	}
-	// Post-lens (bt-2vshd) the right zone is the static "? help · ; shortcuts" pair;
+	// Post-lens (bt-2vshd) the right zone is the static leader/help pair;
 	// it must render normally rather than yielding to the toast.
 	if !strings.Contains(out, "? help") {
 		t.Errorf("static hints should render normally (no longer yield to a toast); got %q", out)
@@ -131,6 +131,37 @@ func TestFooterData_NormalFooter(t *testing.T) {
 	}
 	if !strings.Contains(out, "20 issues") {
 		t.Errorf("issue count should appear")
+	}
+}
+
+func TestFooterHints(t *testing.T) {
+	m := newSizedModel(t, fieldEditTestIssues(), 160, 40)
+	hints := m.extractKeyHints()
+	if len(hints) > 4 {
+		t.Fatalf("base-list footer has %d view hints, want at most 4: %+v", len(hints), hints)
+	}
+	for _, hint := range hints {
+		if strings.Contains(strings.ToUpper(hint.Key), "SPC") {
+			t.Errorf("view hint %q includes a leader sequence", hint.Key)
+		}
+	}
+	plain := ansiStripForTest(m.renderFooter())
+	for _, want := range []string{"SPC leader", "? help"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("base-list footer missing %q:\n%s", want, plain)
+		}
+	}
+}
+
+func TestFormerSidebarKeyDoesNotReserveWidth(t *testing.T) {
+	m := newSizedModel(t, fieldEditTestIssues(), 120, 40)
+	before := m.bodyWidth()
+	m = runKey(t, m, tea.KeyPressMsg{Code: ';', Text: ";"})
+	if got := m.bodyWidth(); got != before {
+		t.Fatalf("semicolon changed content width from %d to %d", before, got)
+	}
+	if plain := ansiStripForTest(m.View().Content); strings.Contains(plain, "Shortcuts") {
+		t.Fatalf("semicolon opened a shortcuts sidebar:\n%s", plain)
 	}
 }
 
@@ -198,7 +229,7 @@ func TestFooterData_IssueTotalAvoidsCrowdedSides(t *testing.T) {
 		start    int
 	}{
 		{"crowded left", strings.Repeat("p", 52), 0, 0, 61},
-		{"crowded right", "bt", 1234567890123456789, 12345, 39},
+		{"crowded right", "bt", 1234567890123456789, 12345, 40},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fd := FooterData{Width: 100, ScopeLabel: tc.scope, TotalItems: 169, BellCount: tc.bell, WarningCount: tc.warnings}

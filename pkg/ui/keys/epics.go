@@ -95,7 +95,7 @@ func (k EpicsKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.Expand, k.Collapse, k.Open, k.CycleStatus, k.Card, k.Exit}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 // Columns: Navigate / Tree / Actions.
 func (k EpicsKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{

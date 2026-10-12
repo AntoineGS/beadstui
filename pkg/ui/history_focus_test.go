@@ -203,7 +203,7 @@ func TestHistoryFocusCycleStableDimensions(t *testing.T) {
 
 // TestHistoryTabCycleAtModelLevel covers bt-5224 at the Model.View boundary
 // (one level above HistoryModel.View). Catches dimension drift introduced by
-// the wrapping composition path in model_view.go - sidebar overlays, footer
+// the wrapping composition path in model_view.go - popup overlays, footer
 // height accounting, finalStyle truncation - that the HistoryModel-level test
 // would miss.
 //

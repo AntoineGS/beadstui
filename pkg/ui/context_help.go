@@ -65,7 +65,7 @@ func RenderContextHelp(ctx Context, theme Theme, width, height int) string {
 	b.WriteString("\n\n")
 	b.WriteString(contentStyle.Render(content))
 	b.WriteString("\n\n")
-	b.WriteString(footerStyle.Render("Press ` for full tutorial │ Esc to close"))
+	b.WriteString(footerStyle.Render("Esc to close · SPC T for tutorial"))
 
 	// Wrap in modal style
 	modalStyle := lipgloss.NewStyle().
@@ -86,27 +86,26 @@ const contextHelpList = `## List View
 **Navigation**
   j/k       Move up/down
   Enter     View issue details
-  g/G       Jump to top/bottom
+  gg/home   Jump to top
+  G/end     Jump to bottom
+  h/l       Move between list and details
 
-**Filtering**
-  o         Open issues only
-  c         Closed issues only
-  r         Ready (no blockers)
-  /         Fuzzy search
-  Ctrl+S    Semantic search (AI)
-  H         Hybrid ranking
-  Alt+H     Hybrid preset
+**Search and Filters**
+  /         Search issues
+  :         BQL query
+  SPC f o/c/r  Open/closed/ready filters
+  SPC f l      Label picker
+  SPC / m      Cycle search ranking
 
 **Switch Views**
-  a         Actionable view
-  b         Board view
-  g         Graph view
-  i         Insights panel
-  h         History view
+  SPC v b/g   Board / graph
+  SPC v i/h   Insights / history
+  SPC v a/f   Actionable / flow matrix
 
 **Actions**
-  U         Self-update bv
-  V         Preview cass sessions`
+  e         Edit issue
+  y         Copy issue ID
+  q         Quit bt`
 
 const contextHelpGraph = `## Graph View
 
@@ -114,8 +113,8 @@ const contextHelpGraph = `## Graph View
   j/k       Navigate nodes vertically
   h/l       Navigate siblings
   Enter     View selected issue
-  f         Focus on subgraph
-  Esc       Exit to list
+  s         Toggle swarm view
+  Esc       Return to list
 
 **Understanding the Graph**
 • Arrows point TO what's blocked
@@ -131,10 +130,11 @@ const contextHelpBoard = `## Board View
   j/k       Move within column
   1-4       Jump to column by number
   H/L       Jump to first/last column
-  gg/G      Go to top/bottom of column
+  gg/home   Go to top of column
+  G/end     Go to bottom of column
 
 **Filtering**
-  o/c/r     Filter: open/closed/ready
+  SPC f o/c/r  Open/closed/ready filters
 
 **Search**
   /         Start search
@@ -147,11 +147,10 @@ const contextHelpBoard = `## Board View
   ! Red     Has blockers
   * Yellow  High-impact (blocks others)
   o Green   Ready to work
-
 **Actions**
   Tab       Toggle detail panel
   Ctrl+j/k  Scroll detail panel
-  V         Preview cass sessions
+  e         Edit issue
   y         Copy issue ID
   Enter     View issue details
   Esc       Return to List view`
@@ -170,7 +169,7 @@ const contextHelpInsights = `## Insights Panel
   Enter     Drill into cell
 
 **Details**
-  e         Toggle explanations
+  X         Toggle explanations
   x         Toggle calculations
 
 **Attention Indicators**
@@ -203,6 +202,7 @@ const contextHelpHistory = `## History View
 **Actions**
   y         Copy commit SHA
   o         Open commit in browser
+  SPC b g   Show selected bead in graph
   Esc       Return to list`
 
 const contextHelpDetail = `## Detail View
@@ -213,8 +213,8 @@ const contextHelpDetail = `## Detail View
   Tab       Switch to split view
 
 **Actions (from list view)**
-  O         Open in editor
-  C         Copy issue ID
+  e         Edit issue
+  y         Copy issue ID
 
 **Info Shown**
 • Full description (markdown)
@@ -225,8 +225,9 @@ const contextHelpSplit = `## Split View
 
 **Focus**
   Tab       Switch panes
-  <         Shrink list pane
-  >         Expand list pane
+  h/l       Move focus between panes
+  SPC w <   Shrink list pane
+  SPC w >   Expand list pane
 
 **Left Pane (List)**
   j/k       Navigate issues
@@ -243,21 +244,20 @@ Tip: Detail updates as you navigate`
 const contextHelpFilter = `## Filter Mode
 
 **Status Filters**
-  o         Open only
-  c         Closed only
-  r         Ready (no blockers)
-  a         All (clear filter)
+  SPC f o   Open only
+  SPC f c   Closed only
+  SPC f r   Ready (no blockers)
+  SPC f x   Clear filters
 
 **Search**
   /         Start fuzzy search
-  Ctrl+S    Semantic search (AI)
-  H         Hybrid ranking
-  Alt+H     Hybrid preset
+  SPC / m   Cycle search ranking
+  SPC / h   Cycle hybrid preset
   n/N       Next/prev match
   Esc       Clear search
 
 **Label Filters**
-  l         Open label picker`
+  SPC f l   Open label picker`
 
 const contextHelpLabelPicker = `## Label Picker
 
@@ -271,9 +271,7 @@ const contextHelpLabelPicker = `## Label Picker
   /         Filter labels
 
 **Actions**
-  n         Create new label
-  d         Delete label
-  e         Edit label`
+  q         Quit bt (outside search input)`
 
 const contextHelpRecipePicker = `## Recipe Picker
 
@@ -291,16 +289,20 @@ Pre-configured filters and sorts:
 
 const contextHelpHelp = `## Help Overlay
 
-You're looking at the help overlay!
+This panel lists direct keys for the
+current view or modal. Leader-only keys
+are shown by which-key from a view.
 
 **Navigation**
-  j/k       Scroll help content
-  Space     Open full tutorial
-  Esc/?     Close this overlay
+  j/k       Scroll
+  Ctrl+u/d  Scroll a page
+  Home/g    Scroll to top
+  G/end     Scroll to bottom
+  Esc/?/F1  Close this overlay
 
-**Other Help**
-  ` + "`" + `         Full tutorial (any time)
-  ;         Toggle shortcuts sidebar`
+Space opens the tutorial here. Close
+this panel before using the SPC leader
+menu in a view.`
 
 const contextHelpTimeTravel = `## Time Travel Mode
 
@@ -317,7 +319,7 @@ point in history.
 **Exit**
   Esc       Return to present
 
-Tip: Use History view (h) to pick
+Tip: Use History view (SPC v h) to pick
 different points in time`
 
 const contextHelpLabelDashboard = `## Label Dashboard
@@ -331,8 +333,8 @@ Shows all labels with:
 **Navigation**
   j/k       Move selection
   Enter     Drill into label
-  h         View label health
-  g         Label graph analysis
+  i         View label health
+  d         Open label drilldown
   Esc       Return to list
 
 **Filtering**
@@ -351,9 +353,9 @@ Sorted by attention score based on:
 **Navigation**
   j/k       Move selection
   Enter     View issue
-  s         Change status
+  1-9       Filter by label
 
-Press 1 to return to List view`
+Esc         Return to List view`
 
 const contextHelpAgentPrompt = `## AI Agent Prompt
 
@@ -364,7 +366,7 @@ for the AI agent.
 **Actions**
   Enter     Submit prompt
   Esc       Cancel
-  Ctrl+C    Clear input
+  Ctrl+C    Quit bt
 
 **Examples**
 • "Triage these issues"
@@ -373,20 +375,23 @@ for the AI agent.
 
 const contextHelpGeneric = `## Quick Reference
 
-**Global Keys**
-  ?         Help overlay
-  ` + "`" + `         Full tutorial
-  Esc       Close/back
-  q         Quit
+**Direct keys**
+  ? / F1    Local key reference
+  /         Search
+  :         BQL query
+  Esc       Cancel / go back
+  q         Quit bt
 
 **Navigation**
   j/k       Move up/down
   h/l       Move left/right
   Enter     Select/open
 
-**Views**
-  b/g/i/h   Switch views
-  ;         Shortcuts sidebar`
+**Leader menu**
+  SPC       Open which-key menu
+  SPC v b   Switch to Board
+  SPC v g   Switch to Graph
+  Close, then SPC T for tutorial`
 
 const contextHelpCassSession = `## Cass Session Preview
 

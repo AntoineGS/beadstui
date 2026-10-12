@@ -838,8 +838,7 @@ func TestRenderNodeClampsRowWidth(t *testing.T) {
 	tree.Build(issues)
 	tree.ExpandPathTo("bt-aaaaaaaa.1.1.1.1")
 
-	// Stress-test at progressively narrower widths to mirror the dogfood repro
-	// (sidebar open at narrow terminals).
+	// Stress-test at progressively narrower widths to mirror the dogfood repro.
 	for _, width := range []int{40, 60, 80, 120} {
 		tree.SetSize(width, 30)
 		out := tree.View()

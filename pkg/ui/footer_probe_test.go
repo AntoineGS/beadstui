@@ -32,7 +32,7 @@ import (
 // border "│" instead of the status bar). The width sweep straddles the
 // overshoot boundary so a regression in the clamp re-surfaces here.
 func TestFooterPinnedToLastRow_OverflowView(t *testing.T) {
-	const footerToken = "? help" // stable Zone-3 hint rendered in the status bar (bt-2vshd)
+	const footerToken = "?" // stable help affordance in Zone 3
 	for _, w := range []int{100, 110, 120, 121, 140, 160} {
 		for _, h := range []int{14, 20, 30} {
 			m := NewModel(harnessIssues(), nil, "", nil, nil)

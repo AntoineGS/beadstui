@@ -58,7 +58,7 @@ func TestReadmeKeyTables(t *testing.T) {
 		}
 		var keys []string
 		for _, km := range readmeKeyTick.FindAllStringSubmatch(cells[0], -1) {
-			k := km[1]
+			k := readmeBindingKey(km[1])
 			if a, ok := readmeAliases[k]; ok {
 				k = a
 			}
@@ -83,6 +83,28 @@ func TestReadmeKeyTables(t *testing.T) {
 			t.Errorf("README key %q says %q but Global/ListNormal help says %v", keys[0], strings.TrimSpace(desc), helpDescs(ctx[keys[0]]))
 		}
 	}
+}
+
+// readmeBindingKey maps the README's readable leader notation to WithKeys
+// notation, e.g. "SPC v b" -> "<leader>vb".
+func readmeBindingKey(k string) string {
+	parts := strings.Fields(k)
+	if len(parts) < 2 || parts[0] != "SPC" {
+		return k
+	}
+	var seq strings.Builder
+	seq.WriteString("<leader>")
+	for _, part := range parts[1:] {
+		switch part {
+		case "<":
+			seq.WriteString("<lt>")
+		case ">":
+			seq.WriteString("<gt>")
+		default:
+			seq.WriteString(part)
+		}
+	}
+	return seq.String()
 }
 
 func sharesWord(a, b string) bool {

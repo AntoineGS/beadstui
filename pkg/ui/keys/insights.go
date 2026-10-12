@@ -94,7 +94,7 @@ func (k InsightsKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.PrevPanel, k.NextPanel, k.Up, k.Down, k.JumpToIssue, k.Exit}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 // Columns: Panel & Item Nav / Detail Scroll / Toggles & Actions.
 func (k InsightsKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{

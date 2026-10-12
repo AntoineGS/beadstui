@@ -42,7 +42,7 @@ func (k ActionableKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Enter, k.Up, k.Down}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 // Columns: Navigate / Select.
 func (k ActionableKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{

@@ -59,8 +59,8 @@ func assertRetainedThemes(t *testing.T, m *Model) {
 	t.Helper()
 	consumers := map[string]*Theme{
 		"board": &m.board.theme, "labels": &m.labelDashboard.theme,
-		"velocity": &m.velocityComparison.theme, "sidebar": &m.shortcutsSidebar.theme,
-		"graph": &m.graphView.theme, "tree": &m.tree.theme,
+		"velocity": &m.velocityComparison.theme,
+		"graph":    &m.graphView.theme, "tree": &m.tree.theme,
 		"insights": &m.insightsPanel.theme, "flow": &m.flowMatrix.theme,
 		"actionable": &m.actionableView.theme, "history": &m.historyView.theme,
 		"memories": &m.memories.theme, "recipe": &m.recipePicker.theme,
@@ -120,7 +120,6 @@ func TestThemeRefreshAllRetainedConsumers(t *testing.T) {
 	m.longformEdit.textarea.SetCursorColumn(3)
 	row, col := m.longformEdit.textarea.Line(), m.longformEdit.textarea.Column()
 	m.openModal(ModalLongformEdit)
-	m.shortcutsSidebar.scrollOffset = 4
 	m.actionableView = NewActionableModel(analysis.ExecutionPlan{Tracks: []analysis.ExecutionTrack{
 		{TrackID: "track-A", Items: []analysis.PlanItem{{ID: "first"}, {ID: "second"}}},
 	}}, m.theme)
@@ -150,7 +149,7 @@ func TestThemeRefreshAllRetainedConsumers(t *testing.T) {
 		if m.list.Index() != index || m.list.FilterState() != filterState || m.list.FilterInput.Value() != "ep" {
 			t.Fatal("list selection/filter reset")
 		}
-		if m.actionableView.SelectedIssueID() != "second" || m.actionableView.scrollOffset != 2 || m.shortcutsSidebar.scrollOffset != 4 {
+		if m.actionableView.SelectedIssueID() != "second" || m.actionableView.scrollOffset != 2 {
 			t.Fatal("retained navigation reset")
 		}
 		if m.fieldInput.input.Value() != "typed text" || m.fieldInput.input.Position() != 3 || m.longformEdit.textarea.Value() != "draft\nsecond line" || m.longformEdit.textarea.Line() != row || m.longformEdit.textarea.Column() != col {

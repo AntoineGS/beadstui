@@ -145,7 +145,7 @@ Common causes: stale Dolt server holding the port (kill it or change ports per a
 
 Three things to check:
 - Did anyone create issues? Try `bd list --all` from the same directory.
-- Is a filter applied in the TUI? Look at the bottom status bar; press `f`/`p`/`t` to clear filters or `Esc` to reset.
+- Is a filter applied in the TUI? Look at the bottom status bar; press `SPC f x` to clear filters or `Esc` to reset.
 - Are you in the right project root? `bt` keys off the nearest `.beads/` directory walking upward; if you're in a parent or sibling, you may be reading the wrong database.
 
 ### `bt: command not found`

@@ -7,14 +7,10 @@ import (
 	"charm.land/bubbles/v2/key"
 )
 
-// ShortcutsSidebar provides a toggleable panel showing context-aware keyboard
-// shortcuts. Unlike the help overlay, this can remain visible while working
-// (bv-3qi5).
+// ShortcutsSidebar is a standalone legacy renderer retained independently of
+// Model. The application no longer constructs or displays this panel (bt-i4k).
 //
-// Per ADR-004 (bt-ift6.10) it renders FullHelp() binding groups supplied by the
-// active view's / modal's key.Map via SetBindings, not a hardcoded string
-// table. The same key.Map source drives the L1 footer hint (ShortHelp) and the
-// ? overlay (FullHelp), so the three help surfaces cannot drift.
+// It renders FullHelp() binding groups supplied by a caller via SetBindings.
 type ShortcutsSidebar struct {
 	width        int
 	height       int
@@ -45,10 +41,7 @@ func (s *ShortcutsSidebar) SetSize(width, height int) {
 	s.height = height
 }
 
-// SetBindings sets the FullHelp() binding groups the sidebar renders. The model
-// composes these from the active view's key.Map (GlobalKeys ++ the view Map, or
-// the active modal's Map alone) via Model.sidebarHelpGroups, keeping the sidebar
-// a pure consumer of the single key.Map source.
+// SetBindings sets the binding groups rendered by this standalone utility.
 func (s *ShortcutsSidebar) SetBindings(groups [][]key.Binding) {
 	s.groups = groups
 }

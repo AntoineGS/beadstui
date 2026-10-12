@@ -353,8 +353,8 @@ func popupMenuWindowRange(entries []PopupMenuEntry, cursor, rows int) (start, en
 }
 
 // searchPickerFooter lists only the keys a user could not guess; movement,
-// enter and esc are assumed. Select-all ("a") lives in the ; sidebar and ?
-// overlay to keep the line short.
+// enter and esc are assumed. Select-all ("a") is documented by the ? overlay
+// to keep the line short.
 var searchPickerFooter = []string{"space toggle / search ←/→ page", "space / ←/→"}
 
 // measureSearchPopup shares geometry for searchable multi-select pickers.

@@ -716,39 +716,6 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Handle shortcuts sidebar toggle (;) - bv-3qi5
-	if key.Matches(msg, m.keys.Global.Sidebar) && m.list.FilterState() != list.Filtering {
-		m.showShortcutsSidebar = !m.showShortcutsSidebar
-		if m.showShortcutsSidebar {
-			m.shortcutsSidebar.ResetScroll()
-			m.setStatus("Shortcuts sidebar: ; hide | ctrl+j/k scroll")
-		} else {
-			m.setStatus("")
-		}
-		// Re-flow layout so list/viewport reserve (or release) sidebar
-		// width. Without this the toggle leaves stale dimensions and the
-		// sidebar wraps onto the body (bt-lin9). Use the full immediate
-		// path (both phases) since this is a discrete user action, not a
-		// drag burst (bt-kfkrb).
-		var resizeCmd tea.Cmd
-		m, resizeCmd = m.handleWindowSize(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-		m = m.applyWindowSizeHeavy()
-		_ = resizeCmd // discard the settle tick - heavy path already ran
-		return m, nil
-	}
-
-	// Handle shortcuts sidebar scrolling (Ctrl+j/k when sidebar visible) - bv-3qi5
-	if m.showShortcutsSidebar && m.list.FilterState() != list.Filtering {
-		switch {
-		case key.Matches(msg, m.keys.Global.SidebarScrollDown):
-			m.shortcutsSidebar.ScrollDown()
-			return m, nil
-		case key.Matches(msg, m.keys.Global.SidebarScrollUp):
-			m.shortcutsSidebar.ScrollUp()
-			return m, nil
-		}
-	}
-
 	// H = hybrid preset cycle (bt-krwp). Only meaningful when in hybrid mode;
 	// outside hybrid it surfaces a status hint redirecting to Ctrl+S. The
 	// previous H = "toggle hybrid layer" + alt+H = "cycle preset" pair was
@@ -1543,8 +1510,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				m.list.SetFilterState(list.Filtering)
 				return m, nil
 			}
-			// Action keys advertised in the shortcuts sidebar's "Actions" group
-			// (context: list/detail/split). These all read m.list.SelectedItem()
+			// Action keys available in list/detail/split contexts. These all read m.list.SelectedItem()
 			// or change global mode, so focus is irrelevant - without this
 			// dispatch they get swallowed by viewport.Update (bt-x5b7).
 			//
@@ -1696,8 +1662,7 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (Model, tea.Cmd) {
 		if m.fullscreen == fullscreenDetails || (m.fullscreen == fullscreenNone && m.showDetails) {
 			return m, nil
 		}
-		// Clicks past the body (into the shortcuts sidebar, when shown) are not
-		// list rows; bodyWidth already excludes the sidebar's reserved columns.
+		// Clicks outside the body are not list rows.
 		if mouse.X >= m.bodyWidth() {
 			return m, nil
 		}
@@ -1826,9 +1791,8 @@ func (m Model) clickListPane(mouse tea.Mouse, rowOffset int) (Model, tea.Cmd) {
 // (bt-w8j8.2). Mirrors clickListPane above: hit-test via TreeModel.ClickAt,
 // then dispatch select / expand-toggle / double-click-sync-to-detail.
 func (m Model) handleTreeMouseClick(mouse tea.Mouse) (Model, tea.Cmd) {
-	// Clicks past the body (into the shortcuts sidebar, when shown) are not
-	// tree rows; bodyWidth already excludes the sidebar's reserved columns
-	// (same guard clickListPane applies in single-pane list layout).
+	// Clicks outside the body are not tree rows (same guard clickListPane
+	// applies in single-pane list layout).
 	if mouse.X >= m.bodyWidth() {
 		return m, nil
 	}
@@ -2136,8 +2100,8 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (Model, tea.Cmd) {
 	}()
 	m.width = msg.Width
 	m.height = msg.Height
-	// Layout against bodyWidth so the shortcuts sidebar (when visible) gets
-	// reserved space rather than overflowing onto the body (bt-lin9).
+	// bodyWidth is the full terminal width now that the shortcuts sidebar has
+	// been retired.
 	bodyW := m.bodyWidth()
 	m.isSplitView = bodyW > SplitViewThreshold
 	m.ready = true
@@ -2205,7 +2169,7 @@ func (m *Model) resizeActivePopup(width, height int) {
 // applyWindowSizeHeavy runs the expensive phase of resize: rebuilds the Glamour
 // renderer via SetWidthWithTheme and refreshes viewport content. Called from
 // handleResizeSettled (debounced path) and from callers that need an immediate
-// full reflow (e.g., sidebar width toggle), where the settle tick is discarded.
+// full reflow when a caller cannot wait for the settle tick.
 func (m Model) applyWindowSizeHeavy() Model {
 	heavyStart := time.Now()
 	bodyW := m.bodyWidth()

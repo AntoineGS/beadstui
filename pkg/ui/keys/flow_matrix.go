@@ -74,7 +74,7 @@ func (k FlowMatrixKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.Enter, k.Close}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 // Columns: Move, Act, Exit.
 func (k FlowMatrixKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{

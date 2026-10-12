@@ -57,9 +57,6 @@ func (m Model) restoreFocusFromHelp() focus {
 func (m Model) handleHelpKeys(msg tea.KeyMsg) Model {
 	k := m.keys.Help
 	switch {
-	case key.Matches(msg, k.Legend):
-		m.helpLegend = !m.helpLegend
-		m.helpScroll = 0
 	case key.Matches(msg, k.Down):
 		m.helpScroll++
 		if max := m.helpScrollMax(); m.helpScroll > max {

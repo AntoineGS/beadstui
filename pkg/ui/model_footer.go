@@ -9,6 +9,7 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/search"
 	"github.com/seanmartinsmith/beadstui/pkg/ui/events"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 	"github.com/seanmartinsmith/beadstui/pkg/watcher"
 
 	"charm.land/bubbles/v2/help"
@@ -255,6 +256,8 @@ type FooterData struct {
 	// Key hints (pre-computed, structured so the renderer can degrade them
 	// from full "key desc" pills down to key-only glyphs as width tightens).
 	Hints []FooterHint
+	// LeaderLabel is the configured leader's display label.
+	LeaderLabel string
 
 	// PluginHints are the selected bead's plugin action keys, drawn before
 	// the static ?/; pair and dropped early under width pressure.
@@ -419,6 +422,7 @@ func (m *Model) footerData() FooterData {
 
 	// Key hints
 	fd.Hints = m.extractKeyHints()
+	fd.LeaderLabel = m.leaderLabel()
 	for _, b := range m.pluginKeyBindings() {
 		fd.PluginHints = append(fd.PluginHints, FooterHint{Key: b.Help().Key, Desc: b.Help().Desc})
 	}
@@ -767,18 +771,63 @@ func (m *Model) extractKeyHints() []FooterHint {
 	if len(bindings) == 0 {
 		return nil
 	}
-	hints := make([]FooterHint, 0, len(bindings))
+	hints := make([]FooterHint, 0, min(4, len(bindings)))
 	for _, b := range bindings {
-		if !b.Enabled() {
+		direct, ok := directHelpBinding(b)
+		if !ok {
 			continue
 		}
-		h := b.Help()
-		if h.Key == "" {
-			continue
-		}
+		h := direct.Help()
 		hints = append(hints, FooterHint{Key: h.Key, Desc: h.Desc})
+		if len(hints) == 4 {
+			break
+		}
 	}
 	return hints
+}
+
+// directHelpBinding returns a copy of b with action tokens and sequences
+// removed. It keeps configured display labels for physical keys while dropping
+// sequence labels such as "gg".
+func directHelpBinding(b key.Binding) (key.Binding, bool) {
+	if !b.Enabled() {
+		return b, false
+	}
+	var direct []string
+	for _, k := range b.Keys() {
+		if keys.IsToken(k) {
+			continue
+		}
+		if _, _, ok := keys.ParseSeq(k); ok {
+			continue
+		}
+		direct = append(direct, k)
+	}
+	if len(direct) == 0 {
+		return b, false
+	}
+	help := b.Help()
+	displayKey := help.Key
+	if displayKey != "/" {
+		var labels []string
+		for _, label := range strings.Split(displayKey, "/") {
+			if strings.TrimSpace(label) == "" {
+				continue
+			}
+			if _, _, ok := keys.ParseSeq(label); ok {
+				continue
+			}
+			labels = append(labels, label)
+		}
+		if len(labels) > 0 {
+			displayKey = strings.Join(labels, "/")
+		} else {
+			displayKey = strings.Join(direct, "/")
+		}
+	}
+	b.SetKeys(direct...)
+	b.SetHelp(displayKey, help.Desc)
+	return b, true
 }
 
 // l1KeyMap returns the help.KeyMap whose ShortHelp() drives the L1
@@ -804,11 +853,8 @@ func (m Model) viewKeyMap() help.KeyMap {
 	return m.keys.Global
 }
 
-// viewSpecificKeyMap returns the per-view key.Map for m.mode, or nil for views
-// with no dedicated Map yet (Attention, LabelDashboard). The L1 footer adds the
-// Global fallback (viewKeyMap); the ; sidebar composes Global ++ this map
-// (sidebarHelpGroups), so this must return nil rather than the Global map to
-// avoid a doubled Global section in the sidebar.
+// viewSpecificKeyMap returns the per-view key.Map for m.mode, or nil when no
+// dedicated view map exists. The L1 footer adds the Global fallback.
 //
 // ViewList has a sub-state branch per ADR-004 Decision 7 — when filter typing is
 // active, the truthful help is ListSearchKeys (apply / cancel / result-nav),
@@ -928,34 +974,6 @@ func (m Model) modalKeyMap() help.KeyMap {
 	// Other modals (quit-confirm, claim-confirm, settings, …) carry their own
 	// internal footers; the L1 slot stays empty for them.
 	return nil
-}
-
-// sidebarHelpGroups returns the FullHelp() binding groups the ; shortcuts
-// sidebar renders for the current state (bt-ift6.10). When a modal owns the
-// sidebar (ADR-004 Decision 4) it shows that modal's FullHelp() alone;
-// otherwise it shows the active view's bindings only (bt-dx7k) - the Global
-// map now lives on the ? overlay so the two surfaces carry complementary
-// content. Reads from the same key.Map source as the L1 footer (ShortHelp)
-// and ? overlay (FullHelp), so the three surfaces cannot drift.
-func (m Model) sidebarHelpGroups() [][]key.Binding {
-	if m.activeModal != ModalNone {
-		if km := m.modalKeyMap(); km != nil {
-			return km.FullHelp()
-		}
-		return nil
-	}
-	// View-only (bt-dx7k): the Global map now lives on the ? overlay; ; shows
-	// just the active view's actions. nil view map -> empty (the sidebar renders
-	// an empty-view fallback; see ShortcutsSidebar.View). The selected bead's
-	// plugin actions follow as their own group.
-	var groups [][]key.Binding
-	if km := m.viewSpecificKeyMap(); km != nil {
-		groups = km.FullHelp()
-	}
-	if pb := m.pluginKeyBindings(); len(pb) > 0 {
-		groups = append(groups[:len(groups):len(groups)], pb)
-	}
-	return groups
 }
 
 // ---------------------------------------------------------------------------
@@ -1097,11 +1115,8 @@ func (fd FooterData) Render() string {
 	// carries the label filter. The old standalone badges (incl. the [19]
 	// workspace badge) are gone.
 
-	// Zone 3 (right) is the static "? help · ; keys" pair + anomaly badge + bell
-	// (bt-2vshd). The per-view action pills — and their pill degradation
-	// machinery — are retired from the footer chrome; the per-view key.Maps now
-	// feed only the ? overlay and the ; sidebar. renderStaticHints builds the
-	// pair; the anomaly (alertsSection) and bell render to its right.
+	// Zone 3 (right) carries the active view's direct-key hints, the leader and
+	// help affordances, then the anomaly badge and bell.
 
 	countStyle := ActiveTextStyles.Body.Padding(0, 1)
 	countBadge := countStyle.Render(fmt.Sprintf("%d issues", fd.TotalItems))
@@ -1148,7 +1163,7 @@ func (fd FooterData) Render() string {
 	}
 
 	// Bell badge (Phase 4): always rendered; the count appears only when > 0.
-	// Pinned (last to drop) alongside the ? ; pair. Built BEFORE the cascade so
+	// Pinned (last to drop) alongside the leader/help hints. Built BEFORE the cascade so
 	// its width can be reserved — otherwise the toast consumes the whole right
 	// zone and the final ansi.Truncate clips the bell (bt-a3zi3.1).
 	bellText := activeGlyphs.Bell
@@ -1164,7 +1179,7 @@ func (fd FooterData) Render() string {
 
 	// Degradation cascade (bt-2vshd drop order): lens placeholders -> daemon /
 	// degraded badges -> triad (total survives) -> hint labels -> lens filter
-	// words (scope survives) -> last resort scope · total · ? ; · !N. The
+	// words (scope survives) -> last resort scope · total · leader/help · !N. The
 	// engine shape is unchanged: reduce in order until the content fits; a final
 	// ansi truncate makes wrapping impossible. lensLvl and hintsCompact are the
 	// lens/right-zone density knobs the cascade advances. The triad's zero-count
@@ -1185,7 +1200,7 @@ func (fd FooterData) Render() string {
 		if fd.PendingSeq != "" {
 			return ActiveTextStyles.Heading.Render(fd.PendingSeq)
 		}
-		return renderStaticHints(hintsCompact)
+		return renderFooterHints(fd.Hints, fd.LeaderLabel, hintsCompact)
 	}
 	rightWidth := func() int {
 		w := lipgloss.Width(pluginHints) + lipgloss.Width(hints()) + bellWidth
@@ -1211,7 +1226,7 @@ func (fd FooterData) Render() string {
 				statsSection = ""
 			}
 		},
-		func() { hintsCompact = true },          // 4. hint labels: "? help · ; keys" -> "? ;"
+		func() { hintsCompact = true },          // 4. direct-hint and static labels drop
 		func() { lensLvl = lensStatusOnly },     // 5. lens filter words drop; status + scope remain
 		func() { countBadge = countBadgeShort }, // 6. "4921 issues" -> "4921"
 		func() { lensLvl = lensScopeOnly },      // 7. scope survives alone
@@ -1231,7 +1246,7 @@ func (fd FooterData) Render() string {
 	lensSection := renderLens(fd, lensLvl)
 	hintsSection := hints()
 
-	// nonHint sums everything except the ?/; slot; the anomaly badge and bell
+	// nonHint sums everything except the key-hint slot; the anomaly badge and bell
 	// are reserved here so nothing can squeeze them out. The left indent counts
 	// too so the spacers shrink by it and the right zone stays edge-pinned.
 	leftWidth := footerLeftPad + lipgloss.Width(lensSection) + lipgloss.Width(statsSection) + optionalWidth()
@@ -1262,7 +1277,7 @@ func (fd FooterData) Render() string {
 
 	// Build the footer in display order (content may be empty after compression):
 	// lens (Zone 1) · stats + daemon chrome · spacer · total · spacer
-	// · ?/; hints (Zone 3) · anomaly · bell.
+	// · direct/leader/help hints (Zone 3) · anomaly · bell.
 	var parts []string
 	addIf := func(s string) {
 		if s != "" {

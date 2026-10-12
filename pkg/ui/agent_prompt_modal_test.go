@@ -237,4 +237,3 @@ func TestGetBlurbPreview(t *testing.T) {
 		t.Error("Preview should not contain HTML comment markers")
 	}
 }
-

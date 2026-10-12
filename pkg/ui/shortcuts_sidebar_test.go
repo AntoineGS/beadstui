@@ -62,53 +62,42 @@ func TestShortcutsSidebar_SkipsDisabledAndEmptyBindings(t *testing.T) {
 	}
 }
 
-// TestSidebarHelpGroups_NonModalShowsViewOnly verifies the ; sidebar shows the
-// active view's bindings ONLY (bt-dx7k) - the Global prefix is dropped (it now
-// lives on the ? overlay). In List view, "cycle sort" (ListNormal) is present
-// and "board" (Global) is absent.
-func TestSidebarHelpGroups_NonModalShowsViewOnly(t *testing.T) {
-	m := NewModel(harnessIssues(), nil, "", nil, nil)
-	m.mode = ViewList
-	m.activeModal = ModalNone
+// TestShortcutsSidebar_RendersOnlySuppliedBindings keeps this renderer
+// standalone: callers provide groups directly, and Model no longer owns it.
+func TestShortcutsSidebar_RendersOnlySuppliedBindings(t *testing.T) {
+	sidebar := NewShortcutsSidebar(sidebarTestTheme())
+	sidebar.SetSize(34, 20)
+	sidebar.SetBindings([][]key.Binding{{
+		key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "board")),
+		key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "cycle sort")),
+	}})
 
-	descs := map[string]bool{}
-	for _, g := range m.sidebarHelpGroups() {
-		for _, b := range g {
-			descs[b.Help().Desc] = true
-		}
-	}
-	if descs["board"] {
-		t.Errorf("global binding (board) must NOT appear in the view-only ; sidebar")
-	}
-	if !descs["cycle sort"] {
-		t.Errorf("expected a list binding (cycle sort) in the ; sidebar")
+	view := sidebar.View()
+	if !strings.Contains(view, "board") || !strings.Contains(view, "cycle sort") {
+		t.Fatalf("standalone renderer omitted supplied bindings:\n%s", view)
 	}
 }
 
-// TestSidebarHelpGroups_ModalShowsModalOnly verifies the ; sidebar shows the
-// active modal's own bindings and not the global view-switch keys while a modal
-// is open (modals own the sidebar per ADR-004 Decision 4).
-func TestSidebarHelpGroups_ModalShowsModalOnly(t *testing.T) {
-	m := NewModel(harnessIssues(), nil, "", nil, nil)
-	m.mode = ViewList
-	m.activeModal = ModalRecipePicker
+// TestShortcutsSidebar_CallerCanReplaceGroups confirms the standalone utility
+// has no dependency on active Model or modal state.
+func TestShortcutsSidebar_CallerCanReplaceGroups(t *testing.T) {
+	sidebar := NewShortcutsSidebar(sidebarTestTheme())
+	sidebar.SetSize(34, 20)
+	sidebar.SetBindings([][]key.Binding{{
+		key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "board")),
+	}})
+	sidebar.SetBindings([][]key.Binding{{
+		key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "apply recipe")),
+	}})
 
-	descs := map[string]bool{}
-	for _, g := range m.sidebarHelpGroups() {
-		for _, b := range g {
-			descs[b.Help().Desc] = true
-		}
-	}
-	if descs["board"] {
-		t.Errorf("global view-switch (board) must not appear while a modal owns the sidebar")
-	}
-	if !descs["apply recipe"] {
-		t.Errorf("expected a recipe-picker binding (apply recipe) in modal sidebar groups")
+	view := sidebar.View()
+	if !strings.Contains(view, "apply recipe") || strings.Contains(view, "board") {
+		t.Fatalf("standalone renderer did not replace the supplied groups:\n%s", view)
 	}
 }
 
-// TestShortcutsSidebar_EmptyViewFallback verifies the ; sidebar shows a fallback
-// directing to ? when the active view has no view-specific bindings (bt-dx7k).
+// TestShortcutsSidebar_EmptyViewFallback verifies the standalone renderer's
+// fallback when the active view has no view-specific bindings (bt-dx7k).
 func TestShortcutsSidebar_EmptyViewFallback(t *testing.T) {
 	sidebar := NewShortcutsSidebar(sidebarTestTheme())
 	sidebar.SetSize(34, 20)
@@ -123,8 +112,8 @@ func TestShortcutsSidebar_EmptyViewFallback(t *testing.T) {
 	}
 }
 
-// TestShortcutsSidebar_CrossRefFooter verifies the ; sidebar footer cross-
-// references the ? overlay (bt-dx7k), symmetric with the ? footer.
+// TestShortcutsSidebar_CrossRefFooter verifies the standalone renderer's
+// footer cross-references the ? overlay (bt-dx7k).
 func TestShortcutsSidebar_CrossRefFooter(t *testing.T) {
 	sidebar := NewShortcutsSidebar(sidebarTestTheme())
 	sidebar.SetSize(34, 20)
@@ -134,7 +123,7 @@ func TestShortcutsSidebar_CrossRefFooter(t *testing.T) {
 
 	view := sidebar.View()
 	if !strings.Contains(view, "?") {
-		t.Errorf("; sidebar footer should cross-reference ? for global\n%s", view)
+		t.Errorf("standalone renderer footer should cross-reference ? for global\n%s", view)
 	}
 }
 

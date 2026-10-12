@@ -49,7 +49,7 @@ func (k EpicCardKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.Open, k.Exit}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 // Columns: Navigate / Actions.
 func (k EpicCardKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{

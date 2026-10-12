@@ -49,7 +49,7 @@ func (k PluginSelectKeys) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.Apply, k.Cancel}
 }
 
-// FullHelp returns column-grouped bindings for the ; sidebar and ? overlay.
+// FullHelp returns column-grouped bindings consumed by the local ? overlay.
 func (k PluginSelectKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down},
