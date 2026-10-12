@@ -1,10 +1,14 @@
-# bt
+# beadstui (`bt`)
 
 A terminal UI for [beads](https://github.com/gastownhall/beads) - keyboard-driven issue tracking in your terminal.
 
+This is [AntoineGS/beadstui](https://github.com/AntoineGS/beadstui), an independently maintained fork of [Sean Martin Smith's beadstui](https://github.com/seanmartinsmith/beadstui), which grew out of [Jeffrey Emanuel's beads_viewer](https://github.com/Dicklesworthstone/beads_viewer). Development happens here, with no plans to upstream these changes. The executable is still called `bt`.
+
 ![bt list and detail view](docs/screenshots/01-list-detail.webp)
 
-> **Alpha.** v0.1.0 is the first public cut. Active development; APIs, keybindings, and on-disk formats may change before v1.0.
+> **Alpha.** APIs, keybindings, and on-disk formats may change during development.
+
+Screenshots show the current TUI with sample project data. [Regenerate them](scripts/screenshots/README.md) after UI changes.
 
 ## What is bt
 
@@ -14,25 +18,27 @@ Think lazygit, but for issue tracking.
 
 ## Install
 
-Requires a working [beads](https://github.com/gastownhall/beads) installation with Dolt. For the full first-time setup walkthrough — prerequisites, init flow, common failures — see [`docs/install.md`](docs/install.md). The short version is below.
+Requires a working [beads](https://github.com/gastownhall/beads) installation with Dolt. Use the commands below to install this fork. For beads/Dolt setup and troubleshooting, see [`docs/install.md`](docs/install.md); its bt installation section still describes the predecessor project.
 
-### Pre-built binaries (no Go toolchain needed)
+### From source (requires Go 1.26+)
 
-Download the binary for your platform from the [latest release](https://github.com/seanmartinsmith/beadstui/releases/latest). Available for macOS, Linux, and Windows on both amd64 and arm64. Verify with the included `checksums.txt`, extract the archive, and place `bt` somewhere on your `PATH`.
-
-### From source (requires Go 1.25+)
+Clone this repository and install from the checkout:
 
 ```bash
-go install github.com/seanmartinsmith/beadstui/cmd/bt@latest
-```
-
-Or build from a clone:
-
-```bash
-git clone https://github.com/seanmartinsmith/beadstui.git
+git clone https://github.com/AntoineGS/beadstui.git
 cd beadstui
-go build ./cmd/bt/
+go install -mod=readonly ./cmd/bt/
 ```
+
+Go places `bt` in `GOBIN`, or `$(go env GOPATH)/bin` when `GOBIN` is unset. Add that directory to your `PATH`.
+
+To build without installing, run `go build -mod=readonly -o bt ./cmd/bt/` (`-o bt.exe` on Windows). The `-mod=readonly` flag uses the dependencies declared in `go.mod` because the checked-in `vendor/` directory is currently out of sync.
+
+The Go module still uses `github.com/seanmartinsmith/beadstui`. Installing that module with `@latest` fetches the predecessor project, so use the checkout commands above to get this fork.
+
+### Release builds
+
+Check [this fork's releases](https://github.com/AntoineGS/beadstui/releases) for published binaries. If none are available for your platform, build from source.
 
 ## Shared-server mode (for the cross-project view)
 
@@ -178,6 +184,8 @@ Supports `=`, `!=`, `<`, `>`, `~` (substring), `in`, `not in`, `and`/`or`/`not`,
 Press `?` for the current view's direct keys. Pause after pressing `Space` to
 see leader actions in the which-key panel.
 
+These are the default bindings. The leader key and individual actions can be rebound in `~/.config/bt/config.yaml`; see the [key configuration reference](docs/plugins.md#configuration).
+
 ## Configuration
 
 Config is loaded in layers (later overrides earlier):
@@ -216,7 +224,7 @@ bt robot alerts          # stale issues, blocking cascades
 
 Run `bt robot --help` for the full subcommand list (~30+ subcmds including nested groups: `bt robot files`, `bt robot correlation`, `bt robot labels`).
 
-See [AGENTS.md](AGENTS.md) for the quick-reference table. Full API reference - output shapes, flags, examples - at [`docs/robot/README.md`](docs/robot/README.md).
+Start with [`docs/agents.md`](docs/agents.md) for agent workflows. Full API reference - output shapes, flags, examples - at [`docs/robot/README.md`](docs/robot/README.md).
 
 ## Built with
 
@@ -228,22 +236,24 @@ See [AGENTS.md](AGENTS.md) for the quick-reference table. Full API reference - o
 
 ## Contributing
 
-PRs welcome - including AI-assisted ones. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the maintainer posture, hygiene rules, and PR decision tree.
+Open [issues](https://github.com/AntoineGS/beadstui/issues) and [pull requests](https://github.com/AntoineGS/beadstui/pulls) against this repository. Contributions are for this independently maintained project; they do not need to target either predecessor.
+
+The inherited [`CONTRIBUTING.md`](CONTRIBUTING.md) contains development and PR hygiene guidance, but its maintainer-specific policies describe Sean Martin Smith's project.
 
 If you're new here, start with these:
 
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) - PR workflow, hygiene rules, decision tree
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) - inherited development and PR hygiene guidance
 - [`AGENTS.md`](AGENTS.md) - project conventions, commit format, issue-tracking workflow
 - [`docs/design/testing.md`](docs/design/testing.md) - test patterns, fixtures, coverage thresholds
 - [`docs/adr/`](docs/adr/) - architecture decisions ([index](docs/adr/README.md))
 
 ```bash
-go build ./cmd/bt/     # build
-go test ./...          # run all tests
-go vet ./...           # static analysis
+go build -mod=readonly ./...     # build all packages
+go test -mod=readonly ./...      # run all tests
+go vet -mod=readonly ./...       # static analysis
 ```
 
-The codebase is cross-platform (Windows + Unix) with ~92k lines of production Go and ~102k lines of tests across 27 packages.
+The codebase supports Windows, macOS, and Linux.
 
 ## License
 
@@ -254,7 +264,8 @@ Copyright (c) 2026 Sean Martin Smith
 
 ## Acknowledgments
 
-- [Jeffrey Emanuel](https://github.com/Dicklesworthstone) for building beads_viewer - the TUI architecture and graph algorithms this project is built on
+- [Sean Martin Smith](https://github.com/seanmartinsmith) for beadstui, the project this fork continues from
+- [Jeffrey Emanuel](https://github.com/Dicklesworthstone) for building [beads_viewer](https://github.com/Dicklesworthstone/beads_viewer) - the original TUI architecture and graph algorithms
 - [Steve Yegge](https://github.com/steveyegge) for beads
 - [Perles](https://github.com/zjrosen/perles) by Zach Rosen, the source for bt's adapted BQL parser (`pkg/bql/`, MIT)
 - [Charm](https://charm.sh) for the terminal UI ecosystem
