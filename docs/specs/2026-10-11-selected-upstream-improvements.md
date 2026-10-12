@@ -2,7 +2,9 @@
 
 <!-- Related: bt-k20, bt-k20.1 -->
 
-Status: Conversational design approved; written specification awaiting review.
+Status: Approved for implementation. The user approved the written specification,
+auto-approved implementation planning, and selected subagents with worktrees and
+bead tasks.
 
 ## Intent and scope
 
@@ -318,8 +320,7 @@ parent implementation epic remains open.
 
 ## Review and handoff
 
-The user approved the conversational design, including withholding readiness for
-unknown prerequisites. This written specification now requires user review.
-After approval, write the implementation plan under `docs/plans/`, create the
-six delivery tasks, and obtain plan review and execution-method selection before
-changing product code.
+The user approved this written specification, including withholding readiness
+for unknown prerequisites. The implementation plan lives under `docs/plans/`;
+the user explicitly auto-approved it and selected subagent execution in an
+isolated worktree with six bead-tracked deliverables.
