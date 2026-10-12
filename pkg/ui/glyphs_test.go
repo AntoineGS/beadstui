@@ -160,7 +160,7 @@ func TestStatusIconsAcrossViewsBothTiers(t *testing.T) {
 				h.commitList = []CommitListEntry{{SHA: "abcdef123", ShortSHA: "abcdef1", BeadIDs: []string{issue.ID}}}
 				g := GraphModel{issueMap: map[string]*model.Issue{issue.ID: &issue}}
 				ins := InsightsModel{issueMap: g.issueMap}
-				flow := FlowMatrixModel{theme: theme, width: 100, height: 24, drilldownIssues: []model.Issue{issue}}
+				flow := FlowMatrixModel{theme: theme, width: 100, height: 24, drilldownIssues: []flowPairEndpoint{{key: flowPairKey{blocker: issue.ID, blocked: "bt-blocked"}, issue: issue, blocker: true}}}
 				for name, out := range map[string]string{
 					"history list":       h.renderBeadLine(0, hist, 100),
 					"history detail":     h.renderDetailPanel(100, 8),
