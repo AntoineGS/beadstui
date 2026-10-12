@@ -727,6 +727,75 @@ func TestPluginPromptCtrlCQuits(t *testing.T) {
 	}
 }
 
+func TestQuitFromHelpAnswersOriginatingPluginPromptBeforeQuitting(t *testing.T) {
+	prompts := []struct {
+		name string
+		make func(func(any)) plugin.PromptMsg
+	}{
+		{name: "confirm", make: confirmPrompt},
+		{name: "select", make: selectPrompt},
+	}
+	quitKeys := []struct {
+		name string
+		msg  tea.KeyPressMsg
+	}{
+		{name: "q", msg: keyRune('q')},
+		{name: "ctrl+c", msg: tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}},
+	}
+
+	for _, promptCase := range prompts {
+		for _, quitKey := range quitKeys {
+			t.Run(promptCase.name+"/"+quitKey.name, func(t *testing.T) {
+				m := newPluginActionModel(t, &fakePluginActions{})
+				var replies recorder
+				m, _ = sendMsg(m, promptCase.make(replies.reply))
+				if m.activeModal != ModalPluginPrompt || m.pluginPrompt == nil {
+					t.Fatalf("plugin request did not open its prompt: modal=%v prompt=%+v", m.activeModal, m.pluginPrompt)
+				}
+
+				m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyF1})
+				if m.activeModal != ModalHelp || m.helpOriginModal != ModalPluginPrompt {
+					t.Fatalf("F1 did not place help over plugin prompt: modal=%v origin=%v", m.activeModal, m.helpOriginModal)
+				}
+
+				m, cmd := sendMsg(m, quitKey.msg)
+				if cmd == nil {
+					t.Fatal("quit key returned no command")
+				}
+				if _, ok := cmd().(tea.QuitMsg); !ok {
+					t.Fatal("quit key did not return tea.QuitMsg")
+				}
+				if len(replies.answers) != 1 || replies.answers[0] != nil {
+					t.Fatalf("plugin answers = %v, want exactly [nil]", replies.answers)
+				}
+				if m.activeModal != ModalNone || m.pluginPrompt != nil {
+					t.Fatalf("plugin prompt not closed before quit: modal=%v prompt=%+v", m.activeModal, m.pluginPrompt)
+				}
+			})
+		}
+	}
+}
+
+func TestQuitFromHelpOverOrdinaryModalStillQuitsImmediately(t *testing.T) {
+	m := newSizedModel(t, fieldEditTestIssues(), 120, 32)
+	m.recipePicker = NewRecipePickerModel(nil, m.theme)
+	m.openModal(ModalRecipePicker)
+	m.focused = focusRecipePicker
+
+	m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyF1})
+	if m.activeModal != ModalHelp || m.helpOriginModal != ModalRecipePicker {
+		t.Fatalf("F1 did not open help over recipe picker: modal=%v origin=%v", m.activeModal, m.helpOriginModal)
+	}
+
+	_, cmd := sendMsg(m, keyRune('q'))
+	if cmd == nil {
+		t.Fatal("q from help over ordinary modal returned no command")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatal("q from help over ordinary modal did not quit immediately")
+	}
+}
+
 func TestPluginPromptClosesWhenStale(t *testing.T) {
 	m := newPluginActionModel(t, &fakePluginActions{})
 	var r recorder
