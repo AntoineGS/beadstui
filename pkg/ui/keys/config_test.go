@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	"gopkg.in/yaml.v3"
 )
 
@@ -638,6 +639,98 @@ func TestApplyConfiguredLeaderPrefixShadowsAllDescendants(t *testing.T) {
 	}
 	if got := a.Global.Board.Keys(); !reflect.DeepEqual(got, []string{"<leader>v", Token("view.board")}) {
 		t.Errorf("configured prefix = %v", got)
+	}
+}
+
+func TestApplyReservesPhysicalLeaderInGlobalAndViewMaps(t *testing.T) {
+	a := NewAppKeys()
+	settings, shadows, errs := a.Apply(Config{Leader: "y"})
+	if len(errs) != 0 {
+		t.Fatalf("Apply errors = %v, want none", errs)
+	}
+	if settings.Leader != "y" {
+		t.Fatalf("leader = %q, want y", settings.Leader)
+	}
+
+	a.Walk(func(ref Ref, binding *key.Binding) {
+		if ref.Map != "Global" {
+			if _, ok := viewMaps[ref.Map]; !ok {
+				return
+			}
+		}
+		if !containsKey(binding.Keys(), Token(ref.ID)) {
+			t.Errorf("%s.%s lost action token %q: %v", ref.Map, ref.Field, Token(ref.ID), binding.Keys())
+		}
+		if containsKey(binding.Keys(), settings.Leader) {
+			t.Errorf("%s.%s retained reserved leader key %q: %v", ref.Map, ref.Field, settings.Leader, binding.Keys())
+		}
+	})
+
+	for _, binding := range a.Lookup("bead.copy_id") {
+		if !containsKey(binding.Keys(), Token("bead.copy_id")) {
+			t.Errorf("bead.copy_id lost its action token: %v", binding.Keys())
+		}
+	}
+	if !hasShadow(shadows, Shadow{ID: "bead.copy_id", Key: "y", By: "keys.leader"}) {
+		t.Errorf("shadows = %#v, want CopyID shadowed by the leader", shadows)
+	}
+	if got := a.ListNormal.CopyID.Help().Key; got != "" {
+		t.Errorf("ListNormal.CopyID help key = %q, want empty after reserving y", got)
+	}
+}
+
+func TestApplyReservesLeaderWithoutChangingModalOrTextKeys(t *testing.T) {
+	a := NewAppKeys()
+	_, shadows, errs := a.Apply(Config{Bind: map[string]BindValue{
+		"filter.open":         {"space"},
+		"label_picker.toggle": {"space"},
+		"list_search.apply":   {"space"},
+	}})
+	if len(errs) != 0 {
+		t.Fatalf("Apply errors = %v, want none", errs)
+	}
+	if got := a.Global.FilterOpen.Keys(); !reflect.DeepEqual(got, []string{Token("filter.open")}) {
+		t.Errorf("Global filter.open keys = %v, want token only after reserving space", got)
+	}
+	if !hasShadow(shadows, Shadow{ID: "filter.open", Key: "space", By: "keys.leader"}) {
+		t.Errorf("shadows = %#v, want filter.open space shadowed by the leader", shadows)
+	}
+	if got := a.LabelPickerNav.Toggle.Keys(); !reflect.DeepEqual(got, []string{"space", Token("label_picker.toggle")}) {
+		t.Errorf("modal toggle keys = %v, want space and action token", got)
+	}
+	if got := a.ListSearch.Apply.Keys(); !reflect.DeepEqual(got, []string{"space", Token("list_search.apply")}) {
+		t.Errorf("text-state apply keys = %v, want space and action token", got)
+	}
+}
+
+func TestApplyRejectsPrefixConflictingAliasesAsWholeOverride(t *testing.T) {
+	for _, aliases := range [][]string{
+		{"<leader>v", "<leader>vb"},
+		{"<leader>vb", "<leader>v"},
+	} {
+		t.Run(strings.Join(aliases, ","), func(t *testing.T) {
+			a := NewAppKeys()
+			defaults := append([]string(nil), a.Global.Board.Keys()...)
+			_, _, errs := a.Apply(Config{Bind: map[string]BindValue{
+				"view.board":  aliases,
+				"filter.open": {"o"},
+			}})
+			if len(errs) != 1 || !strings.Contains(errs[0].Error(), "view.board") ||
+				!strings.Contains(errs[0].Error(), "conflict") ||
+				!strings.Contains(errs[0].Error(), "<leader>v") ||
+				!strings.Contains(errs[0].Error(), "<leader>vb") {
+				t.Fatalf("Apply errors = %v, want a prefix-conflict diagnostic for view.board", errs)
+			}
+			if got := a.Global.Board.Keys(); !reflect.DeepEqual(got, defaults) {
+				t.Errorf("rejected view.board override changed defaults: got %v, want %v", got, defaults)
+			}
+			if got := a.Global.FilterOpen.Keys(); !reflect.DeepEqual(got, []string{"o", Token("filter.open")}) {
+				t.Errorf("valid sibling override was not applied: %v", got)
+			}
+			if _, treeErrs := BuildSeqTree(LeaderPrefix, SeqEntries(LeaderPrefix, a.Global, a.BoardNormal), LeaderGroups); len(treeErrs) != 0 {
+				t.Errorf("rejected override left a leaf/group sequence conflict: %v", treeErrs)
+			}
+		})
 	}
 }
 

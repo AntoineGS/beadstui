@@ -126,6 +126,36 @@ func TestSetKeyConfigReportsShadowsAndErrors(t *testing.T) {
 	}
 }
 
+func TestSetKeyConfigReportsLeaderReservationAndAliasError(t *testing.T) {
+	m := actionTestModel(t)
+	m.SetKeyConfig(keys.Config{
+		Leader: "y",
+		Bind: map[string]keys.BindValue{
+			"view.board": {"<leader>v", "<leader>vb"},
+		},
+	}, nil)
+	if m.statusMsg != "keys: 3 shadowed, 1 config error - see ?" {
+		t.Fatalf("status = %q, want leader shadow and alias config-error counts", m.statusMsg)
+	}
+	if slices.Contains(m.keys.ListNormal.CopyID.Keys(), "y") {
+		t.Fatalf("ListNormal.CopyID retained reserved leader y: %v", m.keys.ListNormal.CopyID.Keys())
+	}
+
+	m, _ = sendMsg(m, tea.KeyPressMsg{Code: '?', Text: "?"})
+	plain := ansi.Strip(m.renderHelpOverlay())
+	for _, want := range []string{
+		"SHADOWED / ERRORS",
+		"bead.copy_id shadowed by keys.leader",
+		"keys.bind.view.board",
+		"<leader>v",
+		"<leader>vb",
+	} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("help overlay missing %q:\n%s", want, plain)
+		}
+	}
+}
+
 func TestSetKeyConfigWithoutProblemsDoesNotWarn(t *testing.T) {
 	m := actionTestModel(t)
 	m.SetKeyConfig(keys.Config{}, nil)

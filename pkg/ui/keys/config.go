@@ -181,6 +181,8 @@ type Settings struct {
 // claimed it.
 type Shadow struct{ ID, Key, By string }
 
+const leaderActionID = "keys.leader"
+
 // Apply validates and applies config entries in sorted action-ID order. Bad
 // entries are reported without preventing other entries from applying.
 func (a *AppKeys) Apply(cfg Config) (Settings, []Shadow, []error) {
@@ -231,6 +233,10 @@ func (a *AppKeys) Apply(cfg Config) (Settings, []Shadow, []error) {
 		if !valid {
 			continue
 		}
+		if first, second, conflict := conflictingConfiguredKeys(configured); conflict {
+			errs = append(errs, fmt.Errorf("keys.bind.%s: keys %q and %q conflict", id, first, second))
+			continue
+		}
 		if hasSequence(configured) && actionHasModalOrTextBinding(a, id) {
 			errs = append(errs, fmt.Errorf("keys.bind.%s: leader and gg sequences are unsupported for modal/text actions; use direct keys", id))
 			continue
@@ -257,9 +263,48 @@ func (a *AppKeys) Apply(cfg Config) (Settings, []Shadow, []error) {
 		}
 	}
 
+	leaderShadows := reserveLeaderKey(a, settings.Leader)
 	shadows, conflictErrs := resolveConfiguredConflicts(a, acceptedIDs, accepted, settings.Leader)
+	shadows = append(leaderShadows, shadows...)
 	errs = append(errs, conflictErrs...)
 	return settings, shadows, errs
+}
+
+func conflictingConfiguredKeys(configured BindValue) (string, string, bool) {
+	for i, current := range configured {
+		for _, previous := range configured[:i] {
+			if !keysConflict(current, previous) {
+				continue
+			}
+			if current < previous {
+				return current, previous, true
+			}
+			return previous, current, true
+		}
+	}
+	return "", "", false
+}
+
+func reserveLeaderKey(a *AppKeys, leader string) []Shadow {
+	var shadows []Shadow
+	seen := make(map[Shadow]struct{})
+	a.Walk(func(ref Ref, binding *key.Binding) {
+		if ref.Map != "Global" {
+			if _, view := viewMaps[ref.Map]; !view {
+				return
+			}
+		}
+		if !removeBindingKey(binding, leader, leader) {
+			return
+		}
+		shadow := Shadow{ID: ref.ID, Key: leader, By: leaderActionID}
+		if _, exists := seen[shadow]; exists {
+			return
+		}
+		seen[shadow] = struct{}{}
+		shadows = append(shadows, shadow)
+	})
+	return shadows
 }
 
 type bindingRef struct {

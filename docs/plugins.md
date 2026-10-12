@@ -67,6 +67,13 @@ prefix of other sequences removes those unreachable descendants. A direct key
 and a leader sequence using the same step remain distinct chords (`v` versus
 `SPC v`).
 
+The resolved physical leader is reserved in Global and ordinary view maps. A
+direct binding on that key is removed and reported as shadowed by `keys.leader`;
+the leader remains inactive in modal and text-input contexts. An action's own
+configured key list cannot contain overlapping aliases, such as both
+`<leader>v` and `<leader>vb`; that whole override is rejected and its defaults
+remain in effect.
+
 When there are shadows or config errors, startup reports their counts, for
 example `keys: 3 shadowed, 1 config error - see ?`. The `?` overlay's
 `SHADOWED / ERRORS` group lists losing built-in bindings with the winning action
