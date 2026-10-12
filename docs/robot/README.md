@@ -166,7 +166,7 @@ Run `bt robot docs env` to see the full variable list from the binary.
 | `triage.quick_wins` | array | High-unblocking-ratio items: `id`, `title`, `score`, `reason`, `unblocks_ids` |
 | `triage.blockers_to_clear` | array | Items blocking the most downstream work |
 | `triage.project_health` | object | Counts by status/type/priority, graph metrics, velocity |
-| `triage.commands` | object | Ready-to-run `bd` commands for the top pick |
+| `triage.commands` | object | Route-checked `bd` commands for the top pick |
 | `usage_hints` | array | `jq` snippets for common agent queries |
 
 Eligibility is evaluated against the complete corpus loaded for the invocation;
@@ -179,6 +179,9 @@ unassigned, non-epic, and have no unresolved immediate child. `quick_ref.top_pic
 and claim commands contain only claimable new-work candidates; the broader
 recommendations may still discuss blocked or in-progress work. At exact
 `defer_until` expiry, an otherwise eligible issue becomes Ready.
+Write suggestions include the verified owning project directory; if the route
+table cannot safely resolve the issue, the claim and show command are empty
+rather than targeting the current checkout by guess.
 
 When `--by-track` is set, adds `triage.recommendations_by_track[]` (array of tracks, each with `top_pick` and `items`).
 When `--by-label` is set, adds `triage.recommendations_by_label[]` (array of label groups).
@@ -229,8 +232,8 @@ bt robot triage --global
 | `score` | float | Triage score |
 | `reasons` | array | Human-readable scoring reasons |
 | `unblocks` | int | Count of directly unblocked downstream issues |
-| `claim_command` | string | Ready-to-run `bd update <id> --status=in_progress` |
-| `show_command` | string | Ready-to-run `bd show <id>` |
+| `claim_command` | string | Route-checked shell command for `bd update`; empty when bt cannot safely resolve the owning project |
+| `show_command` | string | Route-checked shell command for `bd show`; empty when bt cannot safely resolve the owning project |
 
 **Examples**:
 ```bash
@@ -248,8 +251,8 @@ bt robot next --global
   "score": 0.548,
   "reasons": ["Completing this unblocks 12 downstream issues", "High centrality (PageRank: 100%)"],
   "unblocks": 12,
-  "claim_command": "bd update bt-53du --status=in_progress",
-  "show_command": "bd show bt-53du"
+  "claim_command": "(cd '/path/to/project' && 'bd' 'update' 'bt-53du' '--status=in_progress')",
+  "show_command": "(cd '/path/to/project' && 'bd' 'show' 'bt-53du')"
 }
 ```
 

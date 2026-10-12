@@ -2,6 +2,7 @@ package analysis_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
@@ -192,6 +193,29 @@ func TestGetExecutionPlanUnblocksCalculation(t *testing.T) {
 	if plan.Summary.UnblocksCount != 2 {
 		t.Errorf("Expected unblocks count 2, got %d", plan.Summary.UnblocksCount)
 	}
+}
+
+func TestExecutionPlanWhatIfIncludesInheritedParentGate(t *testing.T) {
+	issues := []model.Issue{
+		{ID: "child", Status: model.StatusOpen, Dependencies: []*model.Dependency{{DependsOnID: "parent", Type: model.DepParentChild}}},
+		{ID: "parent", Status: model.StatusOpen, Dependencies: []*model.Dependency{{DependsOnID: "gate", Type: model.DepBlocks}}},
+		{ID: "gate", Status: model.StatusOpen},
+	}
+	readiness := model.NewReadinessIndex(issues)
+	a := analysis.NewAnalyzerWithReadiness(issues, readiness, time.Now())
+	got := a.GetExecutionPlan()
+	for _, track := range got.Tracks {
+		for _, item := range track.Items {
+			if item.ID == "gate" {
+				for _, unblocked := range item.UnblocksIDs {
+					if unblocked == "child" {
+						return
+					}
+				}
+			}
+		}
+	}
+	t.Fatalf("execution plan did not report child as unblocked by gate: %+v", got.Tracks)
 }
 
 func TestGenerateTrackID_Unbounded(t *testing.T) {

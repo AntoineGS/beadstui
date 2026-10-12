@@ -174,6 +174,15 @@ func robotPreRun() (*robotCtx, error) {
 	}
 
 	issues := appCtx.issues
+	sourceCorpus := appCtx.issuesForSearch
+	if sourceCorpus == nil {
+		sourceCorpus = appCtx.issues
+	}
+	readiness := appCtx.readiness
+	if readiness == nil {
+		readiness = model.NewReadinessIndex(analysis.ResolveExternalDeps(sourceCorpus))
+	}
+	evaluatedAt := time.Now()
 
 	// Apply --source filter. Runs before BQL/label scope so every downstream
 	// filter sees the already-narrowed set. Unknown projects produce empty
@@ -193,7 +202,7 @@ func robotPreRun() (*robotCtx, error) {
 			return nil, fmt.Errorf("BQL validation error: %w", err)
 		}
 		executor := bql.NewMemoryExecutor()
-		issues = executor.Execute(parsed, issues, bql.ExecuteOpts{IssueMap: loadedIssueMap()})
+		issues = executor.Execute(parsed, issues, bql.ExecuteOpts{IssueMap: loadedIssueMap(), Readiness: readiness, EvaluatedAt: evaluatedAt})
 	}
 
 	// Stable data hash (after repo filter but before recipes/label scope).
@@ -204,16 +213,25 @@ func robotPreRun() (*robotCtx, error) {
 	var labelScopeContext *analysis.LabelHealth
 	if robotFlagLabelScope != "" {
 		sg := analysis.ComputeLabelSubgraph(issues, robotFlagLabelScope)
-		if sg.IssueCount > 0 {
-			subgraphIssues := make([]model.Issue, 0, len(sg.AllIssues))
-			for _, id := range sg.AllIssues {
-				if iss, ok := sg.IssueMap[id]; ok {
-					subgraphIssues = append(subgraphIssues, iss)
+		labelCandidates := issues
+		subgraphIssues := make([]model.Issue, 0, len(sg.AllIssues))
+		for _, id := range sg.AllIssues {
+			if iss, ok := sg.IssueMap[id]; ok {
+				subgraphIssues = append(subgraphIssues, iss)
+			}
+		}
+		issues = make([]model.Issue, 0)
+		for _, issue := range labelCandidates {
+			for _, label := range issue.Labels {
+				if label == robotFlagLabelScope {
+					issues = append(issues, issue)
+					break
 				}
 			}
-			issues = subgraphIssues
+		}
+		if sg.IssueCount > 0 {
 			cfg := analysis.DefaultLabelHealthConfig()
-			allHealth := analysis.ComputeAllLabelHealth(issues, cfg, time.Now().UTC(), nil)
+			allHealth := analysis.ComputeAllLabelHealth(subgraphIssues, cfg, evaluatedAt.UTC(), nil)
 			for i := range allHealth.Labels {
 				if allHealth.Labels[i].Label == robotFlagLabelScope {
 					labelScopeContext = &allHealth.Labels[i]
@@ -233,14 +251,17 @@ func robotPreRun() (*robotCtx, error) {
 		if r == nil {
 			return nil, fmt.Errorf("unknown recipe '%s'", robotFlagRecipe)
 		}
-		issues = applyRecipeFilters(issues, r)
+		issues = applyRecipeFiltersWithReadiness(issues, r, readiness, evaluatedAt)
 		issues = applyRecipeSort(issues, r)
 	}
 
 	appCtx.issues = issues
 
 	projectDir, _ := os.Getwd()
-	rc := newRobotCtx(issues, appCtx.issuesForSearch, dataHash, projectDir, appCtx.beadsPath, projectDir, labelScopeContext)
+	rc := newRobotCtx(issues, sourceCorpus, dataHash, projectDir, appCtx.beadsPath, projectDir, labelScopeContext)
+	rc.readiness = readiness
+	rc.evaluatedAt = evaluatedAt
+	rc.routeTable = appCtx.routeTable
 	return rc, nil
 }
 
@@ -413,7 +434,7 @@ var robotBQLCmd = &cobra.Command{
 			return fmt.Errorf("BQL validation error: %w", err)
 		}
 		executor := bql.NewMemoryExecutor()
-		filtered := executor.Execute(parsed, rc.issues, bql.ExecuteOpts{IssueMap: loadedIssueMap()})
+		filtered := executor.Execute(parsed, rc.issues, bql.ExecuteOpts{IssueMap: loadedIssueMap(), Readiness: rc.readiness, EvaluatedAt: rc.evaluatedAt})
 
 		// Apply --offset and --limit for pagination.
 		limit, _ := cmd.Flags().GetInt("limit")

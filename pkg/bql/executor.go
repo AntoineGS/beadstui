@@ -3,7 +3,11 @@
 
 package bql
 
-import "github.com/seanmartinsmith/beadstui/pkg/model"
+import (
+	"time"
+
+	"github.com/seanmartinsmith/beadstui/pkg/model"
+)
 
 // Executor evaluates a parsed BQL query against issues.
 type Executor interface {
@@ -27,6 +31,10 @@ type ExecuteOpts struct {
 	// loaded corpus, not a scoped subset: whether an issue is blocked
 	// depends on issues outside the result set (bt-5muh4).
 	IssueMap map[string]*model.Issue
+	// Readiness and EvaluatedAt make the computed blocked field share the
+	// eligibility policy used by analysis and candidate filters.
+	Readiness   *model.ReadinessIndex
+	EvaluatedAt time.Time
 
 	// Fields answers fields missing from ValidFields. Built-in names always
 	// take precedence. Nil means only built-in fields have values.

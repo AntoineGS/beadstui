@@ -191,6 +191,25 @@ func TestApplyRecipeFilters_ActionableAndHasBlockers(t *testing.T) {
 	}
 }
 
+func TestApplyRecipeFiltersWithReadinessUsesFullCorpus(t *testing.T) {
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	deferUntil := now.Add(time.Hour)
+	actionable := true
+	recipeConfig := &recipe.Recipe{Filters: recipe.FilterConfig{Actionable: &actionable}}
+	candidate := model.Issue{ID: "candidate", Status: model.StatusOpen, DeferUntil: &deferUntil, Dependencies: []*model.Dependency{{DependsOnID: "missing", Type: model.DepBlocks}}}
+	if got := applyRecipeFiltersWithReadiness([]model.Issue{candidate}, recipeConfig, model.NewReadinessIndex([]model.Issue{candidate}), now); len(got) != 0 {
+		t.Fatalf("actionable recipe admitted deferred or missing-gate candidate: %+v", got)
+	}
+	deferUntil = now.Add(-time.Hour)
+	candidate.DeferUntil = &deferUntil
+	closedGate := model.Issue{ID: "gate", Status: model.StatusClosed}
+	candidate.Dependencies[0].DependsOnID = "gate"
+	got := applyRecipeFiltersWithReadiness([]model.Issue{candidate}, recipeConfig, model.NewReadinessIndex([]model.Issue{candidate, closedGate}), now)
+	if len(got) != 1 || got[0].ID != candidate.ID {
+		t.Fatalf("resolved gate was not eligible: %+v", got)
+	}
+}
+
 func TestApplyRecipeFilters_TitleAndPrefix(t *testing.T) {
 	issues := []model.Issue{
 		{ID: "UI-1", Title: "Add login button"},

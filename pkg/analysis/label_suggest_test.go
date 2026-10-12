@@ -448,7 +448,7 @@ func TestSuggestLabels_SuggestionFormat(t *testing.T) {
 		t.Error("ActionCommand is empty")
 	}
 	if !strings.Contains(sug.ActionCommand, "bd update") {
-		t.Errorf("ActionCommand should contain 'br update', got: %s", sug.ActionCommand)
+		t.Errorf("ActionCommand should contain 'bd update', got: %s", sug.ActionCommand)
 	}
 	if !strings.Contains(sug.ActionCommand, "--add-label") {
 		t.Errorf("ActionCommand should contain '--add-label', got: %s", sug.ActionCommand)

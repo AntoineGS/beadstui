@@ -286,11 +286,12 @@ type SnapshotBuilder struct {
 
 // NewSnapshotBuilder creates a builder for constructing a DataSnapshot.
 func NewSnapshotBuilder(issues []model.Issue) *SnapshotBuilder {
-	readiness := model.NewReadinessIndex(issues)
+	resolvedIssues := analysis.ResolveExternalDeps(issues)
+	readiness := model.NewReadinessIndex(resolvedIssues)
 	evaluatedAt := time.Now()
 	return &SnapshotBuilder{
 		issues:      issues,
-		analyzer:    analysis.NewAnalyzerWithReadiness(issues, readiness, evaluatedAt),
+		analyzer:    analysis.NewAnalyzerWithReadiness(resolvedIssues, readiness, evaluatedAt),
 		readiness:   readiness,
 		evaluatedAt: evaluatedAt,
 		cfg:         snapshotBuildConfigDefault(),
@@ -389,18 +390,7 @@ func (b *SnapshotBuilder) Build() *DataSnapshot {
 			continue
 		}
 
-		// Check if blocked by open dependencies
-		isBlocked := false
-		for _, dep := range issue.Dependencies {
-			if dep == nil || !dep.Type.IsBlocking() {
-				continue
-			}
-			if blocker, exists := issueMap[dep.DependsOnID]; exists && !isClosedLikeStatus(blocker.Status) {
-				isBlocked = true
-				break
-			}
-		}
-		if !isBlocked {
+		if b.readiness.Ready(issue.ID, b.evaluatedAt) {
 			cReady++
 		}
 	}
@@ -441,7 +431,7 @@ func (b *SnapshotBuilder) Build() *DataSnapshot {
 
 	// Compute triage insights (may be skipped for large/huge datasets; bv-9thm).
 	if b.cfg.PrecomputeTriage {
-		triageResult := analysis.ComputeTriageFromAnalyzer(b.analyzer, graphStats, issues, analysis.TriageOptions{}, time.Now())
+		triageResult := analysis.ComputeTriageFromAnalyzer(b.analyzer, graphStats, issues, analysis.TriageOptions{}, b.evaluatedAt)
 		triageScores = make(map[string]float64, len(triageResult.Recommendations))
 		triageReasons = make(map[string]analysis.TriageReasons, len(triageResult.Recommendations))
 		quickWinSet = make(map[string]bool, len(triageResult.QuickWins))

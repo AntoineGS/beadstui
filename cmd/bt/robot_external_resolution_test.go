@@ -4,9 +4,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/seanmartinsmith/beadstui/internal/bdroute"
 	"github.com/seanmartinsmith/beadstui/internal/datasource"
 	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/workspace"
 )
 
 // buildCrossProjectIssues returns a bt→external:cass:x→cass-y chain exercising
@@ -51,6 +53,49 @@ func TestAnalysisIssues_ResolvesAgainstLoadedCorpus(t *testing.T) {
 	}
 	if issues[0].Dependencies[0].DependsOnID != "external:cass:x" {
 		t.Fatal("resolver mutated caller input")
+	}
+}
+
+func TestClaimableRecommendationsExcludeNonClaimableIssues(t *testing.T) {
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	deferUntil := now.Add(time.Hour)
+	issues := []model.Issue{
+		{ID: "ready", Status: model.StatusOpen},
+		{ID: "flight", Status: model.StatusInProgress},
+		{ID: "assigned", Status: model.StatusOpen, Assignee: "worker"},
+		{ID: "deferred", Status: model.StatusOpen, DeferUntil: &deferUntil},
+		{ID: "epic", Status: model.StatusOpen, IssueType: model.TypeEpic},
+		{ID: "blocked", Status: model.StatusOpen, Dependencies: []*model.Dependency{{DependsOnID: "missing", Type: model.DepBlocks}}},
+	}
+	recommendations := make([]analysis.Recommendation, 0, len(issues))
+	for _, issue := range issues {
+		recommendations = append(recommendations, analysis.Recommendation{ID: issue.ID})
+	}
+	got := claimableRecommendations(recommendations, model.NewReadinessIndex(issues), now)
+	if len(got) != 1 || got[0].ID != "ready" {
+		t.Fatalf("claimable script actions = %+v, want only ready", got)
+	}
+}
+
+func TestRobotClaimCommandsUseIssueSpecificWorkspaceRoute(t *testing.T) {
+	rc := &robotCtx{
+		issuesForSearch: []model.Issue{{ID: "cass-a", Status: model.StatusOpen}},
+		routeTable:      bdroute.FromWorkspace([]workspace.LoadResult{{Prefix: "cass", AbsPath: "/tmp/cass checkout"}}),
+	}
+	got := rc.routedBDCommand("cass-a", "update", "cass-a", "--status=in_progress")
+	want := "(cd '/tmp/cass checkout' && 'bd' 'update' 'cass-a' '--status=in_progress')"
+	if got != want {
+		t.Fatalf("routed claim command = %q, want %q", got, want)
+	}
+	if got := (&robotCtx{issuesForSearch: rc.issuesForSearch}).routedBDCommand("cass-a", "update", "cass-a"); got != "" {
+		t.Fatalf("missing route emitted unsafe command %q", got)
+	}
+	global := &robotCtx{
+		issuesForSearch: []model.Issue{{ID: "bg-a", SourceRepo: bdroute.BeadsGlobalDB, Status: model.StatusOpen}},
+		routeTable:      bdroute.FromSettings(nil, []string{bdroute.BeadsGlobalDB}),
+	}
+	if got := global.routedBDCommand("bg-a", "update", "bg-a", "--claim"); got != "" {
+		t.Fatalf("unsupported global write emitted unscoped command %q", got)
 	}
 }
 

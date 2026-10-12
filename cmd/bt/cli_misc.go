@@ -227,7 +227,7 @@ func (rc *robotCtx) runAgentBrief(outputDir string) {
 
 // runEmitScript handles --emit-script (bv-89).
 func (rc *robotCtx) runEmitScript(scriptLimit int, scriptFormat string) {
-	triage := analysis.ComputeTriageWithOptions(rc.analysisIssues(), rc.triageOptions(analysis.TriageOptions{}))
+	triage := analysis.ComputeTriageWithOptions(rc.analysisIssues(), rc.triageOptions(analysis.TriageOptions{TopN: len(rc.issues)}))
 
 	// Determine script limit
 	limit := scriptLimit
@@ -236,7 +236,14 @@ func (rc *robotCtx) runEmitScript(scriptLimit int, scriptFormat string) {
 	}
 
 	// Collect top recommendations
-	recs := triage.Recommendations
+	recs := claimableRecommendations(triage.Recommendations, rc.readiness, rc.evaluatedAt)
+	routable := make([]analysis.Recommendation, 0, len(recs))
+	for _, recommendation := range recs {
+		if rc.routedBDCommand(recommendation.ID, "update", recommendation.ID, "--status=in_progress") != "" {
+			routable = append(routable, recommendation)
+		}
+	}
+	recs = routable
 	if len(recs) > limit {
 		recs = recs[:limit]
 	}
@@ -276,9 +283,10 @@ func (rc *robotCtx) runEmitScript(scriptLimit int, scriptFormat string) {
 			}
 
 			// Claim command
-			sb.WriteString(fmt.Sprintf("# To claim: bd update %s --status=in_progress\n", rec.ID))
-			// Show command
-			sb.WriteString(fmt.Sprintf("bd show %s\n", rec.ID))
+			claimCommand := rc.routedBDCommand(rec.ID, "update", rec.ID, "--status=in_progress")
+			sb.WriteString(fmt.Sprintf("# To claim: %s\n", claimCommand))
+			showCommand := rc.routedBDCommand(rec.ID, "show", rec.ID)
+			sb.WriteString(showCommand + "\n")
 			sb.WriteString("\n")
 		}
 
@@ -286,12 +294,12 @@ func (rc *robotCtx) runEmitScript(scriptLimit int, scriptFormat string) {
 		sb.WriteString("# === Quick Actions ===\n")
 		sb.WriteString("# To claim the top pick:\n")
 		if len(recs) > 0 {
-			sb.WriteString(fmt.Sprintf("# bd update %s --status=in_progress\n", recs[0].ID))
+			sb.WriteString("# " + rc.routedBDCommand(recs[0].ID, "update", recs[0].ID, "--status=in_progress") + "\n")
 		}
 		sb.WriteString("#\n")
 		sb.WriteString("# To claim all listed items (uncomment to enable):\n")
 		for _, rec := range recs {
-			sb.WriteString(fmt.Sprintf("# bd update %s --status=in_progress\n", rec.ID))
+			sb.WriteString("# " + rc.routedBDCommand(rec.ID, "update", rec.ID, "--status=in_progress") + "\n")
 		}
 	}
 
