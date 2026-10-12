@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -18,6 +17,7 @@ import (
 
 const (
 	clipboardHelperDeadline = 2 * time.Second
+	clipboardPipeWaitDelay  = 100 * time.Millisecond
 	maxOSC52Payload         = 74994
 )
 
@@ -32,6 +32,11 @@ type clipboardResultMsg struct {
 type clipboardRequest struct {
 	id  uint64
 	cmd tea.Cmd
+}
+
+type clipboardTerminalOutputMsg struct {
+	requestID uint64
+	sequence  string
 }
 
 type clipboardController struct {
@@ -158,7 +163,9 @@ func (m *Model) handleClipboardResult(msg clipboardResultMsg) (Model, tea.Cmd) {
 	}
 	if msg.sequence != "" && m.clipboard.hasTerminalOutput() {
 		m.setStatus(msg.label + " (sent to terminal; clipboard acceptance is unconfirmed)")
-		return *m, tea.Raw(msg.sequence)
+		return *m, func() tea.Msg {
+			return clipboardTerminalOutputMsg{requestID: msg.requestID, sequence: msg.sequence}
+		}
 	}
 	if msg.err != nil {
 		m.setNotice(fmt.Sprintf("%s Clipboard error: %v", activeGlyphs.Cross, msg.err))
@@ -166,6 +173,20 @@ func (m *Model) handleClipboardResult(msg clipboardResultMsg) (Model, tea.Cmd) {
 	}
 	m.setStatus(msg.label)
 	return *m, nil
+}
+
+// FilterClipboardOutput validates terminal output on Bubble Tea's event loop,
+// immediately before RawMsg handling writes it to the owned terminal.
+func FilterClipboardOutput(model tea.Model, msg tea.Msg) tea.Msg {
+	output, ok := msg.(clipboardTerminalOutputMsg)
+	if !ok {
+		return msg
+	}
+	m, ok := model.(Model)
+	if !ok || m.clipboard == nil || !m.clipboard.hasTerminalOutput() || !m.clipboard.isCurrent(output.requestID) {
+		return nil
+	}
+	return tea.RawMsg{Msg: output.sequence}
 }
 
 func makeOSC52Sequence(text string) (string, error) {
@@ -180,7 +201,7 @@ func osc52Sequence(text string, getenv func(string) string) string {
 	payload := base64.StdEncoding.EncodeToString([]byte(text))
 	raw := "\x1b]52;c;" + payload + "\x07"
 	if getenv("TMUX") != "" {
-		return "\x1bPtmux;\x1b" + strings.TrimSuffix(raw, "\x07") + "\x1b\\"
+		return raw
 	}
 	if getenv("STY") != "" {
 		return "\x1bP" + raw + "\x1b\\"
@@ -193,10 +214,25 @@ func runClipboardHelper(ctx context.Context, text string) error {
 	if err != nil {
 		return err
 	}
+	// Leave WaitDelay inside the caller's two-second budget. WaitDelay closes
+	// os/exec's stdin-copy pipe if a helper descendant inherits it and never
+	// drains it after the direct child exits or is killed.
+	if deadline, ok := ctx.Deadline(); ok {
+		cmdDeadline := deadline.Add(-clipboardPipeWaitDelay)
+		if time.Until(cmdDeadline) < 0 {
+			cmdDeadline = time.Now()
+		}
+		boundedCtx, cancel := context.WithDeadline(ctx, cmdDeadline)
+		defer cancel()
+		ctx = boundedCtx
+	}
 	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.WaitDelay = clipboardPipeWaitDelay
 	cmd.Stdin = strings.NewReader(text)
-	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
+	// Nil stdio makes os/exec connect directly to the null device instead of
+	// creating parent-side copy pipes descendants could keep open indefinitely.
+	cmd.Stdout = nil
+	cmd.Stderr = nil
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
 			return fmt.Errorf("clipboard helper timed out or was cancelled: %w", ctx.Err())

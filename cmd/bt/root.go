@@ -832,8 +832,15 @@ func runTUIProgram(m ui.Model) error {
 	teaOpts := []tea.ProgramOption{tea.WithoutSignalHandler()}
 	if mode != "realtime" {
 		coalescer = ui.NewResizeCoalescer(burstSettle, 25*time.Millisecond)
-		teaOpts = append(teaOpts, tea.WithFilter(coalescer.Filter))
 	}
+	filter := func(model tea.Model, msg tea.Msg) tea.Msg {
+		msg = ui.FilterClipboardOutput(model, msg)
+		if msg == nil || coalescer == nil {
+			return msg
+		}
+		return coalescer.Filter(model, msg)
+	}
+	teaOpts = append(teaOpts, tea.WithFilter(filter))
 	p := tea.NewProgram(m, teaOpts...)
 	if coalescer != nil {
 		coalescer.SetSender(p.Send)
