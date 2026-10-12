@@ -7,10 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"github.com/seanmartinsmith/beadstui/internal/bdexec"
 	"github.com/seanmartinsmith/beadstui/internal/datasource"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 	"github.com/seanmartinsmith/beadstui/pkg/version"
 )
 
@@ -977,6 +979,52 @@ func TestHistorySearchKeyIsolation(t *testing.T) {
 	}
 	if m.mode != ViewHistory {
 		t.Fatalf("Esc on active search exited history view; expected to stay in ViewHistory, got %v", m.mode)
+	}
+}
+
+func TestConfiguredSearchCursorPreserved(t *testing.T) {
+	issues := []model.Issue{
+		{ID: "bt-1", Title: "One", Status: model.StatusOpen},
+		{ID: "bt-2", Title: "Two", Status: model.StatusOpen},
+		{ID: "bt-3", Title: "Three", Status: model.StatusOpen},
+	}
+	m := NewModel(issues, nil, "", nil, nil)
+	m.mode = ViewList
+	m.focused = focusList
+	m.list.Select(1)
+	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{"app.search": {";"}}}, nil)
+
+	updated, _ := m.Update(tea.KeyPressMsg{Code: ';', Text: ";"})
+	m = updated.(Model)
+	if m.list.FilterState() != list.Filtering {
+		t.Fatalf("configured search key left filter state %v", m.list.FilterState())
+	}
+	if m.list.Index() != 1 {
+		t.Errorf("configured search key restored cursor to %d, want 1", m.list.Index())
+	}
+}
+
+func TestConfiguredEmptySearchApplyUsesResolvedBinding(t *testing.T) {
+	issues := []model.Issue{
+		{ID: "bt-1", Title: "One", Status: model.StatusOpen},
+		{ID: "bt-2", Title: "Two", Status: model.StatusOpen},
+	}
+	m := NewModel(issues, nil, "", nil, nil)
+	m.mode = ViewList
+	m.focused = focusList
+	m.list.SetFilterState(list.Filtering)
+	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{"list_search.apply": {"ctrl+e"}}}, nil)
+
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = updated.(Model)
+	if m.list.FilterState() != list.Filtering {
+		t.Errorf("Enter dismissed empty search despite apply being rebound: state=%v", m.list.FilterState())
+	}
+
+	updated, _ = m.Update(tea.KeyPressMsg{Text: keys.Token("list_search.apply")})
+	m = updated.(Model)
+	if m.list.FilterState() != list.Unfiltered {
+		t.Errorf("resolved list_search.apply token left empty search in state %v", m.list.FilterState())
 	}
 }
 

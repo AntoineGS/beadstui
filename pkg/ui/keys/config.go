@@ -10,6 +10,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"charm.land/bubbles/v2/key"
 	"gopkg.in/yaml.v3"
 )
 
@@ -100,27 +101,61 @@ func LoadConfig(path string) (Config, error) {
 }
 
 func decodeConfigNode(node *yaml.Node) (Config, error) {
-	var raw struct {
-		Leader        string    `yaml:"leader"`
-		WhichKeyDelay string    `yaml:"which_key_delay"`
-		Bind          yaml.Node `yaml:"bind"`
+	var cfg Config
+	if node == nil || node.Kind != yaml.MappingNode {
+		return cfg, errors.New("keys must be a map")
 	}
-	if err := node.Decode(&raw); err != nil {
-		return Config{}, err
-	}
-
-	cfg := Config{Leader: raw.Leader, WhichKeyDelay: raw.WhichKeyDelay}
-	if raw.Bind.Kind == 0 {
-		return cfg, nil
-	}
-	if raw.Bind.Kind != yaml.MappingNode {
-		return cfg, errors.New("keys.bind must be a map")
-	}
-
-	cfg.Bind = make(map[string]BindValue, len(raw.Bind.Content)/2)
 	var errs []error
-	for i := 0; i < len(raw.Bind.Content); i += 2 {
-		keyNode, valueNode := raw.Bind.Content[i], raw.Bind.Content[i+1]
+	for i := 0; i < len(node.Content); i += 2 {
+		fieldNode, valueNode := node.Content[i], node.Content[i+1]
+		if fieldNode.Kind != yaml.ScalarNode || fieldNode.ShortTag() != "!!str" {
+			errs = append(errs, errors.New("keys field names must be strings"))
+			continue
+		}
+		switch fieldNode.Value {
+		case "leader":
+			value, err := decodeConfigString(valueNode)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("keys.leader: %w", err))
+				continue
+			}
+			cfg.Leader = value
+		case "which_key_delay":
+			value, err := decodeConfigString(valueNode)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("keys.which_key_delay: %w", err))
+				continue
+			}
+			cfg.WhichKeyDelay = value
+		case "bind":
+			if valueNode.Kind != yaml.MappingNode {
+				errs = append(errs, errors.New("keys.bind must be a map"))
+				continue
+			}
+			if cfg.Bind == nil {
+				cfg.Bind = make(map[string]BindValue, len(valueNode.Content)/2)
+			}
+			errs = append(errs, decodeBindEntries(valueNode, cfg.Bind)...)
+		}
+	}
+	return cfg, errors.Join(errs...)
+}
+
+func decodeConfigString(node *yaml.Node) (string, error) {
+	if node == nil || node.Kind != yaml.ScalarNode || node.ShortTag() == "!!null" {
+		return "", errors.New("must be a scalar value")
+	}
+	var value string
+	if err := node.Decode(&value); err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+func decodeBindEntries(node *yaml.Node, bindings map[string]BindValue) []error {
+	var errs []error
+	for i := 0; i < len(node.Content); i += 2 {
+		keyNode, valueNode := node.Content[i], node.Content[i+1]
 		if keyNode.Kind != yaml.ScalarNode || keyNode.ShortTag() != "!!str" {
 			errs = append(errs, errors.New("keys.bind action IDs must be strings"))
 			continue
@@ -130,9 +165,9 @@ func decodeConfigNode(node *yaml.Node) (Config, error) {
 			errs = append(errs, fmt.Errorf("keys.bind.%s: %w", keyNode.Value, err))
 			continue
 		}
-		cfg.Bind[keyNode.Value] = value
+		bindings[keyNode.Value] = value
 	}
-	return cfg, errors.Join(errs...)
+	return errs
 }
 
 // Settings are the resolved leader and which-key panel settings.
@@ -143,7 +178,7 @@ type Settings struct {
 }
 
 // Shadow describes a key removed from one action because another action
-// claimed it. Conflict handling is added in the next config phase.
+// claimed it.
 type Shadow struct{ ID, Key, By string }
 
 // Apply validates and applies config entries in sorted action-ID order. Bad
@@ -175,6 +210,8 @@ func (a *AppKeys) Apply(cfg Config) (Settings, []Shadow, []error) {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
+	accepted := make(map[string]BindValue, len(ids))
+	var acceptedIDs []string
 	for _, id := range ids {
 		bindings := a.Lookup(id)
 		if len(bindings) == 0 {
@@ -194,6 +231,12 @@ func (a *AppKeys) Apply(cfg Config) (Settings, []Shadow, []error) {
 		if !valid {
 			continue
 		}
+		if hasSequence(configured) && actionHasModalOrTextBinding(a, id) {
+			errs = append(errs, fmt.Errorf("keys.bind.%s: leader and gg sequences are unsupported for modal/text actions; use direct keys", id))
+			continue
+		}
+		accepted[id] = append(BindValue(nil), configured...)
+		acceptedIDs = append(acceptedIDs, id)
 
 		for _, binding := range bindings {
 			var tokens []string
@@ -214,7 +257,143 @@ func (a *AppKeys) Apply(cfg Config) (Settings, []Shadow, []error) {
 		}
 	}
 
-	return settings, nil, errs
+	shadows, conflictErrs := resolveConfiguredConflicts(a, acceptedIDs, accepted, settings.Leader)
+	errs = append(errs, conflictErrs...)
+	return settings, shadows, errs
+}
+
+type bindingRef struct {
+	ref     Ref
+	binding *key.Binding
+}
+
+func resolveConfiguredConflicts(a *AppKeys, ids []string, configured map[string]BindValue, leader string) ([]Shadow, []error) {
+	var refs []bindingRef
+	a.Walk(func(ref Ref, binding *key.Binding) {
+		refs = append(refs, bindingRef{ref: ref, binding: binding})
+	})
+
+	var shadows []Shadow
+	seenShadows := make(map[Shadow]struct{})
+	var errs []error
+	conflictErrors := make(map[string]struct{})
+	for _, winnerID := range ids {
+		for _, winner := range refs {
+			if winner.ref.ID != winnerID {
+				continue
+			}
+			for _, winnerKey := range configured[winnerID] {
+				if !bindingHasKey(winner.binding, winnerKey) {
+					continue
+				}
+				for _, other := range refs {
+					if other.ref.ID == winnerID || !mapsOverlap(winner.ref.Map, other.ref.Map) {
+						continue
+					}
+					for _, otherKey := range other.binding.Keys() {
+						if IsToken(otherKey) || !keysConflict(winnerKey, otherKey) {
+							continue
+						}
+						if !removeBindingKey(other.binding, otherKey, leader) {
+							continue
+						}
+						shadow := Shadow{ID: other.ref.ID, Key: otherKey, By: winnerID}
+						if _, seen := seenShadows[shadow]; !seen {
+							seenShadows[shadow] = struct{}{}
+							shadows = append(shadows, shadow)
+						}
+						if containsConfiguredKey(configured[other.ref.ID], otherKey) {
+							if _, reported := conflictErrors[other.ref.ID]; !reported {
+								conflictErrors[other.ref.ID] = struct{}{}
+								errs = append(errs, fmt.Errorf("keys.bind.%s: key %q conflicts with configured binding %s", other.ref.ID, otherKey, winnerID))
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return shadows, errs
+}
+
+func bindingHasKey(binding *key.Binding, want string) bool {
+	for _, existing := range binding.Keys() {
+		if existing == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsConfiguredKey(configured BindValue, want string) bool {
+	for _, existing := range configured {
+		if existing == want {
+			return true
+		}
+	}
+	return false
+}
+
+func removeBindingKey(binding *key.Binding, removed, leader string) bool {
+	oldKeys := binding.Keys()
+	keys := make([]string, 0, len(oldKeys))
+	for _, existing := range oldKeys {
+		if existing != removed {
+			keys = append(keys, existing)
+		}
+	}
+	if len(keys) == len(oldKeys) {
+		return false
+	}
+	binding.SetKeys(keys...)
+	help := binding.Help()
+	binding.SetHelp(HelpLabel(keys, LeaderLabel(leader)), help.Desc)
+	return true
+}
+
+func mapsOverlap(a, b string) bool {
+	if a == b {
+		return true
+	}
+	if a == "Global" {
+		_, modal := modalMaps[b]
+		return !modal
+	}
+	if b == "Global" {
+		_, modal := modalMaps[a]
+		return !modal
+	}
+	return false
+}
+
+func keysConflict(a, b string) bool {
+	if a == b {
+		return true
+	}
+	aPrefix, aSteps, aSequence := ParseSeq(a)
+	bPrefix, bSteps, bSequence := ParseSeq(b)
+	if aSequence && !bSequence && b == aPrefix {
+		return true
+	}
+	if bSequence && !aSequence && a == bPrefix {
+		return true
+	}
+	if !aSequence || !bSequence || aPrefix != bPrefix {
+		return false
+	}
+	return sequencePrefix(aSteps, bSteps) || sequencePrefix(bSteps, aSteps)
+}
+
+func sequencePrefix(prefix, steps []string) bool {
+	if len(prefix) > len(steps) {
+		return false
+	}
+	for i := range prefix {
+		if prefix[i] != steps[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func validConfiguredKey(raw string) bool {
@@ -249,7 +428,7 @@ func validPhysicalKey(raw string) bool {
 
 	parts := strings.Split(raw, "+")
 	base := parts[len(parts)-1]
-	if !knownKeyName(base) {
+	if !knownKeyName(base) && !isPrintableKeyRune(base) {
 		return false
 	}
 	if len(parts) == 1 {
@@ -267,6 +446,53 @@ func validPhysicalKey(raw string) bool {
 		lastOrder = order
 	}
 	return true
+}
+
+func isPrintableKeyRune(raw string) bool {
+	if utf8.RuneCountInString(raw) != 1 {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(raw)
+	return unicode.IsPrint(r) && !unicode.IsSpace(r)
+}
+
+func hasSequence(bindings BindValue) bool {
+	for _, raw := range bindings {
+		if _, _, ok := ParseSeq(raw); ok {
+			return true
+		}
+	}
+	return false
+}
+
+var modalMaps = map[string]struct{}{
+	"LabelPickerNav": {}, "LabelPickerSearch": {}, "RecipePicker": {},
+	"BQLQuery": {}, "TimeTravelInput": {}, "Settings": {},
+	"RepoPickerNav": {}, "RepoPickerSearch": {}, "EpicCard": {},
+	"Confirm": {}, "FieldSelect": {}, "FieldPicker": {}, "FieldInput": {},
+	"LongformEdit": {}, "PluginSelect": {}, "Help": {}, "Notifications": {},
+	"Alerts": {}, "LabelHealth": {}, "LabelDrilldown": {}, "LabelGraph": {},
+	"Cass": {}, "AgentPrompt": {}, "Tutorial": {}, "Update": {},
+}
+
+var textInputMaps = map[string]struct{}{
+	"ListSearch": {}, "BoardSearch": {}, "HistorySearch": {}, "MemoriesSearch": {},
+}
+
+func actionHasModalOrTextBinding(a *AppKeys, id string) bool {
+	found := false
+	a.Walk(func(ref Ref, _ *key.Binding) {
+		if ref.ID != id {
+			return
+		}
+		if _, ok := modalMaps[ref.Map]; ok {
+			found = true
+		}
+		if _, ok := textInputMaps[ref.Map]; ok {
+			found = true
+		}
+	})
+	return found
 }
 
 func knownKeyName(name string) bool {

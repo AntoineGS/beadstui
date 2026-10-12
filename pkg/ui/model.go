@@ -34,6 +34,7 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/version"
 	"github.com/seanmartinsmith/beadstui/pkg/watcher"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
@@ -1651,6 +1652,7 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 	}
 	m.labelDashboard.keys = m.keys.LabelDashboard
 	m.tutorialModel.keys = m.keys.Tutorial
+	m.syncBubblesKeyBindings(keys.Config{}, nil, nil)
 	m.applyFilter()
 	m.filter.appliedKey = m.cursorKey()
 	m.refreshThemeConsumers()
@@ -2068,7 +2070,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// query feels like "I'm done here", not "match everything".
 			emptyFilterEnter := false
 			if kp, isKey := msg.(tea.KeyPressMsg); isKey &&
-				kp.String() == "enter" &&
+				key.Matches(kp, m.keys.ListSearch.Apply) &&
 				m.list.FilterState() == list.Filtering &&
 				strings.TrimSpace(m.list.FilterInput.Value()) == "" {
 				m.list.ResetFilter()
@@ -2081,7 +2083,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filterEntryCursor = -1
 			if !emptyFilterEnter {
 				if kp, isKey := msg.(tea.KeyPressMsg); isKey &&
-					kp.Code == '/' &&
+					key.Matches(kp, m.keys.Global.SearchBounce) &&
 					m.list.FilterState() != list.Filtering {
 					m.filterEntryCursor = m.list.Index()
 				}

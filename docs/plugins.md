@@ -43,6 +43,11 @@ key while keeping it available through its action token. Use `<leader>` in a
 sequence to refer to the configured leader. Invalid entries are reported while
 other valid entries are still applied.
 
+Built-in actions declared by modal or text-input maps accept direct keys only.
+A `<leader>` or `gg` sequence for one of those actions rejects that action's
+entire `keys.bind` entry; valid sibling entries still apply. Keep plugin action
+overrides under the plugin's own `keys` map.
+
 Plugin action overrides are separate: keep them under each plugin's `keys` map,
 keyed by plugin action ID. They do not belong in the top-level `keys.bind` map.
 

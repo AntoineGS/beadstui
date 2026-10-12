@@ -118,8 +118,17 @@ func TestApplyPromotesAndMovesBindingsAndKeepsTokens(t *testing.T) {
 	if len(errs) != 0 {
 		t.Fatalf("Apply errors: %v", errs)
 	}
-	if shadows != nil {
-		t.Errorf("Task 6 Apply shadows = %#v, want nil", shadows)
+	wantShadows := []Shadow{
+		{ID: "tree.expand_all", Key: "o", By: "filter.open"},
+		{ID: "history.open_in_browser", Key: "o", By: "filter.open"},
+	}
+	if len(shadows) != len(wantShadows) {
+		t.Fatalf("Apply shadows = %#v, want %#v", shadows, wantShadows)
+	}
+	for _, want := range wantShadows {
+		if !hasShadow(shadows, want) {
+			t.Errorf("Apply shadows = %#v, missing %#v", shadows, want)
+		}
 	}
 	if settings.Leader != "space" || settings.WhichKeyDelay != 250*time.Millisecond || settings.WhichKeyOff {
 		t.Errorf("default settings = %+v", settings)
@@ -261,4 +270,277 @@ func TestLeaderLabel(t *testing.T) {
 	if got := LeaderLabel(","); got != "," {
 		t.Errorf("LeaderLabel(comma) = %q, want comma", got)
 	}
+}
+
+func TestApplyAcceptsModifiedPrintableKeys(t *testing.T) {
+	for _, raw := range []string{"ctrl+d", "ctrl+s", "alt+x", "<leader><ctrl+x>"} {
+		t.Run(raw, func(t *testing.T) {
+			a := NewAppKeys()
+			_, _, errs := a.Apply(Config{Bind: map[string]BindValue{"filter.open": {raw}}})
+			if len(errs) != 0 {
+				t.Fatalf("Apply(%q) errors = %v", raw, errs)
+			}
+			if got := a.Global.FilterOpen.Keys(); !reflect.DeepEqual(got, []string{raw, Token("filter.open")}) {
+				t.Fatalf("keys = %v, want configured key and token", got)
+			}
+		})
+	}
+}
+
+func TestLoadConfigRetainsValidSiblings(t *testing.T) {
+	cfg, err := LoadConfig(writeKeysConfig(t, `
+keys:
+  leader: [space]
+  which_key_delay: [250ms]
+  bind:
+    bad: [x, 2]
+    good: o
+`))
+	if err == nil {
+		t.Fatal("LoadConfig accepted malformed settings and binding")
+	}
+	for _, want := range []string{"leader", "which_key_delay", "keys.bind.bad"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("LoadConfig error %q does not mention %q", err, want)
+		}
+	}
+	if cfg.Leader != "" || cfg.WhichKeyDelay != "" {
+		t.Errorf("malformed settings were retained: %+v", cfg)
+	}
+	if got := cfg.Bind["good"]; !reflect.DeepEqual(got, BindValue{"o"}) {
+		t.Errorf("valid sibling bind = %v, want [o]", got)
+	}
+	if _, ok := cfg.Bind["bad"]; ok {
+		t.Errorf("malformed bind was retained: %#v", cfg.Bind["bad"])
+	}
+}
+
+func TestLoadConfigRejectsMalformedBindContainer(t *testing.T) {
+	cfg, err := LoadConfig(writeKeysConfig(t, `
+keys:
+  leader: ","
+  which_key_delay: 300ms
+  bind: [o]
+`))
+	if err == nil || !strings.Contains(err.Error(), "keys.bind") {
+		t.Fatalf("LoadConfig error = %v, want malformed bind container", err)
+	}
+	if cfg.Leader != "," || cfg.WhichKeyDelay != "300ms" {
+		t.Errorf("valid settings were discarded with malformed bind: %+v", cfg)
+	}
+}
+
+func TestApplyRejectsSequenceOverridesForModalTextActions(t *testing.T) {
+	a := NewAppKeys()
+	defaults := make([][]string, 0, len(a.Lookup("nav.up")))
+	for _, binding := range a.Lookup("nav.up") {
+		defaults = append(defaults, append([]string(nil), binding.Keys()...))
+	}
+	listSearchDefault := append([]string(nil), a.ListSearch.Apply.Keys()...)
+	_, _, errs := a.Apply(Config{Bind: map[string]BindValue{
+		"nav.up":            {"u", "<leader>x"},
+		"list_search.apply": {"gg"},
+		"filter.open":       {"o"},
+	}})
+	if len(errs) != 2 {
+		t.Fatalf("Apply errors = %v, want direct-only nav.up and list_search.apply errors", errs)
+	}
+	joinedErrors := errs[0].Error() + " " + errs[1].Error()
+	if !strings.Contains(joinedErrors, "nav.up") || !strings.Contains(joinedErrors, "list_search.apply") {
+		t.Fatalf("Apply errors = %v, want direct-only nav.up and list_search.apply errors", errs)
+	}
+	for i, binding := range a.Lookup("nav.up") {
+		if got := binding.Keys(); !reflect.DeepEqual(got, defaults[i]) {
+			t.Errorf("rejected nav.up override changed binding to %v, want original %v", got, defaults[i])
+		}
+	}
+	if got := a.Global.FilterOpen.Keys(); !reflect.DeepEqual(got, []string{"o", Token("filter.open")}) {
+		t.Errorf("valid sibling override was not applied: %v", got)
+	}
+	if got := a.ListSearch.Apply.Keys(); !reflect.DeepEqual(got, listSearchDefault) {
+		t.Errorf("rejected gg override changed ListSearch.Apply to %v, want %v", got, listSearchDefault)
+	}
+}
+
+func TestApplyAllowsDirectOverrideForModalTextAction(t *testing.T) {
+	a := NewAppKeys()
+	_, _, errs := a.Apply(Config{Bind: map[string]BindValue{"nav.up": {"u"}}})
+	if len(errs) != 0 {
+		t.Fatalf("Apply errors = %v, want none", errs)
+	}
+	for _, binding := range a.Lookup("nav.up") {
+		if got := binding.Keys(); !reflect.DeepEqual(got, []string{"u", Token("nav.up")}) {
+			t.Errorf("direct nav.up override = %v, want [u @nav.up]", got)
+		}
+	}
+}
+
+func TestApplyRejectsSequencesInTextSearchMaps(t *testing.T) {
+	for _, id := range []string{
+		"list_search.apply",
+		"board_search.finish",
+		"history_search.confirm",
+		"memories_search.confirm",
+	} {
+		t.Run(id, func(t *testing.T) {
+			a := NewAppKeys()
+			defaults := append([]string(nil), a.Lookup(id)[0].Keys()...)
+			_, _, errs := a.Apply(Config{Bind: map[string]BindValue{id: {"<leader>x"}}})
+			if len(errs) != 1 || !strings.Contains(errs[0].Error(), id) {
+				t.Fatalf("Apply errors = %v, want direct-only error for %s", errs, id)
+			}
+			if got := a.Lookup(id)[0].Keys(); !reflect.DeepEqual(got, defaults) {
+				t.Errorf("rejected sequence changed %s keys: got %v, want %v", id, got, defaults)
+			}
+		})
+	}
+}
+
+func TestApplyShadowsConflictsWithinOneMapAndPreservesOtherViews(t *testing.T) {
+	a := NewAppKeys()
+	_, shadows, errs := a.Apply(Config{Bind: map[string]BindValue{"list.detail_page_up": {"k"}}})
+	if len(errs) != 0 {
+		t.Fatalf("Apply errors = %v, want none", errs)
+	}
+	if !hasShadow(shadows, Shadow{ID: "nav.up", Key: "k", By: "list.detail_page_up"}) {
+		t.Errorf("shadows = %#v, want nav.up k shadowed by list.detail_page_up", shadows)
+	}
+	if containsKey(a.ListNormal.Up.Keys(), "k") {
+		t.Errorf("same-map nav.up retained conflicting key: %v", a.ListNormal.Up.Keys())
+	}
+	if !containsKey(a.Tree.Up.Keys(), "k") {
+		t.Errorf("unrelated Tree map lost nav.up's key: %v", a.Tree.Up.Keys())
+	}
+	if got := a.ListNormal.Up.Keys(); !containsKey(got, Token("nav.up")) {
+		t.Errorf("shadowed binding lost its action token: %v", got)
+	}
+}
+
+func TestApplyShadowsGlobalKeysAcrossViewAndSearchSiblingMaps(t *testing.T) {
+	a := NewAppKeys()
+	_, shadows, errs := a.Apply(Config{Bind: map[string]BindValue{"app.search": {"enter"}}})
+	if len(errs) != 0 {
+		t.Fatalf("Apply errors = %v, want none", errs)
+	}
+	for _, want := range []Shadow{
+		{ID: "list.open", Key: "enter", By: "app.search"},
+		{ID: "list_search.apply", Key: "enter", By: "app.search"},
+	} {
+		if !hasShadow(shadows, want) {
+			t.Errorf("shadows = %#v, missing %#v", shadows, want)
+		}
+	}
+	if containsKey(a.ListNormal.Enter.Keys(), "enter") {
+		t.Errorf("view binding retained Global conflict: %v", a.ListNormal.Enter.Keys())
+	}
+	if containsKey(a.ListSearch.Apply.Keys(), "enter") {
+		t.Errorf("search sibling retained Global conflict: %v", a.ListSearch.Apply.Keys())
+	}
+	if !containsKey(a.ListNormal.Enter.Keys(), Token("list.open")) || !containsKey(a.ListSearch.Apply.Keys(), Token("list_search.apply")) {
+		t.Errorf("conflict resolution removed action tokens: normal=%v search=%v", a.ListNormal.Enter.Keys(), a.ListSearch.Apply.Keys())
+	}
+}
+
+func TestApplyConflictingConfiguredKeysChooseSortedIDWinner(t *testing.T) {
+	a := NewAppKeys()
+	_, shadows, errs := a.Apply(Config{Bind: map[string]BindValue{
+		"list.detail_page_up":   {"x"},
+		"list.detail_page_down": {"x"},
+	}})
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "list.detail_page_up") {
+		t.Fatalf("Apply errors = %v, want one error for sorted loser list.detail_page_up", errs)
+	}
+	want := Shadow{ID: "list.detail_page_up", Key: "x", By: "list.detail_page_down"}
+	if !hasShadow(shadows, want) {
+		t.Errorf("shadows = %#v, want %#v", shadows, want)
+	}
+	if got := a.ListNormal.DetailPageDown.Keys(); !reflect.DeepEqual(got, []string{"x", Token("list.detail_page_down")}) {
+		t.Errorf("sorted winner keys = %v", got)
+	}
+	if got := a.ListNormal.DetailPageUp.Keys(); !reflect.DeepEqual(got, []string{Token("list.detail_page_up")}) {
+		t.Errorf("sorted loser keys = %v, want token only", got)
+	}
+}
+
+func TestApplySequencePrefixShadowsDirectPrefixBinding(t *testing.T) {
+	a := NewAppKeys()
+	_, shadows, errs := a.Apply(Config{Bind: map[string]BindValue{
+		"filter.open": {"gg"},
+		"view.graph":  {"g"},
+	}})
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "view.graph") {
+		t.Fatalf("Apply errors = %v, want one losing direct-prefix error", errs)
+	}
+	want := Shadow{ID: "view.graph", Key: "g", By: "filter.open"}
+	if !hasShadow(shadows, want) {
+		t.Errorf("shadows = %#v, want %#v", shadows, want)
+	}
+	if got := a.Global.Graph.Keys(); !reflect.DeepEqual(got, []string{Token("view.graph")}) {
+		t.Errorf("direct-prefix loser keys = %v, want token only", got)
+	}
+	if got := a.Global.FilterOpen.Keys(); !reflect.DeepEqual(got, []string{"gg", Token("filter.open")}) {
+		t.Errorf("sequence winner keys = %v", got)
+	}
+}
+
+func TestApplyDoesNotConflictAcrossMutuallyExclusiveSearchAndNormalMaps(t *testing.T) {
+	a := NewAppKeys()
+	_, shadows, errs := a.Apply(Config{Bind: map[string]BindValue{"list.open": {"enter"}}})
+	if len(errs) != 0 {
+		t.Fatalf("Apply errors = %v, want none", errs)
+	}
+	if shadows != nil {
+		t.Errorf("exclusive search/normal maps produced shadows: %#v", shadows)
+	}
+	if !containsKey(a.ListSearch.Apply.Keys(), "enter") {
+		t.Errorf("ListSearch sibling lost enter: %v", a.ListSearch.Apply.Keys())
+	}
+}
+
+func TestApplySequencePrefixShadowsDefaultGroupEntries(t *testing.T) {
+	a := NewAppKeys()
+	_, shadows, errs := a.Apply(Config{Bind: map[string]BindValue{"filter.open": {"<leader>f"}}})
+	if len(errs) != 0 {
+		t.Fatalf("Apply errors = %v, want none", errs)
+	}
+	for _, entry := range []struct {
+		id      string
+		key     string
+		binding []string
+	}{
+		{"filter.closed", "<leader>fc", a.Global.FilterClosed.Keys()},
+		{"filter.ready", "<leader>fr", a.Global.FilterReady.Keys()},
+		{"filter.cycle_status", "<leader>fs", a.Global.CycleStatusFilter.Keys()},
+		{"filter.labels", "<leader>fl", a.Global.LabelPicker.Keys()},
+		{"filter.recipes", "<leader>fR", a.Global.Recipes.Keys()},
+		{"filter.clear", "<leader>fx", a.Global.FilterClear.Keys()},
+	} {
+		if !reflect.DeepEqual(entry.binding, []string{Token(entry.id)}) {
+			t.Errorf("prefix-shadowed %s keys = %v, want token only", entry.id, entry.binding)
+		}
+		if !hasShadow(shadows, Shadow{ID: entry.id, Key: entry.key, By: "filter.open"}) {
+			t.Errorf("shadows = %#v, missing prefix shadow for %s", shadows, entry.id)
+		}
+	}
+	if got := a.Global.FilterOpen.Keys(); !reflect.DeepEqual(got, []string{"<leader>f", Token("filter.open")}) {
+		t.Errorf("configured prefix binding = %v", got)
+	}
+}
+
+func containsKey(keys []string, want string) bool {
+	for _, key := range keys {
+		if key == want {
+			return true
+		}
+	}
+	return false
+}
+
+func hasShadow(shadows []Shadow, want Shadow) bool {
+	for _, shadow := range shadows {
+		if shadow == want {
+			return true
+		}
+	}
+	return false
 }

@@ -7,6 +7,7 @@ package ui
 import (
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
@@ -74,7 +75,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// at once from anywhere no text field has focus (bt-i4k). The plugin
 	// prompt answers its plugin first, so it handles both itself; a pending
 	// leader sequence owns q.
-	if key.Matches(msg, m.keys.Global.Quit) && m.activeModal != ModalPluginPrompt {
+	if key.Matches(msg, m.keys.Global.Quit) && !keys.IsToken(msg.Text) && m.activeModal != ModalPluginPrompt {
 		m.resetSeq()
 		return m, tea.Quit
 	}
@@ -95,6 +96,20 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.focused = focusHelp
 		}
 		return m, nil
+	}
+
+	// Synthetic action tokens are not terminal text. In text-input contexts,
+	// forward only tokens owned by the active modal/view map; swallow every
+	// other token before a text component or Bubbles can insert its @ spelling.
+	if keys.IsToken(msg.Text) && m.inTextInput() {
+		activeKeys := m.modalKeyMap()
+		if m.activeModal == ModalNone {
+			activeKeys = m.viewSpecificKeyMap()
+		}
+		if !keyMapMatches(msg, activeKeys) {
+			m.swallowKey = true
+			return m, nil
+		}
 	}
 
 	// Handle AGENTS.md prompt modal (bv-i8dk)
@@ -1559,6 +1574,30 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+func keyMapMatches(msg tea.KeyPressMsg, keyMap any) bool {
+	value := reflect.ValueOf(keyMap)
+	for value.IsValid() && value.Kind() == reflect.Pointer {
+		if value.IsNil() {
+			return false
+		}
+		value = value.Elem()
+	}
+	if !value.IsValid() || value.Kind() != reflect.Struct {
+		return false
+	}
+	for i := 0; i < value.NumField(); i++ {
+		field := value.Field(i)
+		if !field.CanInterface() {
+			continue
+		}
+		binding, ok := field.Interface().(key.Binding)
+		if ok && key.Matches(msg, binding) {
+			return true
+		}
+	}
+	return false
+}
+
 // splitViewListChromeHeight returns the Y coordinate of the first list
 // item (i.e., row 0 of m.list.Items()) relative to the top of the split
 // view. The value is the number of terminal rows of chrome rendered above
@@ -1711,12 +1750,12 @@ func (m Model) clickListPane(mouse tea.Mouse, rowOffset int) (Model, tea.Cmd) {
 	// (bt-jwo3): preserves any existing FilterValue and just flips state to
 	// Filtering.
 	//
-	// We forward a synthetic "/" keypress to the Bubbles list rather than
+	// We forward the app.search action token to the Bubbles list rather than
 	// calling SetFilterState directly. SetFilterState alone flips the state
 	// flag but skips Bubbles' filter-begin setup (populating filteredItems with
 	// all items when buffer is empty, GoToStart, FilterInput.Focus/CursorEnd,
-	// updateKeybindings) — without that, an empty buffer in Filtering state
-	// renders as "no matches" instead of "all visible". The keyboard `/` path
+	// updateKeybindings) - without that, an empty buffer in Filtering state
+	// renders as "no matches" instead of "all visible". The keyboard search path
 	// goes through Update naturally; the click path now matches it (bt-r2ev
 	// Bug A).
 	if m.showSearchRow() && mouse.Y == m.height-4 {
@@ -1727,7 +1766,7 @@ func (m Model) clickListPane(mouse tea.Mouse, rowOffset int) (Model, tea.Cmd) {
 			// After the synthetic keypress with an empty buffer, VisibleItems
 			// contains all items, so the captured index is still valid.
 			savedIdx := m.list.Index()
-			m.list, _ = m.list.Update(tea.KeyPressMsg{Code: '/'})
+			m.list, _ = m.list.Update(tea.KeyPressMsg{Text: keys.Token("app.search")})
 			// Restore cursor; clamp in case list somehow shrank.
 			if m.list.FilterState() == list.Filtering {
 				visible := m.list.VisibleItems()

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -143,6 +144,58 @@ func TestSetKeyConfigUpdatesBubblesNavigationAndFilterBindings(t *testing.T) {
 	}
 }
 
+func TestBubblesSyncUsesManuallyResolvedShadowBinding(t *testing.T) {
+	m := actionTestModel(t)
+	m.keys.ListNormal.Up.SetKeys(keys.Token("nav.up"))
+	m.syncBubblesKeyBindings(keys.Config{}, nil, []keys.Shadow{{ID: "nav.up", Key: "k", By: "app.search"}})
+
+	got := m.list.KeyMap.CursorUp.Keys()
+	if slices.Contains(got, "k") {
+		t.Errorf("Bubbles CursorUp retained shadowed key k: %v", got)
+	}
+	if !slices.Contains(got, keys.Token("nav.up")) {
+		t.Errorf("Bubbles CursorUp lost nav.up action token: %v", got)
+	}
+}
+
+func TestSetKeyConfigSyncsBubblesFromResolvedShadows(t *testing.T) {
+	m := actionTestModel(t)
+	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{"app.search": {"k"}}}, nil)
+
+	got := m.list.KeyMap.CursorUp.Keys()
+	if slices.Contains(got, "k") {
+		t.Errorf("Bubbles CursorUp retained key removed by Apply: %v", got)
+	}
+	if !slices.Contains(got, keys.Token("nav.up")) {
+		t.Errorf("Bubbles CursorUp lacks nav.up action token after shadow sync: %v", got)
+	}
+}
+
+func TestBubblesSyncPreservesDefaultsAndAddsSearchToken(t *testing.T) {
+	m := actionTestModel(t)
+	prevPageDefaults := append([]string(nil), m.list.KeyMap.PrevPage.Keys()...)
+	if !slices.Contains(prevPageDefaults, "pgup") {
+		t.Fatalf("setup: Bubbles PrevPage keys = %v, want bt's existing pgup binding", prevPageDefaults)
+	}
+	m.SetKeyConfig(keys.Config{}, nil)
+
+	if got := m.list.KeyMap.PrevPage.Keys(); !slices.Equal(got, prevPageDefaults) {
+		t.Errorf("Bubbles PrevPage changed without a related override: got %v, want %v", got, prevPageDefaults)
+	}
+	filterKeys := m.list.KeyMap.Filter.Keys()
+	if !slices.Contains(filterKeys, "/") || !slices.Contains(filterKeys, keys.Token("app.search")) {
+		t.Errorf("Bubbles Filter keys = %v, want default slash and app.search token", filterKeys)
+	}
+}
+
+func TestNewModelBubblesFilterIncludesSearchActionToken(t *testing.T) {
+	m := NewModel([]model.Issue{{ID: "bt-1", Title: "One", Status: model.StatusOpen}}, nil, "", nil, nil)
+	filterKeys := m.list.KeyMap.Filter.Keys()
+	if !slices.Contains(filterKeys, "/") || !slices.Contains(filterKeys, keys.Token("app.search")) {
+		t.Fatalf("default Bubbles Filter keys = %v, want slash and app.search token", filterKeys)
+	}
+}
+
 func TestActionToken_NavDown(t *testing.T) {
 	m := actionTestModel(t)
 	if m.list.Index() != 0 {
@@ -166,4 +219,112 @@ func TestActionToken_SortCycleDoesNotFilter(t *testing.T) {
 	if m.list.FilterState() == list.Filtering {
 		t.Error("sort.cycle put the list into Filtering")
 	}
+}
+
+func TestUnmatchedTokenCannotEnterTextInputs(t *testing.T) {
+	t.Run("BQL", func(t *testing.T) {
+		m := actionTestModel(t)
+		m.openModal(ModalBQLQuery)
+		m.bqlQuery.input.SetValue("status:open")
+		updated, _ := m.Update(tokenMsg("app.refresh"))
+		m = updated.(Model)
+		if got := m.bqlQuery.Value(); got != "status:open" {
+			t.Errorf("BQL input = %q, want unchanged query", got)
+		}
+	})
+
+	t.Run("global quit token", func(t *testing.T) {
+		m := actionTestModel(t)
+		m.openModal(ModalBQLQuery)
+		updated, cmd := m.Update(tokenMsg("app.force_quit"))
+		m = updated.(Model)
+		for _, produced := range runMsgs(cmd) {
+			if _, quits := produced.(tea.QuitMsg); quits {
+				t.Fatal("unowned app.force_quit token quit from a text-input context")
+			}
+		}
+		if m.activeModal != ModalBQLQuery {
+			t.Errorf("unowned app.force_quit token changed active modal to %v", m.activeModal)
+		}
+	})
+
+	t.Run("time travel", func(t *testing.T) {
+		m := actionTestModel(t)
+		m.openModal(ModalTimeTravelInput)
+		m.focused = focusTimeTravelInput
+		m.timeTravelInput.SetValue("HEAD~3")
+		updated, _ := m.Update(tokenMsg("app.refresh"))
+		m = updated.(Model)
+		if got := m.timeTravelInput.Value(); got != "HEAD~3" {
+			t.Errorf("time-travel input = %q, want unchanged revision", got)
+		}
+	})
+
+	t.Run("history search", func(t *testing.T) {
+		m := actionTestModel(t)
+		m.mode = ViewHistory
+		m.historyView.StartSearch()
+		updated, _ := m.Update(tokenMsg("app.refresh"))
+		m = updated.(Model)
+		if got := m.historyView.SearchQuery(); got != "" {
+			t.Errorf("history search = %q, want unchanged empty query", got)
+		}
+	})
+
+	t.Run("list filter", func(t *testing.T) {
+		m := actionTestModel(t)
+		m.list.SetFilterState(list.Filtering)
+		m.list.FilterInput.SetValue("keep")
+		updated, _ := m.Update(tokenMsg("app.refresh"))
+		m = updated.(Model)
+		if got := m.list.FilterInput.Value(); got != "keep" {
+			t.Errorf("list filter = %q, want unchanged query", got)
+		}
+	})
+}
+
+func TestOwnedInputTokensStillDispatch(t *testing.T) {
+	t.Run("BQL apply", func(t *testing.T) {
+		m := actionTestModel(t)
+		m.openModal(ModalBQLQuery)
+		updated, _ := m.Update(tokenMsg("bql.apply"))
+		m = updated.(Model)
+		if m.activeModal != ModalNone {
+			t.Errorf("BQL apply token left modal %v open", m.activeModal)
+		}
+	})
+
+	t.Run("BQL history navigation", func(t *testing.T) {
+		m := actionTestModel(t)
+		m.openModal(ModalBQLQuery)
+		m.bqlQuery.AddToHistory("status:closed")
+		m.bqlQuery.input.SetValue("status:open")
+		updated, _ := m.Update(tokenMsg("bql.history_prev"))
+		m = updated.(Model)
+		if got := m.bqlQuery.Value(); got != "status:closed" {
+			t.Errorf("BQL history-prev token set query to %q, want status:closed", got)
+		}
+	})
+
+	t.Run("time-travel cancel", func(t *testing.T) {
+		m := actionTestModel(t)
+		m.openModal(ModalTimeTravelInput)
+		m.focused = focusTimeTravelInput
+		updated, _ := m.Update(tokenMsg("time_travel.cancel"))
+		m = updated.(Model)
+		if m.activeModal != ModalNone {
+			t.Errorf("time-travel cancel token left modal %v open", m.activeModal)
+		}
+	})
+
+	t.Run("history cancel", func(t *testing.T) {
+		m := actionTestModel(t)
+		m.mode = ViewHistory
+		m.historyView.StartSearch()
+		updated, _ := m.Update(tokenMsg("history_search.cancel"))
+		m = updated.(Model)
+		if m.historyView.IsSearchActive() {
+			t.Error("history cancel token did not end search")
+		}
+	})
 }
