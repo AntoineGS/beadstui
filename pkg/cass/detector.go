@@ -134,6 +134,9 @@ func (d *Detector) Check() Status {
 // CheckContext performs detection within the caller's deadline. Cancelled
 // checks are not cached, so a later request can retry availability detection.
 func (d *Detector) CheckContext(ctx context.Context) (Status, error) {
+	if err := ctx.Err(); err != nil {
+		return StatusUnknown, err
+	}
 	// Fast path: return cached result if still valid
 	d.mu.RLock()
 	if d.status != StatusUnknown && time.Since(d.checkedAt) <= d.cacheTTL {
@@ -154,6 +157,9 @@ func (d *Detector) CheckContext(ctx context.Context) (Status, error) {
 
 	status, err := d.detectContext(ctx)
 	if err != nil {
+		return StatusUnknown, err
+	}
+	if err := ctx.Err(); err != nil {
 		return StatusUnknown, err
 	}
 	d.status = status
@@ -183,6 +189,9 @@ func (d *Detector) detectContext(parent context.Context) (Status, error) {
 	defer cancel()
 
 	exitCode, err := d.runCommand(ctx, "cass", "health")
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return StatusUnknown, ctxErr
+	}
 	if err != nil {
 		return StatusUnknown, err
 	}
