@@ -1410,6 +1410,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			} else {
 				m.openModal(ModalRepoPicker)
 				m.repoPicker = NewRepoPickerModel(m.availableRepos, m.theme)
+				m.repoPicker.loadProjectNames()
 				m.repoPicker.SetActiveRepos(m.activeRepos)
 				m.repoPicker.SetSize(m.width, m.height-1)
 				m.focused = focusRepoPicker

@@ -1,15 +1,117 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/seanmartinsmith/beadstui/internal/settings"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/projects"
 	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
+
+// Folder names are presentation-only: replacing raw keys or broadening search
+// to the folder name would break the existing project-filter contract.
+func TestRepoPickerFolderLabelsPreserveFiltering(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("BT_SETTINGS_PATH", filepath.Join(dir, "settings.json"))
+	t.Setenv("BT_PROJECTS_REGISTRY_PATH", filepath.Join(dir, "projects.json"))
+	g := &settings.Global{ProjectPaths: map[string]string{
+		"mde": filepath.Join(dir, "MDExplorer"),
+	}}
+	if err := g.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if err := projects.Save(filepath.Join(dir, "projects.json"), projects.Registry{
+		"mde": {Path: filepath.Join(dir, "WrongFolder")},
+		"l4d": {Path: filepath.Join(dir, "lint4d")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	parent := Model{
+		theme: DefaultTheme(), keys: keys.NewAppKeys(), focused: focusList,
+		width: 100, height: 30,
+	}
+	parent.workspaceMode = true
+	parent.availableRepos = []string{"mde", "l4d", "unknown"}
+	parent, _ = parent.handleKeyPress(tokenMsg("project.picker"))
+	if parent.activeModal != ModalRepoPicker {
+		t.Fatal("project.picker should open the project picker")
+	}
+	m := parent.repoPicker
+	view := ansi.Strip(m.View())
+	for _, label := range []string{"MDExplorer (mde)", "lint4d (l4d)"} {
+		if !strings.Contains(view, label) {
+			t.Errorf("picker should display %q, got:\n%s", label, view)
+		}
+	}
+	if strings.Contains(view, "WrongFolder") {
+		t.Error("settings project path should take precedence over registry")
+	}
+	if got := m.popupEntries()[2].Label; got != "unknown" {
+		t.Errorf("unknown project label = %q, want unknown", got)
+	}
+	m.SetActiveRepos(nil)
+	m.ToggleSelected()
+	if got := m.SelectedRepos(); len(got) != 1 || !got["mde"] {
+		t.Errorf("selected repos = %v, want raw key mde", got)
+	}
+	if got := m.CursorRepo(); got != "mde" {
+		t.Errorf("cursor repo = %q, want raw key mde", got)
+	}
+	for _, tc := range []struct {
+		query string
+		want  []string
+	}{
+		{"MDE", []string{"mde"}},
+		{"MDExplorer", nil},
+		{"lint4d", nil},
+		{"", []string{"mde", "l4d", "unknown"}},
+	} {
+		m.input.SetValue(tc.query)
+		m.filterRepos()
+		if !equalStringSlices(m.filtered, tc.want) {
+			t.Errorf("query %q: repos = %v, want %v", tc.query, m.filtered, tc.want)
+		}
+	}
+}
+
+func TestRepoPickerFolderLabelsMissingMetadata(t *testing.T) {
+	for _, content := range []string{"", "{invalid json"} {
+		t.Run(content, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("BT_SETTINGS_PATH", filepath.Join(dir, "settings.json"))
+			t.Setenv("BT_PROJECTS_REGISTRY_PATH", filepath.Join(dir, "projects.json"))
+			if content != "" {
+				for _, file := range []string{"settings.json", "projects.json"} {
+					if err := os.WriteFile(filepath.Join(dir, file), []byte(content), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			parent := Model{
+				theme: DefaultTheme(), keys: keys.NewAppKeys(), focused: focusList,
+				width: 100, height: 30,
+			}
+			parent.workspaceMode = true
+			parent.availableRepos = []string{"mde", "beads_global"}
+			parent, _ = parent.handleKeyPress(tokenMsg("project.picker"))
+			if parent.activeModal != ModalRepoPicker {
+				t.Fatal("project.picker should open the project picker")
+			}
+			entries := parent.repoPicker.popupEntries()
+			if entries[0].Label != "atlas" || entries[1].Label != "mde" {
+				t.Errorf("missing metadata should retain labels, got %v", entries)
+			}
+		})
+	}
+}
 
 func TestRepoPopup_RenderedRowMatchesHitTest(t *testing.T) {
 	m := NewRepoPickerModel([]string{"short", "界面-project", "last-project"}, DefaultTheme())
@@ -41,6 +143,31 @@ func TestRepoPopup_RenderedRowMatchesHitTest(t *testing.T) {
 	m.SetSize(0, 0)
 	if m.View() != "" {
 		t.Fatal("zero budget rendered picker")
+	}
+}
+
+func TestRepoPickerFolderLabelsLayout(t *testing.T) {
+	m := NewRepoPickerModel([]string{"short", "wide"}, DefaultTheme())
+	m.folderNames = map[string]string{
+		"short": strings.Repeat("LongFolder", 12),
+		"wide":  strings.Repeat("界面", 30),
+	}
+	m.SetCursor(1)
+	for _, width := range []int{32, 48, 80} {
+		m.SetSize(width, 16)
+		out := m.View()
+		assertPopupBounds(t, out, width, 16)
+		w, h := m.Dimensions()
+		if w != ansi.StringWidth(strings.Split(out, "\n")[0]) || h != len(strings.Split(out, "\n")) {
+			t.Fatalf("width %d: dimensions disagree with render", width)
+		}
+		y, _ := popupFindRow(t, out, "界面")
+		if i, ok := m.ItemAtPanelY(y); !ok || i != 1 {
+			t.Fatalf("width %d: rendered row maps to %d,%v, want 1,true", width, i, ok)
+		}
+		if !popupRowSelected(out, "界面", m.theme) {
+			t.Fatalf("width %d: selected row cue missing", width)
+		}
 	}
 }
 

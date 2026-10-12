@@ -1,9 +1,13 @@
 package ui
 
 import (
+	"path/filepath"
 	"strings"
 
+	"github.com/seanmartinsmith/beadstui/internal/settings"
+	"github.com/seanmartinsmith/beadstui/pkg/debug"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
+	"github.com/seanmartinsmith/beadstui/pkg/projects"
 
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/lipgloss/v2"
@@ -20,7 +24,8 @@ type RepoPickerModel struct {
 	// "/" focuses the search bar, Esc inside search blurs it without closing.
 	searchFocused bool
 	selectedIndex int
-	selected      map[string]bool // repo -> selected
+	selected      map[string]bool   // repo -> selected
+	folderNames   map[string]string // presentation only; search and selection use raw keys
 	width         int
 	height        int
 	theme         Theme
@@ -51,6 +56,42 @@ func NewRepoPickerModel(repos []string, theme Theme) RepoPickerModel {
 	}
 	m.filterRepos()
 	return m
+}
+
+// loadProjectNames snapshots cached checkout names when opening the picker,
+// keeping filesystem reads out of rendering and search. Settings are keyed by
+// database name; the older prefix registry is only a fallback.
+func (m *RepoPickerModel) loadProjectNames() {
+	paths := make(map[string]string)
+	if g, err := settings.Load(); err == nil {
+		for repo, path := range g.ProjectPaths {
+			paths[repo] = path
+		}
+	} else {
+		debug.Log("project picker: load settings: %v", err)
+	}
+	if path, err := projects.ResolvedPath(); err == nil {
+		if registry, err := projects.Load(path); err == nil {
+			for repo, entry := range registry {
+				if paths[repo] == "" {
+					paths[repo] = entry.Path
+				}
+			}
+		} else {
+			debug.Log("project picker: load registry: %v", err)
+		}
+	} else {
+		debug.Log("project picker: resolve registry path: %v", err)
+	}
+	m.folderNames = make(map[string]string, len(m.repos))
+	for _, repo := range m.repos {
+		if path := paths[repo]; path != "" {
+			name := filepath.Base(path)
+			if name != "." && name != string(filepath.Separator) {
+				m.folderNames[repo] = name
+			}
+		}
+	}
 }
 
 // SetSize updates the picker dimensions.
@@ -354,7 +395,11 @@ func (m *RepoPickerModel) popupEntries() []PopupMenuEntry {
 		if m.selected[repo] {
 			marker = activeGlyphs.Success
 		}
-		entries[i] = PopupMenuEntry{Label: model.DisplayRepoName(repo), Marker: marker, Selected: i == m.selectedIndex}
+		label := model.DisplayRepoName(repo)
+		if name := m.folderNames[repo]; name != "" {
+			label = name + " (" + label + ")"
+		}
+		entries[i] = PopupMenuEntry{Label: label, Marker: marker, Selected: i == m.selectedIndex}
 	}
 	return entries
 }
