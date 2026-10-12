@@ -368,16 +368,16 @@ if !reflect.DeepEqual(got, want) { t.Fatalf("suggestions differ:\ngot %#v\nwant 
 - [x] After the six tasks, run `go test ./...`, `go build ./...`, `go vet ./...`,
   and focused race tests covering the introduced concurrent paths.
 - [x] Run the initial whole-branch review against `622f3637`; include task
-  reports and baseline notes. The review found three integration defects, fixed
-  in this wave; controller re-review is still pending.
-- [ ] Record final review evidence in bt-k20.8, close it before the directed
+  reports and baseline notes. All three integration findings and the follow-up
+  history-scope regression passed scoped re-review.
+- [x] Record final review evidence in bt-k20.8, close it before the directed
   integration commit, and sync beads from the primary checkout. Keep the feature
   worktree/branch available for user-directed merge; do not push code or delete
   worktrees/scratch without authorization.
 
 ### Delivered task commits and corrected benchmark evidence
 
-- Task 1 (`bt-k20.2`): `4d48d1a0`, `1a079b44`, `1ee90f34`.
+- Task 1 (`bt-k20.2`): `d4259a26`, `4d48d1a0`, `1a079b44`, `1ee90f34`.
 - Task 2 (`bt-k20.3`): `2e886f71`, `817a83e4`, `61c6a129`.
 - Task 3 (`bt-k20.4`): `d9444fc6`, `3191b77d`.
 - Task 4 (`bt-k20.5`): `0b9da418`.
@@ -400,17 +400,21 @@ if !reflect.DeepEqual(got, want) { t.Fatalf("suggestions differ:\ngot %#v\nwant 
   with selected candidates and counts only new ReadyAfter transitions. Added
   hidden-parent inheritance/cascade, independent outstanding gate, and already-
   ready candidate coverage.
-- Initial whole-branch review findings are implemented; final controller
-  re-review is pending and is not claimed as passed.
+- Initial whole-branch findings were corrected in `0efc56d6` and passed scoped
+  re-review. The history-scope follow-up was corrected in `78d2e201`.
 - The scoped final re-review confirmed all three readiness findings addressed
   and found that history export had been widened to the full readiness corpus.
   The correction now keeps history on repo-scoped candidates before closed-row
-  filtering; a focused scope regression covers this distinction. Re-review of
-  this correction remains pending.
-- Verification: `go test ./...`, `go build ./...`, and `go vet ./...` passed.
+  filtering; a focused scope regression covers this distinction. Its independent
+  re-review passed with no remaining actionable findings.
+- Final controller verification at `78d2e201`: `go test ./...`,
+  `go build ./...`, and `go vet ./...` passed.
   Focused race tests for changed UI/readiness/analysis/export paths passed. A
   broader `go test -race ./pkg/ui ./pkg/model ./pkg/analysis ./cmd/bt` run had
   one instrumentation-sensitive failure: `TestViewSwitchingPerformance`
   measured 2.378 s for 600 switches against its 2 s limit; other packages in
   that run passed. Details and exact focused commands are in
   `.superpowers/sdd/2026-10-11-selected-upstream-improvements/final-fix-report.md`.
+- Native fish, terminal clipboard delivery, Cass/session-corpus operation and
+  live Dolt/deployment behavior were not exercised. The feature branch and
+  worktree are retained for owner-directed integration.
