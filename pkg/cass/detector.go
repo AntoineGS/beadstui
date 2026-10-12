@@ -124,12 +124,22 @@ func (d *Detector) IsHealthy() bool {
 // Results are cached for cacheTTL duration.
 // This method is safe for concurrent use.
 func (d *Detector) Check() Status {
+	status, err := d.CheckContext(context.Background())
+	if err != nil {
+		return StatusNotInstalled
+	}
+	return status
+}
+
+// CheckContext performs detection within the caller's deadline. Cancelled
+// checks are not cached, so a later request can retry availability detection.
+func (d *Detector) CheckContext(ctx context.Context) (Status, error) {
 	// Fast path: return cached result if still valid
 	d.mu.RLock()
 	if d.status != StatusUnknown && time.Since(d.checkedAt) <= d.cacheTTL {
 		status := d.status
 		d.mu.RUnlock()
-		return status
+		return status, nil
 	}
 	d.mu.RUnlock()
 
@@ -139,12 +149,16 @@ func (d *Detector) Check() Status {
 
 	// Double-check after acquiring write lock
 	if d.status != StatusUnknown && time.Since(d.checkedAt) <= d.cacheTTL {
-		return d.status
+		return d.status, nil
 	}
 
-	d.status = d.detect()
+	status, err := d.detectContext(ctx)
+	if err != nil {
+		return StatusUnknown, err
+	}
+	d.status = status
 	d.checkedAt = time.Now()
-	return d.status
+	return d.status, nil
 }
 
 // Invalidate clears the cached status, forcing a fresh check on next Check() call.
@@ -157,34 +171,33 @@ func (d *Detector) Invalidate() {
 
 // detect performs the actual detection logic.
 // Caller must hold d.mu (write lock) to safely update status with the result.
-func (d *Detector) detect() Status {
+func (d *Detector) detectContext(parent context.Context) (Status, error) {
 	// Step 1: Check if cass binary exists in PATH
 	_, err := d.lookPath("cass")
 	if err != nil {
-		return StatusNotInstalled
+		return StatusNotInstalled, nil
 	}
 
 	// Step 2: Run health check with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), d.healthTimeout)
+	ctx, cancel := context.WithTimeout(parent, d.healthTimeout)
 	defer cancel()
 
 	exitCode, err := d.runCommand(ctx, "cass", "health")
 	if err != nil {
-		// Command failed to run (timeout, not found, etc.)
-		return StatusNotInstalled
+		return StatusUnknown, err
 	}
 
 	// Interpret exit code
 	switch exitCode {
 	case 0:
-		return StatusHealthy
+		return StatusHealthy, nil
 	case 1:
-		return StatusNeedsIndex
+		return StatusNeedsIndex, nil
 	case 3:
 		// Index missing or corrupt
-		return StatusNeedsIndex
+		return StatusNeedsIndex, nil
 	default:
-		return StatusNotInstalled
+		return StatusNotInstalled, nil
 	}
 }
 

@@ -234,6 +234,37 @@ func TestCorrelator_Correlate_IDMention(t *testing.T) {
 	}
 }
 
+func TestCorrelator_PartialSearchIsNotCached(t *testing.T) {
+	detector := NewDetector()
+	detector.lookPath = func(string) (string, error) { return "/cass", nil }
+	detector.runCommand = func(context.Context, string, ...string) (int, error) { return 0, nil }
+	_ = detector.Check()
+	searcher := NewSearcher(detector)
+	calls := 0
+	searcher.runCommand = func(context.Context, string, ...string) ([]byte, error) {
+		calls++
+		if calls == 1 {
+			return []byte(`{"results":[],"meta":{"error":"partial output"}}`), nil
+		}
+		return []byte(`{"results":[],"meta":{"total":0}}`), nil
+	}
+	cache := NewCache()
+	correlator := NewCorrelator(searcher, cache, "/workspace")
+	issue := &model.Issue{ID: "bt-retry", Title: "Cass retry behavior"}
+	if _, err := correlator.CorrelateWithError(context.Background(), issue); err == nil {
+		t.Fatal("partial search did not return an error")
+	}
+	if cache.Get(issue.ID) != nil {
+		t.Fatal("partial search was cached as a successful empty result")
+	}
+	if _, err := correlator.CorrelateWithError(context.Background(), issue); err != nil {
+		t.Fatalf("retry after partial search failed: %v", err)
+	}
+	if calls < 2 {
+		t.Fatalf("search calls = %d, want retry to issue new searches", calls)
+	}
+}
+
 func TestCorrelator_Correlate_Keywords(t *testing.T) {
 	now := time.Date(2025, 1, 15, 12, 0, 0, 0, time.UTC)
 

@@ -171,7 +171,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		// Check for dismiss keys
 		if key.Matches(msg, m.keys.Cass.Close) {
 			m.closeModal()
-			m.focused = focusList
+			m.focused = m.cassReturnFocus
 			return m, tea.Batch(cmds...)
 		}
 		return m, tea.Batch(cmds...)

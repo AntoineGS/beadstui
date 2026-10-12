@@ -389,6 +389,30 @@ func TestDetector_Check_Timeout(t *testing.T) {
 	}
 }
 
+func TestDetector_CheckContextCancellationIsRetryable(t *testing.T) {
+	d := NewDetector()
+	d.lookPath = func(string) (string, error) { return "/cass", nil }
+	d.runCommand = func(ctx context.Context, _ string, _ ...string) (int, error) {
+		<-ctx.Done()
+		return -1, ctx.Err()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	status, err := d.CheckContext(ctx)
+	if err == nil || status != StatusUnknown {
+		t.Fatalf("CheckContext() = (%v, %v), want (unknown, deadline error)", status, err)
+	}
+	if d.CacheValid() {
+		t.Fatal("cancelled availability check was cached")
+	}
+
+	d.runCommand = func(context.Context, string, ...string) (int, error) { return 0, nil }
+	status, err = d.CheckContext(context.Background())
+	if err != nil || status != StatusHealthy {
+		t.Fatalf("retry CheckContext() = (%v, %v), want healthy", status, err)
+	}
+}
+
 // BenchmarkDetector_Check_Cached benchmarks cached Check() calls.
 func BenchmarkDetector_Check_Cached(b *testing.B) {
 	d := NewDetector()

@@ -202,6 +202,9 @@ func (m Model) shouldDeferRefresh() bool {
 
 // openModal sets the active modal, closing any previously open modal.
 func (m *Model) openModal(t ModalType) {
+	if m.cassCancel != nil && t != ModalCassSession {
+		m.cancelCassLookup()
+	}
 	if t == ModalHelp && m.activeModal != ModalHelp {
 		m.focusBeforeHelp = m.focused
 		m.helpOriginModal = m.activeModal
@@ -1039,8 +1042,18 @@ type Model struct {
 	tutorialModel TutorialModel
 
 	// Cass session preview modal (bv-5bqh, modal visibility via activeModal)
-	cassModal      CassSessionModal
-	cassCorrelator *cass.Correlator
+	cassModal            CassSessionModal
+	cassCorrelator       *cass.Correlator
+	cassDetector         *cass.Detector
+	cassCorrelatorSource string
+	cassLookup           func(context.Context, model.Issue) (cass.CorrelationResult, error)
+	cassCancel           context.CancelFunc
+	cassRequestID        uint64
+	cassDatasetID        uint64
+	cassPendingIssueID   string
+	cassPendingSource    string
+	cassReturnFocus      focus
+	cassCmd              tea.Cmd
 
 	// Self-update modal (bv-182, modal visibility via activeModal)
 	updateModal UpdateModal
@@ -1920,6 +1933,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 	searchWasVisible := m.showSearchRow()
+	cassSelectionBefore := m.selectedCassIssueID()
 
 	// Snapshot modal state before any handler runs. Used below to prevent
 	// a modal-dismiss key (e.g. Esc) from being forwarded to the Bubbles
@@ -2039,6 +2053,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clipboardResultMsg:
 		return m.handleClipboardResult(msg)
 
+	case cassSessionsLoadedMsg:
+		m = m.handleCassSessionsLoaded(msg)
+
+	case tea.QuitMsg:
+		m.cancelCassLookup()
+		return m, nil
+
 	case cassClipboardRequestMsg:
 		if m.activeModal == ModalCassSession {
 			m.requestClipboard(msg.text, fmt.Sprintf("%s Copied Cass search command to clipboard", activeGlyphs.Clipboard))
@@ -2058,9 +2079,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		if m.cassCancel != nil && m.activeModal == ModalNone && msg.String() == "esc" {
+			m.cancelCassLookup()
+			m.setStatus("Cass session lookup cancelled")
+			return m, nil
+		}
 		m, cmd = m.handleKeyPress(msg)
 		cmds = append(cmds, cmd)
 		cmds = append(cmds, m.takeClipboardCmd())
+		if m.cassCmd != nil {
+			cmds = append(cmds, m.cassCmd)
+			m.cassCmd = nil
+		}
 
 	case tea.MouseWheelMsg:
 		m, cmd = m.handleMouseWheel(msg)
@@ -2166,6 +2196,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateViewportContent()
 			}
 		}
+	}
+	if m.cassCancel != nil && cassSelectionBefore != "" && cassSelectionBefore != m.selectedCassIssueID() {
+		m.cancelCassLookup()
+		m.setStatus("Cass session lookup cancelled because selection changed")
 	}
 
 	// Filtering can show or hide the bottom search row without a resize event.
