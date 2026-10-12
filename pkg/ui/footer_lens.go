@@ -175,7 +175,7 @@ func renderLens(fd FooterData, lvl lensLevel) string {
 	g := activeGlyphs
 	ascii := asciiTier()
 
-	scopeStyle := ActiveTextStyles.Badge
+	scopeStyle := ActiveTextStyles.Heading
 	chipStyle := ActiveTextStyles.Metadata
 	sep := ActiveTextStyles.Metadata.Render(" " + g.Sep + " ")
 
@@ -184,7 +184,7 @@ func renderLens(fd FooterData, lvl lensLevel) string {
 	// Scope (where am I) renders bare in both tiers (doc mockup: "bt" /
 	// "ALL(19)"): the NF folder/globe icons read as oversized dots at
 	// terminal size (bt-41gr8, dogfood 2026-07-17). Formatting now follows
-	// the centrally configurable general workspace badge role.
+	// the centrally configurable heading role, matching footer accents.
 	if fd.ScopeLabel != "" {
 		segs = append(segs, scopeStyle.Render(fd.ScopeLabel))
 	}

@@ -379,7 +379,7 @@ func TestLensOrderChipDirectionASCII(t *testing.T) {
 // TestLensScopeBareNerdFont locks the scope treatment from live dogfood
 // 2026-07-17 (bt-41gr8): the NF folder/globe icons read as oversized dots at
 // terminal size, so the scope keeps its bare label in both tiers. Its text
-// formatting now follows the configurable workspace badge role.
+// formatting follows the configurable heading role to match footer accents.
 func TestLensScopeBareNerdFont(t *testing.T) {
 	setGlyphs(t, nerdfontGlyphs)
 	fd := FooterData{ScopeLabel: "bt"}
@@ -387,8 +387,8 @@ func TestLensScopeBareNerdFont(t *testing.T) {
 	if got := ansi.Strip(raw); got != "bt" {
 		t.Errorf("NF scope must render bare (no folder icon): %q", got)
 	}
-	if raw != ActiveTextStyles.Badge.Render("bt") {
-		t.Errorf("scope must use the configured badge role: %q", raw)
+	if raw != ActiveTextStyles.Heading.Render("bt") {
+		t.Errorf("scope must use the configured heading role: %q", raw)
 	}
 	fd = FooterData{ScopeLabel: "ALL(19)", ScopeCrossProject: true}
 	if got := ansi.Strip(renderLens(fd, lensScopeOnly)); got != "ALL(19)" {
