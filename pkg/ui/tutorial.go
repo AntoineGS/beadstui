@@ -2398,7 +2398,7 @@ Tell them about the help system:
 | **SPC T** | Full interactive tutorial |
 | **SPC** | Leader menu |
 
-> "If you forget anything, just press ? or ` + "`" + `"
+> "If you forget anything, press ? for local keys or SPC T for the tutorial."
 
 ### Step 3: First Task Assignment
 

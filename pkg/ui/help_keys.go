@@ -5,50 +5,22 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// restoreFocusFromHelp returns the appropriate focus based on current view
-// state. This fixes the bug where dismissing help would always return to
-// focusList, even when the user was in a specialized view (graph, board,
-// insights, etc.).
-//
-// Helper for handleHelpKeys, kept alongside the handler.
+// restoreFocusFromHelp returns the exact focus captured before the help overlay
+// opened. That may be a pane, a text input, or a modal-local focus state.
 func (m Model) restoreFocusFromHelp() focus {
-	// Full-screen detail view (not split mode)
-	if m.showDetails && !m.isSplitView {
-		return focusDetail
+	return m.focusBeforeHelp
+}
+
+// closeHelp dismisses the help overlay and restores the modal and focus it
+// temporarily replaced. Modal data remains in its owning model field.
+func (m *Model) closeHelp() {
+	if m.activeModal != ModalHelp {
+		return
 	}
-	// Map ViewMode to the correct focus state
-	switch m.mode {
-	case ViewGraph:
-		return focusGraph
-	case ViewBoard:
-		return focusBoard
-	case ViewActionable:
-		return focusActionable
-	case ViewHistory:
-		return focusHistory
-	case ViewInsights, ViewAttention:
-		return focusInsights
-	case ViewLabelDashboard:
-		return focusLabelDashboard
-	case ViewEpics:
-		return focusEpics
-	case ViewFlowMatrix:
-		return focusFlowMatrix
-	case ViewTree:
-		return focusTree
-	case ViewMemories:
-		return focusMemories
-	}
-	// Check for other focus states using stored focusBeforeHelp
-	// (m.focused is focusHelp while help is open, so we use the saved value)
-	if m.focusBeforeHelp == focusLabelPicker {
-		return focusLabelPicker
-	}
-	if m.focusBeforeHelp == focusTimeTravelInput {
-		return focusTimeTravelInput
-	}
-	// Default: return to list
-	return focusList
+	m.activeModal = m.helpOriginModal
+	m.focused = m.restoreFocusFromHelp()
+	m.helpOriginModal = ModalNone
+	m.helpScroll = 0
 }
 
 // handleHelpKeys handles keyboard input when the help overlay is focused.
@@ -81,21 +53,17 @@ func (m Model) handleHelpKeys(msg tea.KeyMsg) Model {
 	case key.Matches(msg, k.JumpBottom):
 		m.helpScroll = m.helpScrollMax()
 	case key.Matches(msg, k.Close):
-		// Close help overlay and restore previous focus
-		m.closeModal()
-		m.helpScroll = 0
-		m.focused = m.restoreFocusFromHelp()
+		m.closeHelp()
 	case key.Matches(msg, k.Tutorial): // Space opens interactive tutorial (bv-0trk, bv-8y31)
 		m.closeModal()
+		m.helpOriginModal = ModalNone
 		m.helpScroll = 0
 		m.openModal(ModalTutorial)
 		m.tutorialModel.SetSize(m.width, m.height)
 		m.focused = focusTutorial
 	default:
 		// Any other key dismisses help and restores previous focus
-		m.closeModal()
-		m.helpScroll = 0
-		m.focused = m.restoreFocusFromHelp()
+		m.closeHelp()
 	}
 	return m
 }

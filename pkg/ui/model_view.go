@@ -747,9 +747,9 @@ func helpOverlayColumns(width int) int {
 }
 
 // helpGroups projects direct Global bindings and the active view or modal map
-// into the single ? reference. When help itself is open, its underlying view
-// supplies the local map. Tokens and sequences are removed from copies while
-// the configured Help.Key display labels are retained.
+// into the single ? reference. When help itself is open, its originating view
+// or modal supplies the local map. Tokens and sequences are removed from copies
+// while the configured direct-key Help.Key labels are retained.
 func (m Model) helpGroups() []helpGroup {
 	var global []key.Binding
 	for _, group := range m.keys.Global.FullHelp() {
@@ -769,9 +769,13 @@ func (m Model) helpGroups() []helpGroup {
 	switch m.activeModal {
 	case ModalHelp:
 		viewModel := m
-		viewModel.activeModal = ModalNone
+		viewModel.activeModal = m.helpOriginModal
 		viewModel.focused = viewModel.focusBeforeHelp
-		active = viewModel.viewSpecificKeyMap()
+		if viewModel.activeModal == ModalNone {
+			active = viewModel.viewSpecificKeyMap()
+		} else {
+			active = viewModel.modalKeyMap()
+		}
 	case ModalNone:
 		active = m.viewSpecificKeyMap()
 	default:
@@ -791,7 +795,7 @@ func (m Model) helpGroups() []helpGroup {
 		}
 	}
 
-	if m.activeModal == ModalNone || m.activeModal == ModalHelp {
+	if m.activeModal == ModalNone || (m.activeModal == ModalHelp && m.helpOriginModal == ModalNone) {
 		pluginModel := m
 		if pluginModel.activeModal == ModalHelp {
 			pluginModel.activeModal = ModalNone
@@ -823,7 +827,7 @@ func helpRows(bindings []key.Binding) []helpRow {
 
 func (m Model) helpContextTitle() string {
 	if m.activeModal == ModalHelp {
-		return m.helpViewTitle()
+		m.activeModal = m.helpOriginModal
 	}
 	if m.activeModal != ModalNone {
 		modal := map[ModalType]string{
@@ -834,8 +838,11 @@ func (m Model) helpContextTitle() string {
 			ModalFieldPicker: "FIELD PICKER", ModalFieldInput: "FIELD INPUT",
 			ModalLongformEdit: "LONGFORM EDIT", ModalPluginPrompt: "PLUGIN",
 			ModalCassSession: "CASS", ModalAgentPrompt: "AGENT PROMPT",
-			ModalUpdate: "UPDATE", ModalLabelHealthDetail: "LABEL HEALTH",
-			ModalLabelDrilldown: "LABEL DRILLDOWN", ModalLabelGraphAnalysis: "LABEL GRAPH",
+			ModalTutorial: "TUTORIAL", ModalUpdate: "UPDATE",
+			ModalSettings: "SETTINGS", ModalSettingsMenu: "SETTINGS MENU",
+			ModalQuitConfirm: "QUIT CONFIRM", ModalClaimConfirm: "CLAIM CONFIRM",
+			ModalLabelHealthDetail: "LABEL HEALTH",
+			ModalLabelDrilldown:    "LABEL DRILLDOWN", ModalLabelGraphAnalysis: "LABEL GRAPH",
 		}
 		if title := modal[m.activeModal]; title != "" {
 			return title

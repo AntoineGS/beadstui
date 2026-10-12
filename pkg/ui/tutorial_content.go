@@ -840,7 +840,7 @@ func structuredTutorialPages() []StructuredTutorialPage {
 				Section{Title: "Step 2: Point to Help"},
 				KeyTable{Bindings: []KeyBinding{
 					{Key: "? / F1", Desc: "Local direct-key reference"},
-					{Key: "`", Desc: "Full interactive tutorial"},
+					{Key: "SPC T", Desc: "Full interactive tutorial"},
 					{Key: "SPC", Desc: "Leader menu in a view"},
 				}},
 				Spacer{Lines: 1},
@@ -849,8 +849,8 @@ func structuredTutorialPages() []StructuredTutorialPage {
 				Spacer{Lines: 1},
 				Section{Title: "Step 4: Walk Through Workflow"},
 				Bullet{Items: []string{
-					"Find: filters (o/r) and search (/)",
-					"Review: Enter for details, g for graph",
+					"Find: SPC f o / SPC f r filters and search (/)",
+					"Review: Enter for details, SPC v g for graph",
 					"Claim: bd update ID --status=in_progress",
 					"Complete: bd close ID && bd sync",
 				}},

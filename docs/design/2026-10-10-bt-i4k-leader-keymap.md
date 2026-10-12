@@ -128,7 +128,7 @@ list afterwards.
 5. `whichKeyMsg{gen}` with a matching gen and a sequence still pending: set
    `showPanel = true`.
 
-Leader groups (prefix -> label) are data in `pkg/ui/keys/leader.go`. An
+Leader groups (prefix -> label) are data in `pkg/ui/keys/sequence.go`. An
 unlabeled prefix created by user config renders as `+group`.
 
 ### which-key panel (phase 3)
@@ -147,9 +147,9 @@ hint zone shows the sequence (`SPC f…`).
   that have at least one direct key, plus plugin keys for the current view.
   Leader-only bindings are not listed. Shadowed bindings are listed struck
   through (phase 5). The footer of `?` reads `SPC  leader menu`.
-- The `;` sidebar is removed (`shortcuts_sidebar.go`, its test, `Global.Sidebar`,
-  and `Global.SidebarScrollDown/Up`), along with `focus`/layout code that
-  reserves sidebar width.
+- Active `;` sidebar behavior is retired: its bindings and the focus/layout code
+  that reserved sidebar width are removed. `shortcuts_sidebar.go` and its test
+  remain as a standalone unused utility.
 - L1 footer hints: the active map's `ShortHelp()` filtered to bindings with
   direct keys (max 4), then `SPC leader`, then `? help`.
 

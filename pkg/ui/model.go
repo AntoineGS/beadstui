@@ -201,6 +201,10 @@ func (m Model) shouldDeferRefresh() bool {
 
 // openModal sets the active modal, closing any previously open modal.
 func (m *Model) openModal(t ModalType) {
+	if t == ModalHelp && m.activeModal != ModalHelp {
+		m.focusBeforeHelp = m.focused
+		m.helpOriginModal = m.activeModal
+	}
 	m.activeModal = t
 	if m.seq.pending() {
 		m.resetSeq()
@@ -809,9 +813,10 @@ type Model struct {
 	// Focus and View State
 	mode                     ViewMode // Active view mode (ViewList, ViewBoard, ViewGraph, etc.)
 	focused                  focus
-	focusBeforeHelp          focus // Stores focus before opening help overlay
-	focusBeforeSearch        focus // Stores focus before / entered search from a non-list pane (bt-cd3x)
-	filterEntryCursor        int   // Cursor index captured just before filter-begin runs (bt-qka1)
+	focusBeforeHelp          focus     // Stores focus before opening help overlay
+	helpOriginModal          ModalType // Modal restored when help closes
+	focusBeforeSearch        focus     // Stores focus before / entered search from a non-list pane (bt-cd3x)
+	filterEntryCursor        int       // Cursor index captured just before filter-begin runs (bt-qka1)
 	isSplitView              bool
 	splitPaneRatio           float64 // Ratio of list pane width (0.2-0.8), default 0.4
 	showDetails              bool
