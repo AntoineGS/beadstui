@@ -237,6 +237,7 @@ func (m *Model) SetKeyConfig(cfg keys.Config, loadErr error) {
 	m.updateModal.keys = m.keys.Update
 
 	m.syncBubblesKeyBindings(cfg, applyErrs, shadows)
+	m.syncDetailsViewportKeyBindings()
 
 	if len(shadows)+len(errs) > 0 {
 		errorLabel := "errors"
@@ -287,10 +288,6 @@ func (m *Model) syncBubblesKeyBindings(cfg keys.Config, applyErrs []error, shado
 	}{
 		{"nav.up", &m.list.KeyMap.CursorUp, m.keys.ListNormal.Up},
 		{"nav.down", &m.list.KeyMap.CursorDown, m.keys.ListNormal.Down},
-		{"nav.page_up", &m.list.KeyMap.PrevPage, m.keys.ListNormal.PageUp},
-		{"nav.page_down", &m.list.KeyMap.NextPage, m.keys.ListNormal.PageDown},
-		{"nav.top", &m.list.KeyMap.GoToStart, m.keys.ListNormal.JumpTop},
-		{"nav.bottom", &m.list.KeyMap.GoToEnd, m.keys.ListNormal.JumpBottom},
 		{"app.cancel", &m.list.KeyMap.ClearFilter, m.keys.Global.Cancel},
 		{"list_search.cancel", &m.list.KeyMap.CancelWhileFiltering, m.keys.ListSearch.Cancel},
 		{"list_search.apply", &m.list.KeyMap.AcceptWhileFiltering, m.keys.ListSearch.Apply},
@@ -302,6 +299,15 @@ func (m *Model) syncBubblesKeyBindings(cfg keys.Config, applyErrs []error, shado
 	}
 	appendListKeyTokens(&m.list.KeyMap.AcceptWhileFiltering, m.keys.ListSearch.Apply)
 	appendListKeyTokens(&m.list.KeyMap.CancelWhileFiltering, m.keys.ListSearch.Cancel)
+}
+
+func (m *Model) syncDetailsViewportKeyBindings() {
+	setListKeyBinding(&m.viewport.KeyMap.Up, m.keys.ListNormal.Up)
+	setListKeyBinding(&m.viewport.KeyMap.Down, m.keys.ListNormal.Down)
+	setListKeyBinding(&m.viewport.KeyMap.PageUp, m.keys.ListNormal.PageUp)
+	setListKeyBinding(&m.viewport.KeyMap.PageDown, m.keys.ListNormal.PageDown)
+	m.viewport.KeyMap.HalfPageUp.SetKeys()
+	m.viewport.KeyMap.HalfPageDown.SetKeys()
 }
 
 func appendListKeyTokens(target *key.Binding, source key.Binding) {

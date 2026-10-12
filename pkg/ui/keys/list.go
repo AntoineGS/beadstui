@@ -101,12 +101,12 @@ func NewListNormalKeys() ListNormalKeys {
 			key.WithHelp("G/end", "jump to bottom"),
 		),
 		PageDown: key.NewBinding(
-			key.WithKeys("ctrl+d"),
-			key.WithHelp("⌃d", "page down"),
+			key.WithKeys("ctrl+d", "pgdown"),
+			key.WithHelp("⌃d/pgdn", "page down"),
 		),
 		PageUp: key.NewBinding(
-			key.WithKeys("ctrl+u"),
-			key.WithHelp("⌃u", "page up"),
+			key.WithKeys("ctrl+u", "pgup"),
+			key.WithHelp("⌃u/pgup", "page up"),
 		),
 
 		Enter: key.NewBinding(
@@ -253,12 +253,12 @@ type ListSearchKeys struct {
 func NewListSearchKeys() ListSearchKeys {
 	return ListSearchKeys{
 		Up: key.NewBinding(
-			key.WithKeys("up", "k"),
-			key.WithHelp("↑/k", "prev result"),
+			key.WithKeys("up"),
+			key.WithHelp("↑", "prev result"),
 		),
 		Down: key.NewBinding(
-			key.WithKeys("down", "j"),
-			key.WithHelp("↓/j", "next result"),
+			key.WithKeys("down"),
+			key.WithHelp("↓", "next result"),
 		),
 		Apply: key.NewBinding(
 			key.WithKeys("enter"),

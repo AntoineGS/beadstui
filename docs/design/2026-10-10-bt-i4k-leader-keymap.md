@@ -76,6 +76,11 @@ ID rules:
   `memories_search`, `help`, `cass`, `agent_prompt`, `tutorial`).
 - IDs are unique within a map. The same ID in two maps is allowed only for the
   shared `nav.*` IDs and for IDs a layout table assigns to several maps on purpose.
+- Actions whose target depends on an ordinal use one ID per target (for example,
+  `attention.pick_label_1` through `attention.pick_label_9` and
+  `tutorial.jump_page_1` through `tutorial.jump_page_9`). Dispatch determines
+  the ordinal by matching that binding, never by parsing the physical key or
+  synthetic token text. The former aggregate IDs are not registered.
 
 `(*AppKeys).Walk(fn func(Ref, *key.Binding))` visits every tagged binding by
 reflection (`Ref{Map, Field, ID}`), handing out a pointer into `AppKeys` so
@@ -369,6 +374,8 @@ Each phase is one child bead, lands on `task/bt-i4k`, and passes `go build ./...
   (stale gen ignored, delay 0, panel stays visible on descend).
 - Config tests: promote, move, unbind, unknown ID, bad duration, conflicts,
   shadow records, plugin shadowing.
+- Ordinal-action tests: physical keys and action tokens select the same configured
+  target, including remapped attention labels and tutorial pages.
 - `readme_keys_test.go` keeps guarding README tables against the new layout.
 
 ## Out of scope

@@ -46,12 +46,12 @@ func NewFlowMatrixKeys() FlowMatrixKeys {
 			key.WithHelp("end/G", "jump to bottom"),
 		),
 		PageDown: key.NewBinding(
-			key.WithKeys("ctrl+d"),
-			key.WithHelp("⌃d", "half page down"),
+			key.WithKeys("ctrl+d", "pgdown"),
+			key.WithHelp("⌃d/pgdn", "half page down"),
 		),
 		PageUp: key.NewBinding(
-			key.WithKeys("ctrl+u"),
-			key.WithHelp("⌃u", "half page up"),
+			key.WithKeys("ctrl+u", "pgup"),
+			key.WithHelp("⌃u/pgup", "half page up"),
 		),
 		TogglePanel: key.NewBinding(
 			key.WithKeys("tab"),

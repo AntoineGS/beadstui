@@ -153,8 +153,9 @@ func TestUniversalNav_ConsistentAcrossViews(t *testing.T) {
 	for i := 0; i < appV.NumField(); i++ {
 		mapField := appV.Field(i)
 		viewName := appV.Type().Field(i).Name
-		if viewName == "Global" {
-			// GlobalKeys is chrome, not a per-view nav consumer.
+		if viewName == "Global" || viewName == "ListSearch" {
+			// GlobalKeys is chrome, not a per-view nav consumer. ListSearch is
+			// intentionally arrow-only so vim letters remain typeable in its input.
 			continue
 		}
 		if mapField.Kind() != reflect.Struct {

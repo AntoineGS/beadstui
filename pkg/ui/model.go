@@ -1291,12 +1291,13 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 	// hook for "render filtering UI differently".
 	l.SetShowFilter(false)
 	l.DisableQuitKeybindings()
-	// Left/Right and h/l move between panes (bt-tg0), and letters belong to
-	// bt's layout (bt-i4k): the list pages on pgup/pgdown only, and gg (the
-	// sequence router) replaces its lone-g jump to the top.
-	l.KeyMap.PrevPage.SetKeys("pgup")
-	l.KeyMap.NextPage.SetKeys("pgdown")
-	l.KeyMap.GoToStart.SetKeys("home")
+	// The application owns page and top/bottom navigation; Bubbles only owns
+	// cursor movement and filter editing. This prevents one keypress from
+	// applying both the app's resolved action and Bubbles' built-in movement.
+	l.KeyMap.PrevPage.SetKeys()
+	l.KeyMap.NextPage.SetKeys()
+	l.KeyMap.GoToStart.SetKeys()
+	l.KeyMap.GoToEnd.SetKeys()
 	// Action tokens (bt-i4k) move the bubbles-owned cursor like the keys do.
 	l.KeyMap.CursorUp.SetKeys(append(l.KeyMap.CursorUp.Keys(), keys.Token("nav.up"))...)
 	l.KeyMap.CursorDown.SetKeys(append(l.KeyMap.CursorDown.Keys(), keys.Token("nav.down"))...)
@@ -1654,6 +1655,7 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 	m.labelDashboard.keys = m.keys.LabelDashboard
 	m.tutorialModel.keys = m.keys.Tutorial
 	m.syncBubblesKeyBindings(keys.Config{}, nil, nil)
+	m.syncDetailsViewportKeyBindings()
 	m.applyFilter()
 	m.filter.appliedKey = m.cursorKey()
 	m.refreshThemeConsumers()

@@ -877,6 +877,71 @@ func TestQuitFromHelpOverOrdinaryModalStillQuitsImmediately(t *testing.T) {
 	}
 }
 
+func TestReboundQuitKeysAnswerPluginPromptsBeforeQuitting(t *testing.T) {
+	for _, tc := range []struct {
+		id string
+		key rune
+	}{
+		{id: "app.quit", key: 'z'},
+		{id: "app.force_quit", key: 'z'},
+	} {
+		for _, promptCase := range []struct {
+			name string
+			make func(func(any)) plugin.PromptMsg
+		}{
+			{name: "confirm", make: confirmPrompt},
+			{name: "select", make: selectPrompt},
+		} {
+			for _, throughHelp := range []bool{false, true} {
+				name := "prompt/"
+				if throughHelp {
+					name = "help/"
+				}
+				t.Run(tc.id+"/"+promptCase.name+"/"+name, func(t *testing.T) {
+					m := newPluginActionModel(t, &fakePluginActions{})
+					m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{tc.id: {string(tc.key)}}}, nil)
+					var replies recorder
+					m, _ = sendMsg(m, promptCase.make(replies.reply))
+					if throughHelp {
+						m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyF1})
+						if m.activeModal != ModalHelp || m.helpOriginModal != ModalPluginPrompt {
+							t.Fatalf("help did not preserve plugin prompt: modal=%v origin=%v", m.activeModal, m.helpOriginModal)
+						}
+					}
+
+					m, cmd := sendMsg(m, keyRune(tc.key))
+					if cmd == nil {
+						t.Fatal("configured quit key returned no command")
+					}
+					if _, ok := cmd().(tea.QuitMsg); !ok {
+						t.Fatal("configured quit key did not return tea.QuitMsg")
+					}
+					if len(replies.answers) != 1 || replies.answers[0] != nil {
+						t.Fatalf("plugin answers = %v, want exactly [nil]", replies.answers)
+					}
+					if m.activeModal != ModalNone || m.pluginPrompt != nil {
+						t.Fatalf("plugin prompt not closed before quit: modal=%v prompt=%+v", m.activeModal, m.pluginPrompt)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestReboundQuitKeyDoesNotStealLeaderSequenceSuffix(t *testing.T) {
+	m := newPluginActionModel(t, &fakePluginActions{})
+	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{
+		"app.quit":   {"z"},
+		"view.board": {"<leader>vz"},
+	}}, nil)
+	m = runKey(t, m, tea.KeyPressMsg{Code: tea.KeySpace})
+	m = runKey(t, m, keyRune('v'))
+	m = runKey(t, m, keyRune('z'))
+	if m.mode != ViewBoard {
+		t.Fatalf("sequence mode = %v, want board", m.mode)
+	}
+}
+
 func TestPluginPromptClosesWhenStale(t *testing.T) {
 	m := newPluginActionModel(t, &fakePluginActions{})
 	var r recorder

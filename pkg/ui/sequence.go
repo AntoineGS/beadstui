@@ -46,6 +46,12 @@ func (m Model) seqMaps() []any {
 // inTextInput reports whether typed keys belong to a text field, where the
 // leader and gg must stay inactive and q is typed rather than quitting.
 func (m Model) inTextInput() bool {
+	// Help replaces the active surface while preserving its origin. Only the
+	// active overlay owns key interpretation; a hidden search/input state must
+	// not suppress quit or other help actions.
+	if m.activeModal == ModalHelp {
+		return false
+	}
 	switch m.activeModal {
 	case ModalBQLQuery, ModalTimeTravelInput, ModalFieldInput, ModalLongformEdit:
 		return true

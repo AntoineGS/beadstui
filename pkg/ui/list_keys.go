@@ -86,10 +86,12 @@ func (m Model) handleListKeys(msg tea.KeyMsg) Model {
 		}
 	case key.Matches(msg, k.JumpTop):
 		m.list.Select(0)
+		m.swallowKey = true
 	case key.Matches(msg, k.JumpBottom):
 		if len(m.list.Items()) > 0 {
 			m.list.Select(len(m.list.Items()) - 1)
 		}
+		m.swallowKey = true
 	case key.Matches(msg, k.PageDown):
 		itemCount := len(m.list.Items())
 		if itemCount > 0 {
@@ -100,6 +102,7 @@ func (m Model) handleListKeys(msg tea.KeyMsg) Model {
 			}
 			m.list.Select(newIdx)
 		}
+		m.swallowKey = true
 	case key.Matches(msg, k.PageUp):
 		if len(m.list.Items()) > 0 {
 			currentIdx := m.list.Index()
@@ -109,6 +112,7 @@ func (m Model) handleListKeys(msg tea.KeyMsg) Model {
 			}
 			m.list.Select(newIdx)
 		}
+		m.swallowKey = true
 	case key.Matches(msg, k.TimeTravelInput):
 		// Toggle time-travel mode off, or show prompt for custom revision
 		if m.timeTravelMode {

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/seanmartinsmith/beadstui/pkg/analysis"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 )
@@ -245,16 +247,372 @@ func TestSetKeyConfigSyncsBubblesFromResolvedShadows(t *testing.T) {
 	}
 }
 
-func TestBubblesSyncPreservesDefaultsAndAddsSearchToken(t *testing.T) {
+func pagedListModel(t *testing.T) Model {
+	t.Helper()
 	m := actionTestModel(t)
-	prevPageDefaults := append([]string(nil), m.list.KeyMap.PrevPage.Keys()...)
-	if !slices.Contains(prevPageDefaults, "pgup") {
-		t.Fatalf("setup: Bubbles PrevPage keys = %v, want bt's existing pgup binding", prevPageDefaults)
+	items := make([]list.Item, 80)
+	for i := range items {
+		items[i] = IssueItem{Issue: model.Issue{ID: fmt.Sprintf("bt-%d", i+1), Title: "Issue"}}
 	}
-	m.SetKeyConfig(keys.Config{}, nil)
+	m.list.SetItems(items)
+	m.height = 36
+	m.list.SetSize(60, 16)
+	return m
+}
 
-	if got := m.list.KeyMap.PrevPage.Keys(); !slices.Equal(got, prevPageDefaults) {
-		t.Errorf("Bubbles PrevPage changed without a related override: got %v, want %v", got, prevPageDefaults)
+func TestListPagingBindingDispatchesOnce(t *testing.T) {
+	cases := []struct {
+		name   string
+		config keys.Config
+		key    tea.KeyPressMsg
+	}{
+		{name: "default", key: tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}},
+		{name: "configured", config: keys.Config{Bind: map[string]keys.BindValue{"nav.page_down": {"ctrl+f"}}}, key: tea.KeyPressMsg{Code: 'f', Mod: tea.ModCtrl}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := pagedListModel(t)
+			m.SetKeyConfig(tc.config, nil)
+			m = runKey(t, m, tc.key)
+			if got, want := m.list.Index(), m.height/3; got != want {
+				t.Fatalf("list index after one page down = %d, want %d", got, want)
+			}
+		})
+	}
+}
+
+func TestListSearchTypesVimLettersByDefaultAndUsesConfiguredNavigation(t *testing.T) {
+	t.Run("default letters and email", func(t *testing.T) {
+		m := actionTestModel(t)
+		if strings.Contains(m.keys.ListSearch.Up.Help().Key, "k") || strings.Contains(m.keys.ListSearch.Down.Help().Key, "j") {
+			t.Fatalf("list-search navigation help advertises typeable letters: up=%q down=%q",
+				m.keys.ListSearch.Up.Help().Key, m.keys.ListSearch.Down.Help().Key)
+		}
+		m = runKey(t, m, tea.KeyPressMsg{Code: '/', Text: "/"})
+		for _, r := range "jka@b" {
+			m = runKey(t, m, tea.KeyPressMsg{Code: r, Text: string(r)})
+		}
+		if got, want := m.list.FilterInput.Value(), "jka@b"; got != want {
+			t.Fatalf("list search query = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("configured physical and action navigation", func(t *testing.T) {
+		m := actionTestModel(t)
+		m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{"nav.down": {"z"}}}, nil)
+		m = runKey(t, m, tea.KeyPressMsg{Code: '/', Text: "/"})
+		m.list.SetFilterText("open")
+		m.list.Select(0)
+		m = runKey(t, m, tea.KeyPressMsg{Code: 'z', Text: "z"})
+		if got := m.list.Index(); got != 1 {
+			t.Fatalf("configured search navigation selected %d, want 1", got)
+		}
+		if got := m.list.FilterValue(); got != "open" {
+			t.Fatalf("configured navigation changed query to %q", got)
+		}
+		if got := m.keys.ListSearch.Down.Help().Key; got != "z" {
+			t.Fatalf("list-search down help key = %q, want z", got)
+		}
+		m.list.Select(0)
+		m = runKey(t, m, tokenMsg("nav.down"))
+		if got := m.list.Index(); got != 1 {
+			t.Fatalf("nav.down token selected %d, want 1", got)
+		}
+		if got := m.list.FilterValue(); got != "open" {
+			t.Fatalf("nav.down token changed query to %q", got)
+		}
+	})
+}
+
+func TestDetailsViewportUsesResolvedNavigation(t *testing.T) {
+	newDetailsModel := func(t *testing.T) Model {
+		t.Helper()
+		m := actionTestModel(t)
+		m.focused = focusDetail
+		m.showDetails = true
+		m.viewport.SetContent(strings.Repeat("detail line\n", 100))
+		m.viewport.SetHeight(8)
+		m.viewport.GotoTop()
+		return m
+	}
+
+	t.Run("configured nav down replaces j", func(t *testing.T) {
+		m := newDetailsModel(t)
+		m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{"nav.down": {"z"}}}, nil)
+		m = runKey(t, m, keyRune('z'))
+		if got := m.viewport.YOffset(); got == 0 {
+			t.Fatal("configured nav.down key z did not scroll details")
+		}
+		m.viewport.GotoTop()
+		m = runKey(t, m, keyRune('j'))
+		if got := m.viewport.YOffset(); got != 0 {
+			t.Fatalf("old nav.down key j scrolled details to %d", got)
+		}
+	})
+
+	t.Run("default vim page aliases are not viewport controls", func(t *testing.T) {
+		for _, r := range "bfud" {
+			t.Run(string(r), func(t *testing.T) {
+				m := newDetailsModel(t)
+				m.viewport.SetYOffset(10)
+				m = runKey(t, m, keyRune(r))
+				if got := m.viewport.YOffset(); got != 10 {
+					t.Fatalf("%q changed detail offset from 10 to %d", r, got)
+				}
+			})
+		}
+	})
+
+	t.Run("top and bottom use the action bindings", func(t *testing.T) {
+		m := newDetailsModel(t)
+		m.viewport.SetYOffset(10)
+		m = runKey(t, m, keyRune('g'))
+		m = runKey(t, m, keyRune('g'))
+		if got := m.viewport.YOffset(); got != 0 {
+			t.Fatalf("gg offset = %d, want top", got)
+		}
+		m = runKey(t, m, keyRune('G'))
+		if got := m.viewport.YOffset(); got == 0 {
+			t.Fatal("G did not move to the bottom")
+		}
+	})
+}
+
+func TestExitActionTokensRestoreListModeAndFocus(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		id    string
+		mode  ViewMode
+		focus focus
+		setup func(*Model)
+	}{
+		{name: "tree", id: "tree.back", mode: ViewTree, focus: focusTree},
+		{name: "flow matrix", id: "flow.close", mode: ViewFlowMatrix, focus: focusFlowMatrix},
+		{name: "insights", id: "insights.exit", mode: ViewInsights, focus: focusInsights},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := actionTestModel(t)
+			m.mode = tc.mode
+			m.focused = tc.focus
+			if tc.setup != nil {
+				tc.setup(&m)
+			}
+			m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{tc.id: {"<leader>a"}}}, nil)
+			m = runKey(t, m, tea.KeyPressMsg{Code: tea.KeySpace})
+			m = runKey(t, m, keyRune('a'))
+			if m.mode != ViewList || m.focused != focusList {
+				t.Fatalf("after %s token: mode=%v focus=%v, want list/list", tc.id, m.mode, m.focused)
+			}
+		})
+	}
+
+	t.Run("flow close backs out one level", func(t *testing.T) {
+		m := actionTestModel(t)
+		m.mode = ViewFlowMatrix
+		m.focused = focusFlowMatrix
+		m.flowMatrix.showDrilldown = true
+		m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{"flow.close": {"<leader>a"}}}, nil)
+		m = runKey(t, m, tea.KeyPressMsg{Code: tea.KeySpace})
+		m = runKey(t, m, keyRune('a'))
+		if m.mode != ViewFlowMatrix || m.focused != focusFlowMatrix || m.flowMatrix.showDrilldown {
+			t.Fatalf("flow drilldown close: mode=%v focus=%v drilldown=%v", m.mode, m.focused, m.flowMatrix.showDrilldown)
+		}
+	})
+}
+
+func TestUniversalPagingBindingsMoveAllCursorViews(t *testing.T) {
+	issues := make([]model.Issue, 80)
+	for i := range issues {
+		issues[i] = model.Issue{
+			ID:        fmt.Sprintf("bt-%03d", i+1),
+			Title:     fmt.Sprintf("Issue %d", i+1),
+			Status:    model.StatusOpen,
+			CreatedAt: time.Now(),
+		}
+	}
+
+	newModel := func(t *testing.T) Model {
+		t.Helper()
+		m := NewModel(issues, nil, "", nil, nil)
+		m.width = 120
+		m.height = 36
+		m.ready = true
+		m.list.SetSize(60, 16)
+		return m
+	}
+	type cursorView struct {
+		name   string
+		setup  func(*Model)
+		cursor func(Model) int
+	}
+	views := []cursorView{
+		{
+			name: "list",
+			setup: func(m *Model) {
+				m.mode, m.focused = ViewList, focusList
+			},
+			cursor: func(m Model) int { return m.list.Index() },
+		},
+		{
+			name: "board",
+			setup: func(m *Model) {
+				m.mode, m.focused = ViewBoard, focusBoard
+			},
+			cursor: func(m Model) int {
+				col, ok := m.board.focusedLane()
+				if !ok {
+					return 0
+				}
+				return m.board.selectedRow[col]
+			},
+		},
+		{
+			name: "tree",
+			setup: func(m *Model) {
+				m.mode, m.focused = ViewTree, focusTree
+				m.rebuildTreeForCurrentFilter()
+				m.tree.SetSize(120, 30)
+			},
+			cursor: func(m Model) int { return m.tree.cursor },
+		},
+		{
+			name: "epics",
+			setup: func(m *Model) {
+				epics := make([]model.Issue, len(issues))
+				for i := range epics {
+					epics[i] = issues[i]
+					epics[i].IssueType = model.TypeEpic
+				}
+				m.mode, m.focused = ViewEpics, focusEpics
+				m.epicsTree.Build(epics, EpicsAll, time.Now())
+				m.epicsTree.SetSize(120, 30)
+			},
+			cursor: func(m Model) int { return m.epicsTree.cursor },
+		},
+		{
+			name: "flow matrix",
+			setup: func(m *Model) {
+				m.mode, m.focused = ViewFlowMatrix, focusFlowMatrix
+				m.flowMatrix.labelStats = make([]labelFlowStats, len(issues))
+				m.flowMatrix.SetSize(120, 30)
+			},
+			cursor: func(m Model) int { return m.flowMatrix.cursor },
+		},
+		{
+			name: "label dashboard",
+			setup: func(m *Model) {
+				labels := make([]analysis.LabelHealth, len(issues))
+				for i := range labels {
+					labels[i].Label = fmt.Sprintf("label-%03d", i+1)
+				}
+				m.mode, m.focused = ViewLabelDashboard, focusLabelDashboard
+				m.labelDashboard.SetSize(120, 30)
+				m.labelDashboard.SetData(labels)
+			},
+			cursor: func(m Model) int { return m.labelDashboard.cursor },
+		},
+	}
+
+	for _, view := range views {
+		for _, tc := range []struct {
+			name string
+			msg  tea.KeyPressMsg
+		}{
+			{name: "ctrl+d/u", msg: tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}},
+			{name: "pgdown/up", msg: tea.KeyPressMsg{Code: tea.KeyPgDown}},
+		} {
+			t.Run(view.name+"/"+tc.name, func(t *testing.T) {
+				m := newModel(t)
+				view.setup(&m)
+				start := view.cursor(m)
+				m = runKey(t, m, tc.msg)
+				down := view.cursor(m)
+				if down <= start {
+					t.Fatalf("page down cursor = %d, want > %d", down, start)
+				}
+				upMsg := tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl}
+				if tc.name == "pgdown/up" {
+					upMsg = tea.KeyPressMsg{Code: tea.KeyPgUp}
+				}
+				m = runKey(t, m, upMsg)
+				if up := view.cursor(m); up >= down {
+					t.Fatalf("page up cursor = %d, want < %d", up, down)
+				}
+			})
+		}
+	}
+}
+
+func TestAttentionOrdinalActionTokenRetainsConfiguredTarget(t *testing.T) {
+	m := actionTestModel(t)
+	m.mode = ViewAttention
+	m.attentionCache.Labels = []analysis.LabelAttentionScore{
+		{Label: "one"},
+		{Label: "two"},
+		{Label: "three"},
+	}
+	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{
+		"attention.pick_label_3": {"<leader>z"},
+	}}, nil)
+
+	m = runKey(t, m, tea.KeyPressMsg{Code: tea.KeySpace})
+	m = runKey(t, m, keyRune('z'))
+	if got := m.filter.labelFilter; got != "three" {
+		t.Fatalf("label filter = %q, want ordinal 3 target three", got)
+	}
+}
+
+func TestTutorialOrdinalActionTokenRetainsConfiguredTarget(t *testing.T) {
+	m := actionTestModel(t)
+	m.activeModal = ModalTutorial
+	m.focused = focusTutorial
+	m.tutorialModel = NewTutorialModel(m.theme)
+	m.tutorialModel.pages = []TutorialPage{
+		{ID: "one", Title: "One"},
+		{ID: "two", Title: "Two"},
+		{ID: "three", Title: "Three"},
+	}
+	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{
+		"tutorial.jump_page_3": {"x"},
+	}}, nil)
+
+	m = runKey(t, m, tokenMsg("tutorial.jump_page_3"))
+	if got := m.tutorialModel.CurrentPageID(); got != "three" {
+		t.Fatalf("tutorial page after ordinal token = %q, want three", got)
+	}
+	m.tutorialModel.JumpToPage(0)
+	m = runKey(t, m, keyRune('x'))
+	if got := m.tutorialModel.CurrentPageID(); got != "three" {
+		t.Fatalf("tutorial page = %q, want ordinal 3 target three", got)
+	}
+}
+
+func TestOrdinalAggregateActionIDsAreUnknown(t *testing.T) {
+	m := actionTestModel(t)
+	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{
+		"attention.pick_label": {"x"},
+		"tutorial.jump_page":   {"y"},
+	}}, nil)
+	if len(m.keyConfigErrs) != 2 {
+		t.Fatalf("config errors = %v, want unknown-action errors for both aggregate IDs", m.keyConfigErrs)
+	}
+}
+
+func TestBubblesDoesNotOwnApplicationPagingBindings(t *testing.T) {
+	m := actionTestModel(t)
+	for name, binding := range map[string]key.Binding{
+		"previous page": m.list.KeyMap.PrevPage,
+		"next page":     m.list.KeyMap.NextPage,
+		"top":           m.list.KeyMap.GoToStart,
+		"bottom":        m.list.KeyMap.GoToEnd,
+	} {
+		if got := binding.Keys(); len(got) != 0 {
+			t.Errorf("Bubbles %s keys = %v, want application-owned binding", name, got)
+		}
+	}
+	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{"nav.page_down": {"ctrl+f"}}}, nil)
+	if got := m.list.KeyMap.NextPage.Keys(); len(got) != 0 {
+		t.Errorf("Bubbles NextPage keys after configured app paging = %v, want none", got)
 	}
 	filterKeys := m.list.KeyMap.Filter.Keys()
 	if !slices.Contains(filterKeys, "/") || !slices.Contains(filterKeys, keys.Token("app.search")) {
@@ -448,6 +806,41 @@ func TestUnmatchedTokenCannotEnterTextInputs(t *testing.T) {
 			t.Errorf("list filter = %q, want unchanged query", got)
 		}
 	})
+}
+
+func TestLiteralAtSignAndEmailInputAreNotActionTokens(t *testing.T) {
+	t.Run("list search", func(t *testing.T) {
+		m := runKey(t, actionTestModel(t), tea.KeyPressMsg{Code: '/', Text: "/"})
+		for _, r := range "jka@b" {
+			m = runKey(t, m, tea.KeyPressMsg{Code: r, Text: string(r)})
+		}
+		if got, want := m.list.FilterInput.Value(), "jka@b"; got != want {
+			t.Fatalf("list search query = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("BQL", func(t *testing.T) {
+		m := actionTestModel(t)
+		m.openModal(ModalBQLQuery)
+		m.focused = focusBQLQuery
+		m.bqlQuery.Focus()
+		for _, r := range "email:a@b.test" {
+			m = runKey(t, m, tea.KeyPressMsg{Code: r, Text: string(r)})
+		}
+		if got, want := m.bqlQuery.Value(), "email:a@b.test"; got != want {
+			t.Fatalf("BQL query = %q, want %q", got, want)
+		}
+	})
+}
+
+func TestUnknownActionTokenIsSwallowedFromTextInput(t *testing.T) {
+	m := actionTestModel(t)
+	m.openModal(ModalBQLQuery)
+	updated, _ := m.Update(tokenMsg("not.registered.action"))
+	m = updated.(Model)
+	if got := m.bqlQuery.Value(); got != "" {
+		t.Fatalf("BQL query = %q, want unknown token to be swallowed", got)
+	}
 }
 
 func TestOwnedInputTokensStillDispatch(t *testing.T) {

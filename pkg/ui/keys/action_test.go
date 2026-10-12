@@ -10,6 +10,17 @@ import (
 
 var actionIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$`)
 
+func TestIsTokenRequiresAValidActionID(t *testing.T) {
+	for _, raw := range []string{"@", "@.", "@nav.", "@1nav.down", "@nav.down!", "a@b"} {
+		if IsToken(raw) {
+			t.Errorf("IsToken(%q) = true, want false", raw)
+		}
+	}
+	if !IsToken("@unregistered.action") {
+		t.Fatal("valid-shaped unknown action token was not recognized")
+	}
+}
+
 func TestEveryBindingTagged(t *testing.T) {
 	at := reflect.TypeOf(AppKeys{})
 	for i := 0; i < at.NumField(); i++ {

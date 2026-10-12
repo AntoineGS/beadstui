@@ -316,6 +316,72 @@ func TestQuitKeyStillQuitsFromHelp(t *testing.T) {
 	}
 }
 
+func TestHelpUsesActiveFocusInsteadOfHiddenSearchInput(t *testing.T) {
+	setups := map[string]func(*Model){
+		"board search": func(m *Model) {
+			m.mode = ViewBoard
+			m.focused = focusBoard
+			m.board.StartSearch()
+		},
+		"history search": func(m *Model) {
+			m.mode = ViewHistory
+			m.focused = focusHistory
+			m.historyView = NewHistoryModel(createTestHistoryReport(), m.theme)
+			m.historyView.StartSearch()
+		},
+		"memories search": func(m *Model) {
+			m.mode = ViewMemories
+			m.focused = focusMemories
+			m.memories = NewMemoriesModel(m.theme)
+			m.memories.StartSearch()
+		},
+	}
+	for name, setup := range setups {
+		t.Run(name, func(t *testing.T) {
+			m := newSizedModel(t, fieldEditTestIssues(), 120, 32)
+			setup(&m)
+			m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyF1})
+			if m.activeModal != ModalHelp {
+				t.Fatalf("F1 did not open help: modal=%v", m.activeModal)
+			}
+			m, cmd := sendMsg(m, keyRune('q'))
+			if cmd == nil {
+				t.Fatal("q from active help did not quit")
+			}
+			if _, ok := cmd().(tea.QuitMsg); !ok {
+				t.Fatal("q from active help did not produce tea.QuitMsg")
+			}
+			if m.activeModal != ModalHelp {
+				t.Fatalf("quit changed the active help modal to %v", m.activeModal)
+			}
+		})
+	}
+
+	t.Run("escape restores the hidden search", func(t *testing.T) {
+		m := newSizedModel(t, fieldEditTestIssues(), 120, 32)
+		m.mode = ViewBoard
+		m.focused = focusBoard
+		m.board.StartSearch()
+		m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyF1})
+		m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+		if m.activeModal != ModalNone || m.focused != focusBoard || !m.board.IsSearchMode() {
+			t.Fatalf("Esc restored modal=%v focus=%v board search=%v, want active board search", m.activeModal, m.focused, m.board.IsSearchMode())
+		}
+	})
+
+	t.Run("help over a text-input modal", func(t *testing.T) {
+		m := newSizedModel(t, fieldEditTestIssues(), 120, 32)
+		m.fieldInput = NewFieldInputModal("title", "Title", "draft", m.theme)
+		m.fieldInput.Focus()
+		m.openModal(ModalFieldInput)
+		m.focused = focusFieldInput
+		m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyF1})
+		if m.activeModal != ModalHelp || m.helpOriginModal != ModalFieldInput || m.inTextInput() {
+			t.Fatalf("help over field input has modal=%v origin=%v textInput=%v", m.activeModal, m.helpOriginModal, m.inTextInput())
+		}
+	})
+}
+
 func TestUpdateMsgSetsUpdateAvailable(t *testing.T) {
 	m := NewModel([]model.Issue{{ID: "1", Title: "One", Status: model.StatusOpen}}, nil, "", nil, nil)
 	updated, _ := m.Update(UpdateMsg{TagName: "v9.9.9", URL: "https://example"})

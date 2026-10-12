@@ -212,7 +212,7 @@ func (m Model) handlePluginPromptKeys(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		m.closeModal()
 		return m, nil
 	}
-	if key.Matches(msg, m.keys.Global.Quit, m.keys.PluginSelect.Close) {
+	if key.Matches(msg, m.keys.Global.Back, m.keys.Global.Quit, m.keys.PluginSelect.Close) {
 		if p.kind == pluginPromptMenu || p.kind == pluginPromptStatus {
 			m.closePluginPrompt()
 		} else {

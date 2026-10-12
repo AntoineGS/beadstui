@@ -66,7 +66,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// still belongs to that prompt: restore it first so its handler can answer
 	// outstanding confirm/select requests with nil before returning tea.Quit.
 	if m.activeModal == ModalHelp && m.helpOriginModal == ModalPluginPrompt && m.pluginPrompt != nil &&
-		key.Matches(msg, m.keys.Global.Quit, m.keys.PluginSelect.Close) {
+		key.Matches(msg, m.keys.Global.Back, m.keys.Global.Quit, m.keys.PluginSelect.Close) {
 		m.closeHelp()
 		return m.handlePluginPromptKeys(msg)
 	}
@@ -264,18 +264,29 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.focused = focusList
 			m.insightsPanel.extraText = ""
 			return m, nil
-		case key.Matches(msg, m.keys.Attention.PickLabel):
-			// The digit is the label rank, read from the key text.
-			s := msg.String()
+		case key.Matches(msg,
+			m.keys.Attention.PickLabel1, m.keys.Attention.PickLabel2, m.keys.Attention.PickLabel3,
+			m.keys.Attention.PickLabel4, m.keys.Attention.PickLabel5, m.keys.Attention.PickLabel6,
+			m.keys.Attention.PickLabel7, m.keys.Attention.PickLabel8, m.keys.Attention.PickLabel9):
+			ordinal := -1
+			for i, binding := range [...]key.Binding{
+				m.keys.Attention.PickLabel1, m.keys.Attention.PickLabel2, m.keys.Attention.PickLabel3,
+				m.keys.Attention.PickLabel4, m.keys.Attention.PickLabel5, m.keys.Attention.PickLabel6,
+				m.keys.Attention.PickLabel7, m.keys.Attention.PickLabel8, m.keys.Attention.PickLabel9,
+			} {
+				if key.Matches(msg, binding) {
+					ordinal = i
+					break
+				}
+			}
 			if len(m.attentionCache.Labels) == 0 {
 				return m, nil
 			}
-			idx := int(s[0] - '1')
-			if idx >= 0 && idx < len(m.attentionCache.Labels) {
-				label := m.attentionCache.Labels[idx].Label
+			if ordinal >= 0 && ordinal < len(m.attentionCache.Labels) {
+				label := m.attentionCache.Labels[ordinal].Label
 				m.filter.labelFilter = label
 				m.applyFilter()
-				m.setStatus(fmt.Sprintf("Filtered to label %s (attention #%d)", label, idx+1))
+				m.setStatus(fmt.Sprintf("Filtered to label %s (attention #%d)", label, ordinal+1))
 			}
 			return m, nil
 		}
@@ -920,7 +931,8 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		// File-tree focus is not text entry, so the leader runs there and its
 		// completed Global actions (SPC f c, SPC v l, ...) pass through.
 		case m.mode == ViewHistory && (m.historyView.IsSearchActive() ||
-			m.historyView.FileTreeHasFocus() && !m.isGlobalToken(msg)):
+			m.historyView.FileTreeHasFocus() &&
+				(!keyMapMatches(msg, m.keys.Global) || keyMapMatches(msg, m.keys.HistoryFileTree))):
 			if key.Matches(msg, m.keys.Global.Quit) {
 				return m, tea.Quit
 			}
@@ -1568,6 +1580,12 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			// gate cannot drift from the per-view Map (bt-ift6.2).
 			ln := m.keys.ListNormal
 			switch {
+			case key.Matches(msg, ln.JumpTop):
+				m.viewport.GotoTop()
+				return m, nil
+			case key.Matches(msg, ln.JumpBottom):
+				m.viewport.GotoBottom()
+				return m, nil
 			case key.Matches(msg, ln.PaneLeft):
 				m.focusPaneLeftOfDetail()
 				return m, nil
@@ -2157,6 +2175,7 @@ func (m *Model) applyListDetailSizing(bodyW, bodyHeight int) {
 		}
 		m.list.SetSize(innerWidth, m.issueListHeight(bodyHeight))
 		m.viewport = viewport.New(viewport.WithWidth(innerWidth), viewport.WithHeight(bodyHeight-2))
+		m.syncDetailsViewportKeyBindings()
 		return
 	}
 
@@ -2169,6 +2188,7 @@ func (m *Model) applyListDetailSizing(bodyW, bodyHeight int) {
 	detailInnerWidth := availWidth - listInnerWidth
 	m.list.SetSize(listInnerWidth, m.issueListHeight(bodyHeight))
 	m.viewport = viewport.New(viewport.WithWidth(detailInnerWidth), viewport.WithHeight(bodyHeight-2))
+	m.syncDetailsViewportKeyBindings()
 }
 
 // handleWindowSize processes terminal resize events using a two-phase debounce
