@@ -265,7 +265,7 @@ func TestLayout_LeaderGroups(t *testing.T) {
 		{"b c", func(t *testing.T, m Model) Model {
 			t.Setenv("PATH", t.TempDir()) // no cass binary: correlation is never run
 			return m
-		}, status("cass not available")},
+		}, status("Searching Cass sessions")},
 		{"b g", func(t *testing.T, m Model) Model {
 			m.historyView = NewHistoryModel(createTestHistoryReport(), m.theme)
 			m.historyView.SetSize(m.width, m.height-1)

@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/seanmartinsmith/beadstui/pkg/cass"
 	"github.com/seanmartinsmith/beadstui/pkg/export"
 )
 
@@ -189,37 +187,12 @@ func (m *Model) showCassSessionModal() {
 	}
 	issue := issueItem.Issue
 
-	// Check if cass is available
-	if m.cassCorrelator == nil {
-		// Initialize correlator lazily
-		detector := cass.NewDetector()
-		if detector.Check() != cass.StatusHealthy {
-			m.setStatus(activeGlyphs.Warning + " cass not available (install it for session correlation)")
-			return
-		}
-		searcher := cass.NewSearcher(detector)
-		cache := cass.NewCache()
-		m.cassCorrelator = cass.NewCorrelator(searcher, cache, m.workDir)
-	}
-
-	// Run correlation
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	result := m.cassCorrelator.Correlate(ctx, &issue)
-
-	// If no sessions found, just show a status message
-	if len(result.TopSessions) == 0 {
-		m.setStatus("No correlated sessions found for " + issue.ID)
+	if m.cassCancel != nil {
+		m.cancelCassLookup()
+		m.setStatus("Cass session lookup cancelled")
 		return
 	}
-
-	// Create and show the modal
-	m.cassModal = NewCassSessionModal(issue.ID, result, m.theme)
-	m.cassModal.keys = m.keys.Cass
-	m.cassModal.SetSize(max(0, m.width), max(0, m.height-1))
-	m.openModal(ModalCassSession)
-	m.focused = focusCassModal
+	m.cassCmd = m.beginCassLookup(issue)
 }
 
 // showSelfUpdateModal shows the self-update modal (bv-182)

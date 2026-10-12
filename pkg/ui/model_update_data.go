@@ -84,6 +84,11 @@ func (m Model) handleSnapshotReady(msg SnapshotReadyMsg) (Model, tea.Cmd) {
 	}
 
 	oldSnapshot := m.data.snapshot
+	m.cassDatasetID++
+	m.cancelCassLookup()
+	if m.cassCorrelator != nil {
+		m.cassCorrelator.ClearCache()
+	}
 
 	// Swap snapshot pointer
 	m.data.snapshot = msg.Snapshot

@@ -5,11 +5,66 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestCassCommandChildProcess(t *testing.T) {
+	if os.Getenv("BT_CASS_COMMAND_CHILD") != "1" {
+		return
+	}
+	if err := os.WriteFile(os.Getenv("BT_CASS_COMMAND_MARKER"), []byte("started"), 0600); err != nil {
+		os.Exit(2)
+	}
+	for {
+		_, _ = os.Stdout.Write([]byte("running\n"))
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestCassSearchCommandDeadlineStopsOwnedProcessAndPipe(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+	cmd := []string{"-test.run=TestCassCommandChildProcess"}
+	t.Setenv("BT_CASS_COMMAND_CHILD", "1")
+	marker := t.TempDir() + "/child-started"
+	t.Setenv("BT_CASS_COMMAND_MARKER", marker)
+	started := time.Now()
+	type commandResult struct {
+		output []byte
+		err    error
+	}
+	done := make(chan commandResult, 1)
+	go func() {
+		output, err := defaultSearchRunCommand(ctx, os.Args[0], cmd...)
+		done <- commandResult{output: output, err: err}
+	}()
+	deadline := time.NewTimer(time.Second)
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer deadline.Stop()
+	defer ticker.Stop()
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		select {
+		case <-ticker.C:
+		case <-deadline.C:
+			t.Fatal("child process never crossed the CLI ownership boundary")
+		}
+	}
+	result := <-done
+	if result.err == nil || ctx.Err() == nil {
+		t.Fatalf("deadline did not stop child: err=%v context=%v", result.err, ctx.Err())
+	}
+	if time.Since(started) > 2*time.Second {
+		t.Fatalf("owned subprocess/pipe exceeded deadline: %s", time.Since(started))
+	}
+	_ = result.output // stdout is concurrently drained through the bounded writer.
+}
 
 func TestSearchOptions_Defaults(t *testing.T) {
 	s := NewSearcher(NewDetector())

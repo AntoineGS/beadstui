@@ -2,6 +2,7 @@ package cass
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -135,14 +136,31 @@ func (c *Correlator) GetCached(beadID string) *CorrelationHint {
 	return c.cache.Get(beadID)
 }
 
+// ClearCache invalidates all cached results after the caller replaces its dataset.
+func (c *Correlator) ClearCache() {
+	if c.cache != nil {
+		c.cache.Clear()
+	}
+}
+
 // Correlate finds sessions relevant to the given bead.
 // It tries multiple strategies in order of confidence:
 // 1. ID mention (highest confidence)
 // 2. Keyword extraction (medium confidence)
 // 3. Timestamp proximity (lower confidence)
 func (c *Correlator) Correlate(ctx context.Context, issue *model.Issue) CorrelationResult {
+	result, _ := c.CorrelateWithError(ctx, issue)
+	return result
+}
+
+// CorrelateWithError does not cache incomplete results, allowing the caller to
+// retry when Cass reports a partial or failed search.
+func (c *Correlator) CorrelateWithError(ctx context.Context, issue *model.Issue) (CorrelationResult, error) {
 	if issue == nil {
-		return CorrelationResult{}
+		return CorrelationResult{}, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return CorrelationResult{}, fmt.Errorf("Cass correlation cancelled: %w", err)
 	}
 
 	start := c.now()
@@ -157,7 +175,7 @@ func (c *Correlator) Correlate(ctx context.Context, issue *model.Issue) Correlat
 				Strategy:      StrategyCombined,
 				Keywords:      extractKeywordsFromHint(hint),
 				ComputeTimeMs: 0, // Cache hit
-			}
+			}, nil
 		}
 	}
 
@@ -166,14 +184,20 @@ func (c *Correlator) Correlate(ctx context.Context, issue *model.Issue) Correlat
 	}
 
 	// Strategy 1: ID mention search (definitive match)
-	idResults := c.searchByID(ctx, issue.ID)
+	idResults, err := c.searchByID(ctx, issue.ID)
+	if err != nil {
+		return CorrelationResult{}, err
+	}
 	if len(idResults) > 0 {
 		result.TopSessions = idResults
 		result.TotalFound = len(idResults)
 		result.Strategy = StrategyIDMention
 		result.ComputeTimeMs = int(c.now().Sub(start).Milliseconds())
+		if err := ctx.Err(); err != nil {
+			return CorrelationResult{}, fmt.Errorf("Cass correlation cancelled: %w", err)
+		}
 		c.cacheResult(issue.ID, &result)
-		return result
+		return result, nil
 	}
 
 	// Strategy 2: Keyword extraction and search
@@ -181,20 +205,29 @@ func (c *Correlator) Correlate(ctx context.Context, issue *model.Issue) Correlat
 	result.Keywords = keywords
 
 	if len(keywords) > 0 {
-		keywordResults := c.searchByKeywords(ctx, issue, keywords)
+		keywordResults, err := c.searchByKeywords(ctx, issue, keywords)
+		if err != nil {
+			return CorrelationResult{}, err
+		}
 		if len(keywordResults) > 0 {
 			result.TopSessions = keywordResults
 			result.TotalFound = len(keywordResults)
 			result.Strategy = StrategyKeywords
 			result.ComputeTimeMs = int(c.now().Sub(start).Milliseconds())
+			if err := ctx.Err(); err != nil {
+				return CorrelationResult{}, fmt.Errorf("Cass correlation cancelled: %w", err)
+			}
 			c.cacheResult(issue.ID, &result)
-			return result
+			return result, nil
 		}
 	}
 
 	// Strategy 3: Timestamp proximity (for closed beads)
 	if issue.ClosedAt != nil || !issue.CreatedAt.IsZero() {
-		timestampResults := c.searchByTimestamp(ctx, issue)
+		timestampResults, err := c.searchByTimestamp(ctx, issue)
+		if err != nil {
+			return CorrelationResult{}, err
+		}
 		if len(timestampResults) > 0 {
 			result.TopSessions = timestampResults
 			result.TotalFound = len(timestampResults)
@@ -203,12 +236,15 @@ func (c *Correlator) Correlate(ctx context.Context, issue *model.Issue) Correlat
 	}
 
 	result.ComputeTimeMs = int(c.now().Sub(start).Milliseconds())
+	if err := ctx.Err(); err != nil {
+		return CorrelationResult{}, fmt.Errorf("Cass correlation cancelled: %w", err)
+	}
 	c.cacheResult(issue.ID, &result)
-	return result
+	return result, nil
 }
 
 // searchByID searches for the bead ID literally in sessions.
-func (c *Correlator) searchByID(ctx context.Context, beadID string) []ScoredResult {
+func (c *Correlator) searchByID(ctx context.Context, beadID string) ([]ScoredResult, error) {
 	// Quote the ID for exact matching
 	query := `"` + beadID + `"`
 
@@ -217,9 +253,12 @@ func (c *Correlator) searchByID(ctx context.Context, beadID string) []ScoredResu
 		Limit:     MaxSessionsReturned,
 		Workspace: c.workspace,
 	})
+	if resp.Meta.Error != "" {
+		return nil, fmt.Errorf("Cass ID search: %s", resp.Meta.Error)
+	}
 
 	if len(resp.Results) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	scored := make([]ScoredResult, 0, len(resp.Results))
@@ -238,15 +277,15 @@ func (c *Correlator) searchByID(ctx context.Context, beadID string) []ScoredResu
 		}
 	}
 
-	return c.rankAndLimit(scored)
+	return c.rankAndLimit(scored), nil
 }
 
 // searchByKeywords searches for extracted keywords with time filtering.
-func (c *Correlator) searchByKeywords(ctx context.Context, issue *model.Issue, keywords []string) []ScoredResult {
+func (c *Correlator) searchByKeywords(ctx context.Context, issue *model.Issue, keywords []string) ([]ScoredResult, error) {
 	// Build query from keywords
 	query := strings.Join(keywords, " ")
 	if query == "" {
-		return nil
+		return nil, nil
 	}
 
 	// Calculate search window based on bead activity
@@ -258,9 +297,12 @@ func (c *Correlator) searchByKeywords(ctx context.Context, issue *model.Issue, k
 		Days:      days,
 		Workspace: c.workspace,
 	})
+	if resp.Meta.Error != "" {
+		return nil, fmt.Errorf("Cass keyword search: %s", resp.Meta.Error)
+	}
 
 	if len(resp.Results) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	scored := make([]ScoredResult, 0, len(resp.Results))
@@ -282,11 +324,11 @@ func (c *Correlator) searchByKeywords(ctx context.Context, issue *model.Issue, k
 		}
 	}
 
-	return c.rankAndLimit(scored)
+	return c.rankAndLimit(scored), nil
 }
 
 // searchByTimestamp finds sessions near bead activity dates.
-func (c *Correlator) searchByTimestamp(ctx context.Context, issue *model.Issue) []ScoredResult {
+func (c *Correlator) searchByTimestamp(ctx context.Context, issue *model.Issue) ([]ScoredResult, error) {
 	// Use a broader search when we have no keywords
 	days := c.calculateSearchDays(issue)
 	if days == 0 {
@@ -300,9 +342,12 @@ func (c *Correlator) searchByTimestamp(ctx context.Context, issue *model.Issue) 
 		Days:      days,
 		Workspace: c.workspace,
 	})
+	if resp.Meta.Error != "" {
+		return nil, fmt.Errorf("Cass timestamp search: %s", resp.Meta.Error)
+	}
 
 	if len(resp.Results) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	scored := make([]ScoredResult, 0, len(resp.Results))
@@ -320,7 +365,7 @@ func (c *Correlator) searchByTimestamp(ctx context.Context, issue *model.Issue) 
 		}
 	}
 
-	return c.rankAndLimit(scored)
+	return c.rankAndLimit(scored), nil
 }
 
 // ExtractKeywords extracts meaningful search keywords from text.
