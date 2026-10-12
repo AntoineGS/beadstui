@@ -143,7 +143,7 @@ func (rc *robotCtx) routedBDCommandForShell(issueID, shell string, args ...strin
 			for i := 1; i < len(parts); i++ {
 				parts[i] = fishQuote(parts[i])
 			}
-			return "begin; if pushd -- " + fishQuote(target.Dir) + " >/dev/null; command bd " + strings.Join(parts[1:], " ") + "; set -l __bt_command_status $status; popd >/dev/null; test $__bt_command_status -eq 0; else; false; end; end"
+			return "begin; if pushd " + fishQuote(target.Dir) + " >/dev/null; command bd " + strings.Join(parts[1:], " ") + "; set -l __bt_command_status $status; popd >/dev/null; test $__bt_command_status -eq 0; else; false; end; end"
 		}
 		for i := range parts {
 			parts[i] = shellQuote(parts[i])

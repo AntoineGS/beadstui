@@ -152,11 +152,10 @@ func TestReplaceIssuesRebuildsReadinessAuthority(t *testing.T) {
 		t.Fatalf("footer ready count = %d after gate closure, want 1", m.ac.countReady)
 	}
 	addedBlocker := append([]model.Issue(nil), closed...)
-	addedBlocker[1].Status = model.StatusOpen
 	addedBlocker = append(addedBlocker, model.Issue{ID: "late-blocker", Status: model.StatusOpen})
 	addedBlocker[0].Dependencies = append(addedBlocker[0].Dependencies, &model.Dependency{DependsOnID: "late-blocker", Type: model.DepBlocks})
 	m.replaceIssues(addedBlocker)
-	if len(m.filter.visible) != 2 || m.ac.countReady != 2 {
+	if len(m.filter.visible) != 1 || m.ac.countReady != 1 {
 		t.Fatalf("new blocker on reload left stale candidate readiness: visible=%v ready=%d", idsOf(m.filter.visible), m.ac.countReady)
 	}
 	for _, issue := range m.filter.visible {

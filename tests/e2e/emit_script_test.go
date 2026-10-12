@@ -43,7 +43,7 @@ func TestEmitScript_BashAndFish(t *testing.T) {
 				t.Fatalf("missing %q:\n%s", tt.wantExtra, s)
 			}
 			if tt.formatFlag == "fish" {
-				if !strings.Contains(s, "begin; if pushd --") || !strings.Contains(s, "command bd 'show' 'A'") {
+				if !strings.Contains(s, "begin; if pushd '") || strings.Contains(s, "pushd --") || !strings.Contains(s, "command bd 'show' 'A'") {
 					t.Fatalf("missing fish-compatible route-checked bd show command for A:\n%s", s)
 				}
 			} else if !strings.Contains(s, "'bd' 'show' 'A'") || !strings.Contains(s, "(cd ") {
@@ -70,7 +70,7 @@ func TestEmitScriptFishRendersAndExecutesFishSyntax(t *testing.T) {
 	if err != nil {
 		t.Fatalf("emit fish script: %v\n%s", err, script)
 	}
-	if strings.Contains(string(script), "(cd ") || !strings.Contains(string(script), "begin; if pushd --") {
+	if strings.Contains(string(script), "(cd ") || strings.Contains(string(script), "pushd --") || !strings.Contains(string(script), "begin; if pushd '") {
 		t.Fatalf("fish output does not use a fish command block and scoped directory stack:\n%s", script)
 	}
 
