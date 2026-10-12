@@ -2,34 +2,33 @@ package ui
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/seanmartinsmith/beadstui/pkg/cass"
+	"github.com/seanmartinsmith/beadstui/pkg/model"
 )
 
 func TestClipboardSequenceTerminalMultiplexers(t *testing.T) {
 	const text = "clipboard"
-	encoded := base64.StdEncoding.EncodeToString([]byte(text))
-	raw := "\x1b]52;c;" + encoded + "\x07"
 	tests := []struct {
 		name string
 		env  map[string]string
 		want string
 	}{
-		{name: "raw", want: raw},
-		{name: "tmux", env: map[string]string{"TMUX": "/tmp/tmux"}, want: "\x1bPtmux;\x1b" + strings.TrimSuffix(raw, "\x07") + "\x1b\\"},
-		{name: "screen", env: map[string]string{"STY": "123.pts-1"}, want: "\x1bP" + raw + "\x1b\\"},
-		{name: "tmux wins over screen", env: map[string]string{"TMUX": "/tmp/tmux", "STY": "123.pts-1"}, want: "\x1bPtmux;\x1b" + strings.TrimSuffix(raw, "\x07") + "\x1b\\"},
+		{name: "raw", want: "\x1b]52;c;Y2xpcGJvYXJk\x07"},
+		{name: "tmux raw OSC", env: map[string]string{"TMUX": "/tmp/tmux"}, want: "\x1b]52;c;Y2xpcGJvYXJk\x07"},
+		{name: "screen passthrough", env: map[string]string{"STY": "123.pts-1"}, want: "\x1bP\x1b]52;c;Y2xpcGJvYXJk\x07\x1b\\"},
+		{name: "tmux wins over screen", env: map[string]string{"TMUX": "/tmp/tmux", "STY": "123.pts-1"}, want: "\x1b]52;c;Y2xpcGJvYXJk\x07"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -84,19 +83,33 @@ func TestClipboardHelperTimeoutBoundsUnconsumedInput(t *testing.T) {
 	}
 	dir := t.TempDir()
 	helper := filepath.Join(dir, "wl-copy")
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\nexec /bin/sleep 10\n"), 0o700); err != nil {
+	pidPath := filepath.Join(dir, "descendant.pid")
+	script := fmt.Sprintf("#!/bin/sh\n/bin/sleep 10 &\necho $! > %q\nwait\n", pidPath)
+	if err := os.WriteFile(helper, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	defer func() {
+		if data, err := os.ReadFile(pidPath); err == nil {
+			if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
+				if process, err := os.FindProcess(pid); err == nil {
+					_ = process.Kill()
+				}
+			}
+		}
+	}()
 	t.Setenv("PATH", dir)
 	t.Setenv("WAYLAND_DISPLAY", "wayland-test")
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	started := time.Now()
 	err := runClipboardHelper(ctx, strings.Repeat("x", 16<<20))
 	if err == nil {
 		t.Fatal("non-reading helper unexpectedly succeeded")
 	}
-	if elapsed := time.Since(started); elapsed > time.Second {
+	if _, err := os.ReadFile(pidPath); err != nil {
+		t.Fatalf("helper descendant did not start: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 800*time.Millisecond {
 		t.Fatalf("helper with unconsumed stdin took %s after cancellation", elapsed)
 	}
 }
@@ -222,11 +235,15 @@ func TestClipboardUpdateGatesTerminalFallback(t *testing.T) {
 			}
 			if terminal {
 				if output == nil {
-					t.Fatal("interactive output did not emit OSC 52 command")
+					t.Fatal("interactive output did not queue OSC 52 message")
 				}
-				raw, ok := output().(tea.RawMsg)
+				pending, ok := output().(clipboardTerminalOutputMsg)
+				if !ok {
+					t.Fatalf("terminal output = %T, want identity-bearing output", pending)
+				}
+				raw, ok := FilterClipboardOutput(m, pending).(tea.RawMsg)
 				if !ok || !strings.Contains(fmt.Sprint(raw.Msg), "\x1b]52;") {
-					t.Fatalf("terminal output = %#v, want raw OSC 52", raw)
+					t.Fatalf("filtered output = %#v, want raw OSC 52", raw)
 				}
 			} else if msg.sequence != "" {
 				t.Fatal("disabled terminal output received a fallback sequence")
@@ -305,5 +322,111 @@ func TestClipboardStopCancelsAndInvalidatesCompletion(t *testing.T) {
 	m = updated.(Model)
 	if m.statusMsg == "Copied pending" {
 		t.Fatal("completion after shutdown updated clipboard feedback")
+	}
+}
+
+func TestNewModelClipboardControllerIsSharedAcrossValueCopies(t *testing.T) {
+	m := NewModel(nil, nil, "", nil, nil)
+	if m.clipboard == nil {
+		t.Fatal("NewModel did not initialize clipboard controller before value copies")
+	}
+	runtimeModel := m
+	entered := make(chan struct{})
+	runtimeModel.clipboard.runHelper = func(ctx context.Context, _ string) error {
+		close(entered)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	runtimeModel.requestClipboard("pending", "Copied pending")
+	cmd := runtimeModel.takeClipboardCmd()
+	done := make(chan clipboardResultMsg, 1)
+	go func() { done <- cmd().(clipboardResultMsg) }()
+	<-entered
+	m.Stop() // Mirrors the pre-Program deferred owner, not runtimeModel.
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("deferred owner Stop did not cancel the runtime model's helper")
+	}
+}
+
+func TestClipboardTerminalMessageIsRevalidatedAtDispatch(t *testing.T) {
+	m := layoutModel(t)
+	m.SetClipboardTerminalOutput(true)
+	m.clipboard.runHelper = func(_ context.Context, text string) error {
+		if text != "new" {
+			return errors.New("force fallback")
+		}
+		return nil
+	}
+	m.requestClipboard("old", "Copied old")
+	oldResult := m.takeClipboardCmd()().(clipboardResultMsg)
+	updated, delayedTerminalMsgCmd := m.Update(oldResult)
+	m = updated.(Model)
+	if delayedTerminalMsgCmd == nil {
+		t.Fatal("fallback completion produced no deferred terminal message")
+	}
+	delayedTerminalMsg := delayedTerminalMsgCmd()
+	if _, ok := delayedTerminalMsg.(clipboardTerminalOutputMsg); !ok {
+		t.Fatalf("deferred message = %T, want identity-bearing terminal output", delayedTerminalMsg)
+	}
+
+	m.requestClipboard("new", "Copied new")
+	newResult := m.takeClipboardCmd()().(clipboardResultMsg)
+	updated, _ = m.Update(newResult)
+	m = updated.(Model)
+	if got := FilterClipboardOutput(m, delayedTerminalMsg); got != nil {
+		t.Fatalf("stale output passed event-loop filter: %#v", got)
+	}
+
+	m.requestClipboard("pending", "Copied pending")
+	pendingResult := m.takeClipboardCmd()().(clipboardResultMsg)
+	updated, pendingOutputCmd := m.Update(pendingResult)
+	m = updated.(Model)
+	pendingOutput := pendingOutputCmd()
+	m.Stop()
+	if got := FilterClipboardOutput(m, pendingOutput); got != nil {
+		t.Fatalf("terminal output passed after Stop: %#v", got)
+	}
+}
+
+func TestMarkdownClipboardCopiesCapturedPayload(t *testing.T) {
+	m := layoutModel(t)
+	var captured string
+	m.clipboard.runHelper = func(_ context.Context, text string) error { captured = text; return nil }
+	m.selectIssueByID("bt-1")
+	updated, cmd := pressCmd(t, m, "space", "b", "Y")
+	m = updated
+	if cmd == nil {
+		t.Fatal("Markdown copy produced no helper command")
+	}
+	result := cmd()
+	msg, ok := result.(clipboardResultMsg)
+	if !ok {
+		t.Fatalf("Markdown completion = %T", result)
+	}
+	if !strings.Contains(captured, "# "+GetTypeIcon(string(model.TypeTask))+" One") || !strings.Contains(captured, "**ID:** bt-1") {
+		t.Fatalf("Markdown helper received %q", captured)
+	}
+	_, _ = m.Update(msg)
+}
+
+func TestHistoryCopyCopiesFullCommitSHA(t *testing.T) {
+	m := layoutModel(t)
+	m.historyView = NewHistoryModel(createTestHistoryReport(), m.theme)
+	m.mode = ViewHistory
+	m.focused = focusHistory
+	want := m.historyView.SelectedCommit().SHA
+	var captured string
+	m.clipboard.runHelper = func(_ context.Context, text string) error { captured = text; return nil }
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
+	m = updated.(Model)
+	if cmd == nil {
+		t.Fatal("history copy produced no helper command")
+	}
+	result := cmd().(clipboardResultMsg)
+	_, _ = m.Update(result)
+	if captured != want || captured == "" {
+		t.Fatalf("history helper received %q, want full SHA %q", captured, want)
 	}
 }

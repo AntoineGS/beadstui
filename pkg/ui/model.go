@@ -1565,6 +1565,7 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 	}
 
 	m := Model{
+		clipboard: newClipboardController(),
 		data: &DataState{
 			issues:               issues,
 			issueMap:             issueMap,
