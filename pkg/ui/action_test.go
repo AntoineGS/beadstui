@@ -667,7 +667,7 @@ func TestFlowMatrixPagingUsesActiveCursor(t *testing.T) {
 		m := actionTestModel(t)
 		m.mode, m.focused = ViewFlowMatrix, focusFlowMatrix
 		m.flowMatrix.labelStats = make([]labelFlowStats, 80)
-		m.flowMatrix.drilldownIssues = make([]model.Issue, 80)
+		m.flowMatrix.drilldownIssues = make([]flowPairEndpoint, 80)
 		m.flowMatrix.SetSize(120, 30)
 		m.flowMatrix.cursor = 20
 		m.flowMatrix.drilldownCursor = 20

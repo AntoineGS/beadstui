@@ -111,12 +111,10 @@ func TestSupportingSurfacesTextRoles(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			want := theme.Text.Metadata
 			switch tc.name {
-			case "field", "longform":
+			case "field", "longform", "footer scope":
 				want = theme.Text.Heading
 			case "settings":
 				want = theme.Text.Body
-			case "footer scope":
-				want = theme.Text.Badge
 			}
 			if !strings.Contains(tc.out, want.Render(tc.label)) {
 				t.Fatalf("%s did not retain explicit false attributes/background for %q:\n%s", tc.name, tc.label, tc.out)
