@@ -414,32 +414,56 @@ func TestRapidViewSwitchingWithNavigation(t *testing.T) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Performance Tests
+// Repeated View Switching and Performance Measurements
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// TestViewSwitchingPerformance verifies reasonable performance for view switching
-func TestViewSwitchingPerformance(t *testing.T) {
+// TestRepeatedViewSwitching verifies every transition in the stress workload,
+// including under the race detector. Timing belongs in the benchmark below:
+// race instrumentation and machine load make wall-clock test limits unreliable.
+func TestRepeatedViewSwitching(t *testing.T) {
 	issues := createTestIssues(100)
 	m := ui.NewModel(issues, nil, "", nil, nil)
 
-	keys := []string{"@view.tree", "@view.board", "@view.graph", "@view.tree", "@view.board", "@view.graph"}
-
-	start := time.Now()
+	steps := []struct {
+		key       string
+		wantFocus string
+	}{
+		{"@view.tree", "tree"},
+		{"@view.board", "board"},
+		{"@view.graph", "graph"},
+		{"@view.tree", "tree"},
+		{"@view.board", "board"},
+		{"@view.graph", "graph"},
+	}
 
 	// 100 full cycles = 600 view switches
 	for i := 0; i < 100; i++ {
-		for _, k := range keys {
-			newM, _ := m.Update(integrationKeyMsg(k))
+		for _, step := range steps {
+			newM, _ := m.Update(integrationKeyMsg(step.key))
 			m = newM.(ui.Model)
+			if got := m.FocusState(); got != step.wantFocus {
+				t.Fatalf("cycle %d after %s: focus = %q, want %q", i, step.key, got, step.wantFocus)
+			}
 		}
 	}
+}
 
-	elapsed := time.Since(start)
+// BenchmarkViewSwitching measures one view transition per operation, excluding
+// issue/model setup and key construction from timing and allocation reports.
+func BenchmarkViewSwitching(b *testing.B) {
+	issues := createTestIssues(100)
+	m := ui.NewModel(issues, nil, "", nil, nil)
+	keys := []tea.KeyPressMsg{
+		integrationKeyMsg("@view.tree"),
+		integrationKeyMsg("@view.board"),
+		integrationKeyMsg("@view.graph"),
+	}
 
-	// Should complete quickly, but allow some headroom when `go test ./...` runs
-	// packages in parallel and the machine is under load.
-	if elapsed > 2*time.Second {
-		t.Errorf("View switching too slow: %v for 600 switches", elapsed)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		newM, _ := m.Update(keys[i%len(keys)])
+		m = newM.(ui.Model)
 	}
 }
 
