@@ -1,11 +1,10 @@
-# Fork-only tracking: do not adopt or sync to the upstream git remote.
-dolt.local-only: true
+# Fork-only tracking: explicitly sync to the fork, never adopt upstream git origin.
+dolt.local-only: false
 dolt.shared-server: true
-
+federation.remote: "git+ssh://git@github.com/AntoineGS/beadstui.git"
 create.require-description: true
-
 validation.on-create: "warn"
-
 validation.on-close: "warn"
-
 export.auto: false
+sync:
+    remote: "git+ssh://git@github.com/AntoineGS/beadstui.git"
