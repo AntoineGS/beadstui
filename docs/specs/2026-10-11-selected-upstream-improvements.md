@@ -265,7 +265,12 @@ Reference: upstream `cassSessionsLoadedMsg` and its request lifecycle.
 ## 6. Bounded duplicate detection
 
 Retain the current inverted keyword index, Jaccard scoring, status filtering,
-and canonical score/ID ordering. For unique issue IDs, retain at most the
+and source-index orientation of every suggestion and action. Inspection during
+implementation found the old implementation sorts only by score, leaving ties
+dependent on map iteration. For unique IDs, make equal-score selection
+deterministic using canonical ID-pair comparison keys, without reversing output
+orientation. This corrects the design's original assumption that ID tie ordering
+already existed. For unique issue IDs, retain at most the
 requested K best candidates in a worst-first heap instead of collecting and
 sorting all qualifying pairs. Store compact candidate indices and scores;
 compute keyword explanations only for final selected pairs, using their original
@@ -275,6 +280,12 @@ Fewer than two issues or K <= 0 returns no suggestions. If duplicate issue IDs
 occur, preserve existing full-sort semantics on that exceptional input rather
 than silently changing which source records explain a suggestion. This is an
 input-dependent algorithm choice, not a compatibility API layer.
+
+The full-sort test oracle and paired benchmark must retain the literal old
+implementation (apart from the specified nonpositive-K guard). Test untied
+results for exact parity; for ties, independently verify scores, source payloads,
+and the explicit unique-ID ordering rule rather than asserting an old arbitrary
+ordering is stable. Repeated-ID fallback retains its old score-only sort.
 
 For ordinary unique-ID inputs, retained pair storage is O(K) and qualifying-pair
 selection is O(P log K), followed by sorting at most K retained pairs. Keyword

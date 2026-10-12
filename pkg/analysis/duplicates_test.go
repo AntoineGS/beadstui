@@ -91,10 +91,10 @@ func TestDetectDuplicates_FullSortOracleParity(t *testing.T) {
 		{name: "sparse", issues: duplicateBenchmarkIssues(80, false, 29), config: duplicateOracleConfig(20)},
 		{name: "fixed random", issues: duplicateRandomIssues(64, 39), config: duplicateOracleConfig(20)},
 		{name: "ties and above pair count", issues: duplicateBenchmarkIssues(5, true, 3), config: duplicateOracleConfig(100)},
-		{name: "canonical tie ordering", issues: []model.Issue{
+		{name: "canonical tie keys preserve source orientation", issues: []model.Issue{
 			{ID: "z", Title: "alpha birch cedar", Status: model.StatusOpen},
-			{ID: "b", Title: "alpha birch cedar", Status: model.StatusOpen},
 			{ID: "a", Title: "alpha birch cedar", Status: model.StatusOpen},
+			{ID: "m", Title: "alpha birch cedar", Status: model.StatusOpen},
 		}, config: duplicateOracleConfig(20)},
 		{name: "threshold filtering", issues: []model.Issue{
 			{ID: "alpha", Title: "alpha birch cedar amber violet", Status: model.StatusOpen},
@@ -102,10 +102,11 @@ func TestDetectDuplicates_FullSortOracleParity(t *testing.T) {
 			{ID: "gamma", Title: "alpha birch cedar amber violet copper silver", Status: model.StatusOpen},
 		}, config: DuplicateConfig{JaccardThreshold: 0.8, MinKeywords: 2, IgnoreClosedVsOpen: true, MaxSuggestions: 20}},
 		{name: "repeated IDs preserve source explanations", issues: []model.Issue{
-			{ID: "same", Title: "alpha birch cedar amber violet", Status: model.StatusOpen},
-			{ID: "middle", Title: "alpha birch cedar amber violet", Status: model.StatusOpen},
-			{ID: "same", Title: "unique copper silver quartz", Status: model.StatusOpen},
-		}, config: duplicateOracleConfig(20)},
+			{ID: "same", Title: "alpha birch cedar amber violet", Description: "sharedsource", Status: model.StatusOpen},
+			{ID: "middle", Title: "alpha birch cedar amber violet", Description: "leftunique sharedsource", Status: model.StatusOpen},
+			{ID: "same", Title: "alpha birch copper silver quartz", Description: "sharedsource rightunique", Status: model.StatusOpen},
+			{ID: "last", Title: "alpha birch cedar amber violet", Description: "thirdunique sharedsource", Status: model.StatusOpen},
+		}, config: DuplicateConfig{JaccardThreshold: 0.3, MinKeywords: 2, IgnoreClosedVsOpen: true, MaxSuggestions: 20}},
 		{name: "status filters", issues: []model.Issue{
 			{ID: "a", Title: "alpha birch cedar", Status: model.StatusOpen},
 			{ID: "b", Title: "alpha birch cedar", Status: model.StatusClosed},
@@ -116,25 +117,28 @@ func TestDetectDuplicates_FullSortOracleParity(t *testing.T) {
 	for _, tt := range tests {
 		limits := []int{0, 1, 20, tt.config.MaxSuggestions}
 		if tt.name == "repeated IDs preserve source explanations" {
-			limits = []int{1}
+			limits = []int{0, -1, 1, 20, 100}
 		}
 		for _, limit := range limits {
 			t.Run(fmt.Sprintf("%s/k=%d", tt.name, limit), func(t *testing.T) {
 				config := tt.config
 				config.MaxSuggestions = limit
 				got := DetectDuplicates(tt.issues, config)
-				want := detectDuplicatesFullSortOracle(tt.issues, config)
+				if tt.name == "repeated IDs preserve source explanations" {
+					allConfig := config
+					allConfig.MaxSuggestions = 100
+					assertRepeatedIDSelection(t, got, detectDuplicatesFullSortOracle(tt.issues, config), detectDuplicatesFullSortOracle(tt.issues, allConfig))
+					return
+				}
+				want := deterministicUniqueExpected(fullSortOracleCandidates(tt.issues, config), limit)
 				if !reflect.DeepEqual(withoutSuggestionTimes(got), withoutSuggestionTimes(want)) {
 					t.Fatalf("suggestions differ:\ngot  %#v\nwant %#v", got, want)
-				}
-				if tt.name == "repeated IDs preserve source explanations" && len(got) > 0 && !strings.Contains(got[0].Reason, "alpha, amber, birch, cedar, violet") {
-					t.Fatalf("repeated-ID pair used the wrong source records for explanation: %q", got[0].Reason)
 				}
 			})
 		}
 	}
 	got := DetectDuplicates(tests[4].issues, tests[4].config)
-	wantPairs := [][2]string{{"a", "b"}, {"a", "z"}, {"b", "z"}}
+	wantPairs := [][2]string{{"a", "m"}, {"z", "a"}, {"z", "m"}}
 	if len(got) != len(wantPairs) {
 		t.Fatalf("canonical tie fixture returned %d suggestions, want %d", len(got), len(wantPairs))
 	}
@@ -154,6 +158,130 @@ func TestDetectDuplicates_NonpositiveKReturnsEmpty(t *testing.T) {
 	}
 }
 
+func TestDetectDuplicates_UntiedResultsMatchLiteralOracle(t *testing.T) {
+	issues := []model.Issue{
+		{ID: "z", Title: "alpha birch cedar amber violet", Status: model.StatusOpen},
+		{ID: "a", Title: "alpha birch cedar amber violet", Status: model.StatusOpen},
+		{ID: "m", Title: "garnet harbor indigo juniper kernel lilac", Status: model.StatusOpen},
+		{ID: "b", Title: "garnet harbor indigo juniper kernel lilac copper", Status: model.StatusOpen},
+	}
+	config := DuplicateConfig{JaccardThreshold: 0.2, MinKeywords: 2, IgnoreClosedVsOpen: true, MaxSuggestions: 20}
+	got := DetectDuplicates(issues, config)
+	want := detectDuplicatesFullSortOracle(issues, config)
+	if !reflect.DeepEqual(withoutSuggestionTimes(got), withoutSuggestionTimes(want)) {
+		t.Fatalf("untied suggestions differ:\ngot  %#v\nwant %#v", got, want)
+	}
+}
+
+func TestDetectDuplicates_ReversedIDsKeepSourceActionDirection(t *testing.T) {
+	issues := []model.Issue{
+		{ID: "z", Title: "alpha birch cedar", Status: model.StatusOpen},
+		{ID: "a", Title: "alpha birch cedar", Status: model.StatusOpen},
+	}
+	got := DetectDuplicates(issues, duplicateOracleConfig(1))
+	if len(got) != 1 {
+		t.Fatalf("got %d suggestions, want 1", len(got))
+	}
+	if got[0].TargetBead != "z" || got[0].RelatedBead != "a" || got[0].ActionCommand != "bd dep add z a --type=related" {
+		t.Fatalf("source-oriented fields = (%q, %q, %q), want (z, a, bd dep add z a --type=related)", got[0].TargetBead, got[0].RelatedBead, got[0].ActionCommand)
+	}
+}
+
+func assertRepeatedIDSelection(t *testing.T, got, limitedBaseline, allBaseline []Suggestion) {
+	t.Helper()
+	got = withoutSuggestionTimes(got)
+	limitedBaseline = withoutSuggestionTimes(limitedBaseline)
+	allBaseline = withoutSuggestionTimes(allBaseline)
+	if len(got) == 0 {
+		if len(limitedBaseline) != 0 {
+			t.Fatalf("got no suggestions, want %d", len(limitedBaseline))
+		}
+		return
+	}
+	if len(got) == 1 && len(limitedBaseline) == 1 {
+		maxScore := 0.0
+		for _, suggestion := range allBaseline {
+			if suggestion.Confidence > maxScore {
+				maxScore = suggestion.Confidence
+			}
+		}
+		if got[0].Confidence != maxScore {
+			t.Fatalf("K=1 score %.3f, want best full-sort score %.3f", got[0].Confidence, maxScore)
+		}
+		if !containsSuggestionPayload(allBaseline, got[0]) {
+			t.Fatalf("K=1 payload absent from full candidate set: %#v", got[0])
+		}
+		return
+	}
+	if len(got) != len(limitedBaseline) {
+		t.Fatalf("got %d repeated-ID suggestions, want baseline count %d", len(got), len(limitedBaseline))
+	}
+	for _, expected := range limitedBaseline {
+		if !removeSuggestionPayload(&got, expected) {
+			t.Fatalf("baseline payload missing from repeated-ID result: %#v", expected)
+		}
+	}
+}
+
+func containsSuggestionPayload(suggestions []Suggestion, want Suggestion) bool {
+	for _, suggestion := range suggestions {
+		if suggestionPayloadEqual(suggestion, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func removeSuggestionPayload(suggestions *[]Suggestion, want Suggestion) bool {
+	for i, suggestion := range *suggestions {
+		if suggestionPayloadEqual(suggestion, want) {
+			*suggestions = append((*suggestions)[:i], (*suggestions)[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+func suggestionPayloadEqual(first, second Suggestion) bool {
+	first.GeneratedAt = time.Time{}
+	second.GeneratedAt = time.Time{}
+	return reflect.DeepEqual(first, second)
+}
+
+func fullSortOracleCandidates(issues []model.Issue, config DuplicateConfig) []Suggestion {
+	config.MaxSuggestions = len(issues) * (len(issues) - 1) / 2
+	return detectDuplicatesFullSortOracle(issues, config)
+}
+
+func deterministicUniqueExpected(all []Suggestion, limit int) []Suggestion {
+	if limit <= 0 {
+		return nil
+	}
+	suggestions := append([]Suggestion(nil), all...)
+	sort.Slice(suggestions, func(i, j int) bool {
+		if suggestions[i].Confidence != suggestions[j].Confidence {
+			return suggestions[i].Confidence > suggestions[j].Confidence
+		}
+		firstI, secondI := canonicalIDs(suggestions[i].TargetBead, suggestions[i].RelatedBead)
+		firstJ, secondJ := canonicalIDs(suggestions[j].TargetBead, suggestions[j].RelatedBead)
+		if firstI != firstJ {
+			return firstI < firstJ
+		}
+		return secondI < secondJ
+	})
+	if len(suggestions) > limit {
+		suggestions = suggestions[:limit]
+	}
+	return suggestions
+}
+
+func canonicalIDs(first, second string) (string, string) {
+	if second < first {
+		return second, first
+	}
+	return first, second
+}
+
 func duplicateOracleConfig(k int) DuplicateConfig {
 	return DuplicateConfig{JaccardThreshold: 0.35, MinKeywords: 2, IgnoreClosedVsOpen: true, MaxSuggestions: k}
 }
@@ -166,10 +294,8 @@ func withoutSuggestionTimes(suggestions []Suggestion) []Suggestion {
 	return result
 }
 
-// detectDuplicatesFullSortOracle preserves the pre-optimization algorithm:
-// accumulate every qualifying pair with its source records, full-sort, truncate,
-// and only then construct suggestions. It deliberately does not use a heap or
-// the production candidate comparator.
+// detectDuplicatesFullSortOracle is the literal DetectDuplicates implementation
+// from 51d238d5 with only the explicit MaxSuggestions <= 0 behavior added.
 func detectDuplicatesFullSortOracle(issues []model.Issue, config DuplicateConfig) []Suggestion {
 	if len(issues) < 2 || config.MaxSuggestions <= 0 {
 		return nil
@@ -177,112 +303,95 @@ func detectDuplicatesFullSortOracle(issues []model.Issue, config DuplicateConfig
 
 	keywords := make([][]string, len(issues))
 	index := make(map[string][]int)
-	seenIDs := make(map[string]struct{}, len(issues))
-	repeatedIDs := false
+
 	for i := range issues {
-		if _, exists := seenIDs[issues[i].ID]; exists {
-			repeatedIDs = true
-		}
-		seenIDs[issues[i].ID] = struct{}{}
-	}
-	for i := range issues {
-		keywords[i] = extractKeywords(issues[i].Title, issues[i].Description)
-		if len(keywords[i]) >= config.MinKeywords {
-			for _, keyword := range keywords[i] {
-				index[keyword] = append(index[keyword], i)
+		kws := extractKeywords(issues[i].Title, issues[i].Description)
+		keywords[i] = kws
+
+		if len(kws) >= config.MinKeywords {
+			for _, w := range kws {
+				index[w] = append(index[w], i)
 			}
 		}
 	}
 
-	type oraclePair struct {
-		pair        DuplicatePair
-		left, right int
-	}
-	pairs := make([]oraclePair, 0)
-	for left := range issues {
-		if len(keywords[left]) < config.MinKeywords {
+	var pairs []DuplicatePair
+
+	for i := range issues {
+		if len(keywords[i]) < config.MinKeywords {
 			continue
 		}
+
 		overlaps := make(map[int]int)
-		for _, keyword := range keywords[left] {
-			for _, right := range index[keyword] {
-				if right > left {
-					overlaps[right]++
+		for _, w := range keywords[i] {
+			for _, matchIdx := range index[w] {
+				if matchIdx > i {
+					overlaps[matchIdx]++
 				}
 			}
 		}
-		for right, overlap := range overlaps {
-			if len(keywords[right]) < config.MinKeywords {
+
+		for j, overlap := range overlaps {
+			if len(keywords[j]) < config.MinKeywords {
 				continue
 			}
-			union := len(keywords[left]) + len(keywords[right]) - overlap
-			score := float64(overlap) / float64(union)
-			if score < config.JaccardThreshold {
+
+			union := len(keywords[i]) + len(keywords[j]) - overlap
+			similarity := float64(overlap) / float64(union)
+			if similarity < config.JaccardThreshold {
 				continue
 			}
-			first, second := &issues[left], &issues[right]
-			if first.Status == model.StatusTombstone || second.Status == model.StatusTombstone {
+
+			issue1 := &issues[i]
+			issue2 := &issues[j]
+			if issue1.Status == model.StatusTombstone || issue2.Status == model.StatusTombstone {
 				continue
 			}
-			firstClosed := first.Status == model.StatusClosed || first.Status == model.StatusTombstone
-			secondClosed := second.Status == model.StatusClosed || second.Status == model.StatusTombstone
-			if config.IgnoreClosedVsOpen && firstClosed != secondClosed {
-				continue
-			}
-			commonSet := make(map[string]struct{}, len(keywords[left]))
-			for _, keyword := range keywords[left] {
-				commonSet[keyword] = struct{}{}
-			}
-			common := make([]string, 0, len(commonSet))
-			for _, keyword := range keywords[right] {
-				if _, ok := commonSet[keyword]; ok {
-					common = append(common, keyword)
+
+			if config.IgnoreClosedVsOpen {
+				if isClosedLikeDuplicateStatus(issue1.Status) != isClosedLikeDuplicateStatus(issue2.Status) {
+					continue
 				}
 			}
-			sort.Strings(common)
-			firstID, secondID := first.ID, second.ID
-			if !repeatedIDs && secondID < firstID {
-				firstID, secondID = secondID, firstID
-			}
-			pairs = append(pairs, oraclePair{
-				pair: DuplicatePair{Issue1: firstID, Issue2: secondID, Similarity: score, Method: "jaccard", Keywords: common},
-				left: left, right: right,
+
+			common := intersectKeywords(keywords[i], keywords[j])
+			pairs = append(pairs, DuplicatePair{
+				Issue1: issue1.ID, Issue2: issue2.ID, Similarity: similarity,
+				Method: "jaccard", Keywords: common,
 			})
 		}
 	}
-	sort.Slice(pairs, func(i, j int) bool {
-		if pairs[i].pair.Similarity != pairs[j].pair.Similarity {
-			return pairs[i].pair.Similarity > pairs[j].pair.Similarity
-		}
-		if pairs[i].pair.Issue1 != pairs[j].pair.Issue1 {
-			return pairs[i].pair.Issue1 < pairs[j].pair.Issue1
-		}
-		return pairs[i].pair.Issue2 < pairs[j].pair.Issue2
-	})
+
+	sortPairsBySimilarity(pairs)
 	if len(pairs) > config.MaxSuggestions {
 		pairs = pairs[:config.MaxSuggestions]
 	}
-	issueByID := make(map[string]*model.Issue, len(issues))
+
+	issueMap := make(map[string]*model.Issue, len(issues))
 	for i := range issues {
-		issueByID[issues[i].ID] = &issues[i]
+		issueMap[issues[i].ID] = &issues[i]
 	}
+
 	suggestions := make([]Suggestion, 0, len(pairs))
-	for _, candidate := range pairs {
-		pair := candidate.pair
-		first, second := issueByID[pair.Issue1], issueByID[pair.Issue2]
-		suggestion := NewSuggestion(
+	for _, pair := range pairs {
+		issue1 := issueMap[pair.Issue1]
+		issue2 := issueMap[pair.Issue2]
+
+		sug := NewSuggestion(
 			SuggestionPotentialDuplicate,
 			pair.Issue1,
 			fmt.Sprintf("Potential duplicate of %s", pair.Issue2),
-			fmt.Sprintf("%.0f%% keyword similarity; common: %s", pair.Similarity*100, strings.Join(truncateStringSlice(pair.Keywords, 5), ", ")),
+			fmt.Sprintf("%.0f%% keyword similarity; common: %s",
+				pair.Similarity*100,
+				strings.Join(truncateStringSlice(pair.Keywords, 5), ", ")),
 			pair.Similarity,
 		).WithRelatedBead(pair.Issue2).WithMetadata("method", pair.Method)
-		if first.Status != model.StatusClosed && first.Status != model.StatusTombstone &&
-			second.Status != model.StatusClosed && second.Status != model.StatusTombstone {
-			suggestion = suggestion.WithAction(fmt.Sprintf("bd dep add %s %s --type=related", pair.Issue1, pair.Issue2))
+		if !isClosedLikeDuplicateStatus(issue1.Status) && !isClosedLikeDuplicateStatus(issue2.Status) {
+			sug = sug.WithAction(fmt.Sprintf("bd dep add %s %s --type=related", pair.Issue1, pair.Issue2))
 		}
-		suggestions = append(suggestions, suggestion)
+		suggestions = append(suggestions, sug)
 	}
+
 	return suggestions
 }
 
@@ -328,25 +437,33 @@ func BenchmarkDetectDuplicatesSelection(b *testing.B) {
 		{name: "sparse500", issues: duplicateBenchmarkIssues(500, false, 20261013)},
 	} {
 		b.Run(fixture.name+"/full-sort", func(b *testing.B) {
-			benchmarkDuplicateSelection(b, fixture.issues, detectDuplicatesFullSortOracle)
+			benchmarkDuplicateSelection(b, fixture.issues, false)
 		})
 		b.Run(fixture.name+"/bounded", func(b *testing.B) {
-			benchmarkDuplicateSelection(b, fixture.issues, DetectDuplicates)
+			benchmarkDuplicateSelection(b, fixture.issues, true)
 		})
 	}
 }
 
-func benchmarkDuplicateSelection(b *testing.B, issues []model.Issue, detect func([]model.Issue, DuplicateConfig) []Suggestion) {
+func benchmarkDuplicateSelection(b *testing.B, issues []model.Issue, bounded bool) {
 	config := duplicateOracleConfig(20)
-	want := withoutSuggestionTimes(detectDuplicatesFullSortOracle(issues, config))
-	got := withoutSuggestionTimes(detect(issues, config))
-	if !reflect.DeepEqual(got, want) {
-		b.Fatalf("benchmark output differs from full-sort oracle: got %d suggestions, want %d", len(got), len(want))
+	if bounded {
+		want := deterministicUniqueExpected(fullSortOracleCandidates(issues, config), config.MaxSuggestions)
+		got := DetectDuplicates(issues, config)
+		if !reflect.DeepEqual(withoutSuggestionTimes(got), withoutSuggestionTimes(want)) {
+			b.Fatalf("bounded output differs from full-sort payloads under canonical tie ordering: got %d suggestions, want %d", len(got), len(want))
+		}
 	}
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		detect(issues, config)
+	if bounded {
+		for i := 0; i < b.N; i++ {
+			DetectDuplicates(issues, config)
+		}
+	} else {
+		for i := 0; i < b.N; i++ {
+			detectDuplicatesFullSortOracle(issues, config)
+		}
 	}
 }
 
