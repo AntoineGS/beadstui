@@ -3,6 +3,7 @@ package cass
 import (
 	"context"
 	"errors"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -410,6 +411,56 @@ func TestDetector_CheckContextCancellationIsRetryable(t *testing.T) {
 	status, err = d.CheckContext(context.Background())
 	if err != nil || status != StatusHealthy {
 		t.Fatalf("retry CheckContext() = (%v, %v), want healthy", status, err)
+	}
+}
+
+func TestDetector_RealHealthProcessCancellationIsNotCached(t *testing.T) {
+	marker := t.TempDir() + "/health-child-started"
+	t.Setenv("BT_CASS_COMMAND_CHILD", "1")
+	t.Setenv("BT_CASS_COMMAND_MARKER", marker)
+	d := NewDetectorWithOptions(WithHealthTimeout(400 * time.Millisecond))
+	d.lookPath = func(string) (string, error) { return os.Args[0], nil }
+	calls := 0
+	d.runCommand = func(ctx context.Context, _ string, _ ...string) (int, error) {
+		calls++
+		if calls == 1 {
+			return defaultRunCommand(ctx, os.Args[0], "-test.run=TestCassCommandChildProcess")
+		}
+		return 0, nil
+	}
+	type checkResult struct {
+		status Status
+		err    error
+	}
+	done := make(chan checkResult, 1)
+	go func() {
+		status, err := d.CheckContext(context.Background())
+		done <- checkResult{status: status, err: err}
+	}()
+	deadline := time.NewTimer(time.Second)
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer deadline.Stop()
+	defer ticker.Stop()
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		select {
+		case <-ticker.C:
+		case <-deadline.C:
+			t.Fatal("real health subprocess did not start")
+		}
+	}
+	result := <-done
+	if !errors.Is(result.err, context.DeadlineExceeded) || result.status != StatusUnknown {
+		t.Fatalf("cancelled health check = (%v, %v), want (unknown, deadline exceeded)", result.status, result.err)
+	}
+	if d.CacheValid() {
+		t.Fatal("cancelled real health process was cached")
+	}
+	status, err := d.CheckContext(context.Background())
+	if err != nil || status != StatusHealthy || calls != 2 {
+		t.Fatalf("healthy retry = (%v, %v), calls=%d; want healthy after a new probe", status, err, calls)
 	}
 }
 

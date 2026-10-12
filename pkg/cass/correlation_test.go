@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -262,6 +263,57 @@ func TestCorrelator_PartialSearchIsNotCached(t *testing.T) {
 	}
 	if calls < 2 {
 		t.Fatalf("search calls = %d, want retry to issue new searches", calls)
+	}
+}
+
+func TestCorrelator_ObsoleteGenerationCannotPublishIntoReplacementCache(t *testing.T) {
+	detector := NewDetector()
+	detector.lookPath = func(string) (string, error) { return "/cass", nil }
+	detector.runCommand = func(context.Context, string, ...string) (int, error) { return 0, nil }
+	_ = detector.Check()
+	started := make(chan struct{})
+	var startOnce sync.Once
+	releaseOldSearch := make(chan struct{})
+	oldSearcher := NewSearcher(detector)
+	oldSearcher.runCommand = func(context.Context, string, ...string) ([]byte, error) {
+		startOnce.Do(func() { close(started) })
+		<-releaseOldSearch
+		return []byte(`{"results":[],"meta":{"total":0}}`), nil
+	}
+	oldCache := NewCache()
+	oldCorrelator := NewCorrelator(oldSearcher, oldCache, "/workspace")
+	issue := &model.Issue{ID: "bt-generation"}
+	oldDone := make(chan error, 1)
+	go func() {
+		_, err := oldCorrelator.CorrelateWithError(context.Background(), issue)
+		oldDone <- err
+	}()
+	<-started
+
+	// The UI swaps the entire correlator/cache pair at dataset replacement.
+	newCalls := 0
+	newSearcher := NewSearcher(detector)
+	newSearcher.runCommand = func(context.Context, string, ...string) ([]byte, error) {
+		newCalls++
+		return []byte(`{"results":[],"meta":{"total":0}}`), nil
+	}
+	newCache := NewCache()
+	newCorrelator := NewCorrelator(newSearcher, newCache, "/workspace")
+	close(releaseOldSearch)
+	if err := <-oldDone; err != nil {
+		t.Fatalf("old generation search failed: %v", err)
+	}
+	if oldCache.Get(issue.ID) == nil {
+		t.Fatal("test setup: old request did not publish its successful empty result")
+	}
+	if newCache.Get(issue.ID) != nil {
+		t.Fatal("obsolete cache publication entered the replacement generation")
+	}
+	if _, err := newCorrelator.CorrelateWithError(context.Background(), issue); err != nil {
+		t.Fatalf("new generation retry failed: %v", err)
+	}
+	if newCalls != 1 {
+		t.Fatalf("new-generation searches = %d, want a fresh lookup", newCalls)
 	}
 }
 

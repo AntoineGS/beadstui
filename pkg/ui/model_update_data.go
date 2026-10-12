@@ -84,11 +84,7 @@ func (m Model) handleSnapshotReady(msg SnapshotReadyMsg) (Model, tea.Cmd) {
 	}
 
 	oldSnapshot := m.data.snapshot
-	m.cassDatasetID++
-	m.cancelCassLookup()
-	if m.cassCorrelator != nil {
-		m.cassCorrelator.ClearCache()
-	}
+	m.invalidateCassDataset()
 
 	// Swap snapshot pointer
 	m.data.snapshot = msg.Snapshot
@@ -529,6 +525,7 @@ func (m Model) handleFileChanged(msg FileChangedMsg) (Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 	}
+	m.invalidateCassDataset()
 	if len(m.data.pooledIssues) > 0 {
 		loader.ReturnIssuePtrsToPool(m.data.pooledIssues)
 	}

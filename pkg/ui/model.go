@@ -1048,6 +1048,7 @@ type Model struct {
 	cassCorrelatorSource string
 	cassLookup           func(context.Context, model.Issue) (cass.CorrelationResult, error)
 	cassCancel           context.CancelFunc
+	cassLifecycle        *cassLifecycleOwner
 	cassRequestID        uint64
 	cassDatasetID        uint64
 	cassPendingIssueID   string
@@ -1582,7 +1583,8 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 	}
 
 	m := Model{
-		clipboard: newClipboardController(),
+		clipboard:     newClipboardController(),
+		cassLifecycle: newCassLifecycleOwner(),
 		data: &DataState{
 			issues:               issues,
 			issueMap:             issueMap,
@@ -1782,6 +1784,7 @@ func (m *Model) refreshThemeConsumers() {
 // replaceIssues swaps the model's issue set, recomputing analysis, maps, counts,
 // list items, and sub-views. Used by DataSourceReloadMsg and other reload paths.
 func (m *Model) replaceIssues(newIssues []model.Issue) {
+	m.invalidateCassDataset()
 	// Sort: open first, priority ascending, newest first
 	sort.Slice(newIssues, func(i, j int) bool {
 		iClosed := isClosedLikeStatus(newIssues[i].Status)
@@ -2238,6 +2241,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // Stop cleans up resources (file watcher, instance lock, background worker, etc.)
 // Should be called when the program exits
 func (m *Model) Stop() {
+	if m.cassLifecycle != nil {
+		m.cassLifecycle.stop()
+	} else if m.cassCancel != nil {
+		m.cassCancel()
+	}
 	if m.clipboard != nil {
 		m.clipboard.cancelPending()
 	}
