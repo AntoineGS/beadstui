@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/seanmartinsmith/beadstui/pkg/loader"
 	"github.com/seanmartinsmith/beadstui/pkg/model"
@@ -21,9 +22,9 @@ import (
 //     coalesces server-side before export).
 //   - Issue-level actor is `created_by` (not `author`); GitHub identity is
 //     `owner` (ignored, as server-mode ignores it).
-//   - Due date is `due_at` (not `due_date`).
+//   - Due and deferral timestamps use `due_at` and `defer_until`.
 //   - Comments are inline with `author`.
-const embeddedExportFixture = `{"_type":"issue","id":"emb-a","title":"Issue A","description":"first","status":"open","priority":1,"issue_type":"task","assignee":"alice","owner":"owner@example.com","estimated_minutes":90,"created_at":"2026-07-01T17:03:56Z","created_by":"actor-sms","updated_at":"2026-07-01T17:07:18Z","due_at":"2026-12-31T00:00:00Z","labels":["area:data","area:tui"],"dependencies":[{"issue_id":"emb-a","depends_on_id":"emb-b","type":"blocks","created_at":"2026-07-01T13:04:57Z","created_by":"actor-sms","metadata":"{}"}],"comments":[{"id":"019f1ea3-823c-7d8c-ba76-4b7e919d44f9","issue_id":"emb-a","author":"actor-sms","text":"a comment","created_at":"2026-07-01T17:04:20Z"}],"dependency_count":1,"dependent_count":0,"comment_count":1}
+const embeddedExportFixture = `{"_type":"issue","id":"emb-a","title":"Issue A","description":"first","status":"open","priority":1,"issue_type":"task","assignee":"alice","owner":"owner@example.com","estimated_minutes":90,"created_at":"2026-07-01T17:03:56Z","created_by":"actor-sms","updated_at":"2026-07-01T17:07:18Z","due_at":"2026-12-31T00:00:00Z","defer_until":"2026-10-11T12:00:00Z","labels":["area:data","area:tui"],"dependencies":[{"issue_id":"emb-a","depends_on_id":"emb-b","type":"blocks","created_at":"2026-07-01T13:04:57Z","created_by":"actor-sms","metadata":"{}"}],"comments":[{"id":"019f1ea3-823c-7d8c-ba76-4b7e919d44f9","issue_id":"emb-a","author":"actor-sms","text":"a comment","created_at":"2026-07-01T17:04:20Z"}],"dependency_count":1,"dependent_count":0,"comment_count":1}
 {"_type":"issue","id":"emb-b","title":"Issue B","description":"second","status":"closed","priority":2,"issue_type":"bug","owner":"owner@example.com","created_at":"2026-07-01T17:04:19Z","created_by":"actor-sms","updated_at":"2026-07-01T17:04:58Z","closed_at":"2026-07-01T17:04:58Z","close_reason":"done for fixture","labels":["area:tui"],"dependency_count":0,"dependent_count":1,"comment_count":0}
 {"_type":"issue","id":"emb-c","title":"Issue C","description":"third","status":"open","priority":3,"issue_type":"feature","created_at":"2026-07-01T17:04:19Z","created_by":"actor-bob","updated_at":"2026-07-01T17:04:58Z","await_type":"human","await_id":"human-approval","ephemeral":true,"is_template":false,"mol_type":"molecule","metadata":{"action":"claimed"},"created_by_session":"sess-123","claimed_by_session":"sess-456","notes":"some notes","design":"some design","acceptance_criteria":"- [ ] done"}`
 
@@ -74,6 +75,9 @@ func TestParseIssues_EmbeddedExportRoundTrip(t *testing.T) {
 		t.Error("emb-a DueDate is nil, want 2026-12-31 (from due_at)")
 	} else if a.DueDate.Year() != 2026 || a.DueDate.Month() != 12 || a.DueDate.Day() != 31 {
 		t.Errorf("emb-a DueDate = %v, want 2026-12-31", a.DueDate)
+	}
+	if a.DeferUntil == nil || a.DeferUntil.Format(time.RFC3339) != "2026-10-11T12:00:00Z" {
+		t.Errorf("emb-a DeferUntil = %v, want 2026-10-11T12:00:00Z", a.DeferUntil)
 	}
 
 	// Labels.

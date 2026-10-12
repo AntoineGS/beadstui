@@ -71,7 +71,7 @@ func (rc *robotCtx) runTriage(robotNext, robotTriageByTrack, robotTriageByLabel 
 		UseFastConfig: true, // Use minimal Phase 2 config for robot mode (bv-t1js)
 		History:       historyReport,
 	}
-	triage := analysis.ComputeTriageWithOptions(rc.issues, opts)
+	triage := analysis.ComputeTriageWithOptions(rc.analysisIssues(), rc.triageOptions(opts))
 
 	// bv-90: Load feedback data for output
 	var feedbackInfo *analysis.FeedbackJSON

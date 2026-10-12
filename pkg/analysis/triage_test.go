@@ -22,6 +22,38 @@ func TestComputeTriage_Empty(t *testing.T) {
 	}
 }
 
+func TestTriageTopPicksRequireClaimableAndEmptySelectionStaysEmpty(t *testing.T) {
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	issues := []model.Issue{
+		{ID: "open", Title: "Open leaf", Status: model.StatusOpen, IssueType: model.TypeTask, Priority: 1},
+		{ID: "flight", Title: "Already in flight", Status: model.StatusInProgress, IssueType: model.TypeTask, Priority: 1},
+	}
+	triage := ComputeTriageWithOptionsAndTime(issues, TriageOptions{EvaluatedAt: now}, now)
+	if len(triage.QuickRef.TopPicks) != 1 || triage.QuickRef.TopPicks[0].ID != "open" {
+		t.Fatalf("top picks = %+v, want only claimable open issue", triage.QuickRef.TopPicks)
+	}
+	if got := ComputeTriageWithOptionsAndTime(issues, TriageOptions{SelectedIDs: []string{}, EvaluatedAt: now}, now); got.Meta.IssueCount != 0 || len(got.Recommendations) != 0 {
+		t.Fatalf("empty explicit selection was not empty: %+v", got)
+	}
+}
+
+func TestScopedTriageUsesHiddenPrerequisiteEvidence(t *testing.T) {
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	candidate := model.Issue{ID: "bt-a", Title: "Candidate", Status: model.StatusOpen, IssueType: model.TypeTask, Dependencies: []*model.Dependency{{DependsOnID: "bt-b", Type: model.DepBlocks}}}
+	blocker := model.Issue{ID: "bt-b", Title: "Hidden blocker", Status: model.StatusOpen, IssueType: model.TypeTask}
+	opts := TriageOptions{Readiness: model.NewReadinessIndex([]model.Issue{candidate, blocker}), SelectedIDs: []string{"bt-a"}, EvaluatedAt: now}
+	blocked := ComputeTriageWithOptionsAndTime([]model.Issue{candidate}, opts, now)
+	if blocked.Meta.IssueCount != 1 || len(blocked.QuickRef.TopPicks) != 0 {
+		t.Fatalf("hidden open prerequisite did not withhold claim pick: %+v", blocked.QuickRef)
+	}
+	blocker.Status = model.StatusClosed
+	opts.Readiness = model.NewReadinessIndex([]model.Issue{candidate, blocker})
+	ready := ComputeTriageWithOptionsAndTime([]model.Issue{candidate}, opts, now)
+	if ready.Meta.IssueCount != 1 || len(ready.QuickRef.TopPicks) != 1 || ready.QuickRef.TopPicks[0].ID != candidate.ID {
+		t.Fatalf("closed hidden prerequisite not honored: %+v", ready.QuickRef)
+	}
+}
+
 func TestComputeTriage_BasicIssues(t *testing.T) {
 	issues := []model.Issue{
 		{
@@ -886,10 +918,6 @@ func TestTriageGroupByTrack_SingleTrack(t *testing.T) {
 	totalRecs := 0
 	for _, g := range triage.RecommendationsByTrack {
 		totalRecs += len(g.Recommendations)
-		// Each non-empty track should have a top pick
-		if len(g.Recommendations) > 0 && g.TopPick == nil {
-			t.Errorf("track %s missing top pick", g.TrackID)
-		}
 	}
 
 	// At least one actionable issue should be in recommendations
@@ -1047,7 +1075,7 @@ func TestTriageGroupByTrack_TopPickHasHighestScore(t *testing.T) {
 		if g.TopPick == nil || len(g.Recommendations) == 0 {
 			continue
 		}
-		// Top pick should have the highest score in the group
+		// All members here are independent claimable leaf issues.
 		for _, rec := range g.Recommendations {
 			if rec.Score > g.TopPick.Score {
 				t.Errorf("track %s: recommendation %s has higher score (%.4f) than top pick %s (%.4f)",

@@ -848,29 +848,28 @@ func (a *Analyzer) countTransitiveUnblocks(issueID string) int {
 				continue
 			}
 
-			// Check if depID is now unblocked
-			// It is unblocked if ALL its blockers are (Real Closed OR Simulated Closed)
-			isBlocked := false
-			blockers := a.g.From(depNode.ID())
-			for blockers.Next() {
-				blockerNode := blockers.Node()
-				blockerID := a.nodeToID[blockerNode.ID()]
-
-				// Check blocker status
-				isClosed := false
-				if simulatedClosed[blockerID] {
-					isClosed = true
-				} else if bIssue, ok := a.issueMap[blockerID]; ok && isClosedLikeStatus(bIssue.Status) {
-					isClosed = true
+			readyAfter := false
+			if a.readiness != nil {
+				readyAfter = a.readiness.ReadyAfter(depID, a.evaluatedAt, simulatedClosed)
+			} else {
+				isBlocked := false
+				blockers := a.g.From(depNode.ID())
+				for blockers.Next() {
+					blockerNode := blockers.Node()
+					blockerID := a.nodeToID[blockerNode.ID()]
+					isClosed := simulatedClosed[blockerID]
+					if bIssue, ok := a.issueMap[blockerID]; ok && isClosedLikeStatus(bIssue.Status) {
+						isClosed = true
+					}
+					if !isClosed {
+						isBlocked = true
+						break
+					}
 				}
-
-				if !isClosed {
-					isBlocked = true
-					break
-				}
+				readyAfter = !isBlocked
 			}
 
-			if !isBlocked {
+			if readyAfter {
 				simulatedClosed[depID] = true
 				queue = append(queue, depID)
 				count++

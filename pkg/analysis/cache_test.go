@@ -76,6 +76,16 @@ func TestComputeDataHash_DifferentData(t *testing.T) {
 	}
 }
 
+func TestComputeDataHash_IncludesDeferUntil(t *testing.T) {
+	first := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	second := first.Add(time.Hour)
+	a := model.Issue{ID: "a", DeferUntil: &first}
+	b := model.Issue{ID: "a", DeferUntil: &second}
+	if analysis.ComputeDataHash([]model.Issue{a}) == analysis.ComputeDataHash([]model.Issue{b}) {
+		t.Fatal("changing only defer_until did not change data hash")
+	}
+}
+
 func TestComputeDataHash_Dependencies(t *testing.T) {
 	issues1 := []model.Issue{{
 		ID: "A",

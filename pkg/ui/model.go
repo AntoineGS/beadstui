@@ -747,19 +747,21 @@ type AnalysisCache struct {
 // DataState holds the core issue data, analysis engine, and data loading infrastructure.
 // Pointer on Model to keep Model copies cheap (largest sub-struct).
 type DataState struct {
-	issues              []model.Issue
-	pooledIssues        []*model.Issue // Issue pool refs for sync reloads (return to pool on replace)
-	issueMap            map[string]*model.Issue
-	analyzer            *analysis.Analyzer
-	analysis            *analysis.GraphStats
-	beadsPath           string                 // Path to beads.jsonl for reloading
-	dataSource          *datasource.DataSource // Selected data source for refresh routing
-	watcher             *watcher.Watcher       // File watcher for live reload
-	instanceLock        *instance.Lock         // Multi-instance coordination lock
-	snapshot            *DataSnapshot
-	snapshotInitPending bool              // true until first BackgroundWorker snapshot received
-	backgroundWorker    *BackgroundWorker // manages async data loading (nil if background mode disabled)
-	workerSpinnerIdx    int               // Spinner frame for background worker activity
+	issues               []model.Issue
+	pooledIssues         []*model.Issue // Issue pool refs for sync reloads (return to pool on replace)
+	issueMap             map[string]*model.Issue
+	analyzer             *analysis.Analyzer
+	readiness            *model.ReadinessIndex
+	readinessEvaluatedAt time.Time
+	analysis             *analysis.GraphStats
+	beadsPath            string                 // Path to beads.jsonl for reloading
+	dataSource           *datasource.DataSource // Selected data source for refresh routing
+	watcher              *watcher.Watcher       // File watcher for live reload
+	instanceLock         *instance.Lock         // Multi-instance coordination lock
+	snapshot             *DataSnapshot
+	snapshotInitPending  bool              // true until first BackgroundWorker snapshot received
+	backgroundWorker     *BackgroundWorker // manages async data loading (nil if background mode disabled)
+	workerSpinnerIdx     int               // Spinner frame for background worker activity
 
 	// workerSpinnerVisibleUntil is the end of the coalesced "refreshing" display
 	// window. Set/extended in handleWorkerPollTick while the worker processes
@@ -1193,9 +1195,17 @@ type WorkspaceInfo struct {
 // routeTable is the launch-time write-routing table (bt-scc35); nil is
 // accepted (bdroute.Table.Resolve refuses gracefully on a nil receiver),
 // but production callers should always supply one.
-func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath string, ds *datasource.DataSource, routeTable *bdroute.Table) Model {
+func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath string, ds *datasource.DataSource, routeTable *bdroute.Table, readinessIndexes ...*model.ReadinessIndex) Model {
 	// Graph Analysis - Phase 1 is instant, Phase 2 runs in background
-	analyzer := analysis.NewAnalyzer(issues)
+	var readiness *model.ReadinessIndex
+	if len(readinessIndexes) > 0 {
+		readiness = readinessIndexes[0]
+	}
+	if readiness == nil {
+		readiness = model.NewReadinessIndex(issues)
+	}
+	evaluatedAt := time.Now()
+	analyzer := analysis.NewAnalyzerWithReadiness(issues, readiness, evaluatedAt)
 	graphStats := analyzer.AnalyzeAsync(context.Background())
 
 	// Sort issues
@@ -1557,16 +1567,18 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 
 	m := Model{
 		data: &DataState{
-			issues:              issues,
-			issueMap:            issueMap,
-			analyzer:            analyzer,
-			analysis:            graphStats,
-			beadsPath:           beadsPath,
-			dataSource:          ds,
-			watcher:             fileWatcher,
-			snapshotInitPending: backgroundWorker != nil,
-			backgroundWorker:    backgroundWorker,
-			instanceLock:        instLock,
+			issues:               issues,
+			issueMap:             issueMap,
+			analyzer:             analyzer,
+			readiness:            readiness,
+			readinessEvaluatedAt: evaluatedAt,
+			analysis:             graphStats,
+			beadsPath:            beadsPath,
+			dataSource:           ds,
+			watcher:              fileWatcher,
+			snapshotInitPending:  backgroundWorker != nil,
+			backgroundWorker:     backgroundWorker,
+			instanceLock:         instLock,
 		},
 		filter: &FilterState{
 			currentFilter: startFilter,

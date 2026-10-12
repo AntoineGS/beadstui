@@ -634,7 +634,7 @@ func (r *GlobalDoltReader) Close() error {
 func scanGlobalIssue(rows *sql.Rows) (*model.Issue, error) {
 	var issue model.Issue
 	var estimatedMinutes, compactionLevel, originalSize sql.NullInt64
-	var createdAt, updatedAt, dueAt, closedAt, compactedAt sql.NullTime
+	var createdAt, updatedAt, dueAt, deferUntil, closedAt, compactedAt sql.NullTime
 	var description, assignee, externalRef, design, acceptanceCriteria, notes, sourceRepo, compactedAtCommit, closeReason sql.NullString
 	var issueType string
 	var globalSource string
@@ -653,7 +653,7 @@ func scanGlobalIssue(rows *sql.Rows) (*model.Issue, error) {
 	err := rows.Scan(
 		&issue.ID, &issue.Title, &description, &issue.Status, &issue.Priority, &issueType,
 		&assignee, &estimatedMinutes, &createdAt, &updatedAt,
-		&dueAt, &closedAt, &externalRef, &compactionLevel,
+		&dueAt, &deferUntil, &closedAt, &externalRef, &compactionLevel,
 		&compactedAt, &compactedAtCommit, &originalSize,
 		&design, &acceptanceCriteria, &notes, &sourceRepo,
 		&closeReason,
@@ -687,6 +687,10 @@ func scanGlobalIssue(rows *sql.Rows) (*model.Issue, error) {
 	if dueAt.Valid {
 		t := dueAt.Time
 		issue.DueDate = &t
+	}
+	if deferUntil.Valid {
+		t := deferUntil.Time
+		issue.DeferUntil = &t
 	}
 	if closedAt.Valid {
 		t := closedAt.Time

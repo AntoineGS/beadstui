@@ -122,6 +122,8 @@ func (m Model) handleSnapshotReady(msg SnapshotReadyMsg) (Model, tea.Cmd) {
 	// is present.
 	model.SetGlobalDisplayName(model.DeriveGlobalDisplayName(msg.Snapshot.Issues))
 	m.data.analyzer = msg.Snapshot.Analyzer
+	m.data.readiness = msg.Snapshot.Readiness
+	m.data.readinessEvaluatedAt = msg.Snapshot.EvaluatedAt
 	m.data.analysis = msg.Snapshot.Analysis
 	// Transient: setListItems (called below on every code path that rebuilds
 	// list items) immediately recomputes m.ac.count* scoped to the lens via

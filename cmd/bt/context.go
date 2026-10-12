@@ -11,6 +11,8 @@ import (
 // appContext holds loaded data shared across subcommands.
 type appContext struct {
 	issues           []model.Issue
+	issuesCorpus     []model.Issue // complete loaded source corpus before candidate filters
+	readiness        *model.ReadinessIndex
 	issuesForSearch  []model.Issue // pre-label-scope issues (for search)
 	beadsPath        string
 	selectedSource   *datasource.DataSource

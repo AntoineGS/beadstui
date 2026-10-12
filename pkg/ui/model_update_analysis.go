@@ -82,6 +82,21 @@ func (m Model) handleStatusClear(msg statusClearMsg) Model {
 // the tick. Runs on a 1s cadence so idle sessions still clear expired status
 // (bt-m9te, bt-y0k7).
 func (m Model) handleStatusTick(_ statusTickMsg) (Model, tea.Cmd) {
+	now := time.Now()
+	if m.data.readiness != nil && !m.data.readinessEvaluatedAt.IsZero() && now.After(m.data.readinessEvaluatedAt) {
+		expired := false
+		for _, issue := range m.data.issues {
+			if issue.DeferUntil != nil && issue.DeferUntil.After(m.data.readinessEvaluatedAt) && !issue.DeferUntil.After(now) {
+				expired = true
+				break
+			}
+		}
+		if expired {
+			m.data.readinessEvaluatedAt = now
+			m.data.analyzer = analysis.NewAnalyzerWithReadiness(m.data.issues, m.data.readiness, now)
+			m.applyFilter()
+		}
+	}
 	if m.statusMsg != "" && m.statusSeverity != SeverityDegraded {
 		age := statusDismissAge(m.statusSeverity)
 		if m.statusSetAt.IsZero() {

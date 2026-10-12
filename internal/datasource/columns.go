@@ -16,7 +16,7 @@ import "strings"
 var IssuesColumnList = []string{
 	"id", "title", "description", "status", "priority", "issue_type",
 	"assignee", "estimated_minutes", "created_at", "updated_at",
-	"due_at", "closed_at", "external_ref", "compaction_level",
+	"due_at", "defer_until", "closed_at", "external_ref", "compaction_level",
 	"compacted_at", "compacted_at_commit", "original_size",
 	"design", "acceptance_criteria", "notes", "source_repo",
 	"close_reason",

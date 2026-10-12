@@ -536,11 +536,11 @@ func TestWhatIfDeltaDirectUnblocks(t *testing.T) {
 	issues := []model.Issue{
 		{ID: "A", Title: "Root Blocker", Status: model.StatusOpen, Priority: 0},
 		{
-			ID: "B", Title: "Middle", Status: model.StatusBlocked, Priority: 1,
+			ID: "B", Title: "Middle", Status: model.StatusOpen, Priority: 1,
 			Dependencies: []*model.Dependency{{IssueID: "B", DependsOnID: "A", Type: model.DepBlocks}},
 		},
 		{
-			ID: "C", Title: "Leaf", Status: model.StatusBlocked, Priority: 2,
+			ID: "C", Title: "Leaf", Status: model.StatusOpen, Priority: 2,
 			Dependencies: []*model.Dependency{{IssueID: "C", DependsOnID: "B", Type: model.DepBlocks}},
 		},
 	}
@@ -570,9 +570,10 @@ func TestWhatIfDeltaDirectUnblocks(t *testing.T) {
 		t.Errorf("A should transitively unblock >= 2 items (B and C), got %d", recA.WhatIf.TransitiveUnblocks)
 	}
 
-	// B is blocked, so completing A should reduce blocked count
-	if recA.WhatIf.BlockedReduction < 1 {
-		t.Errorf("Completing A should reduce blocked count, got %d", recA.WhatIf.BlockedReduction)
+	// The status itself remains open in this fixture, so readiness gains do not
+	// claim a status-count reduction.
+	if recA.WhatIf.BlockedReduction != 0 {
+		t.Errorf("Completing A should not rewrite issue status, got reduction %d", recA.WhatIf.BlockedReduction)
 	}
 }
 
@@ -603,7 +604,7 @@ func TestWhatIfDeltaEstimatedDays(t *testing.T) {
 	issues := []model.Issue{
 		{ID: "A", Title: "Blocker", Status: model.StatusOpen, Priority: 0},
 		{
-			ID: "B", Title: "Blocked", Status: model.StatusBlocked, Priority: 1,
+			ID: "B", Title: "Blocked", Status: model.StatusOpen, Priority: 1,
 			EstimatedMinutes: &est,
 			Dependencies:     []*model.Dependency{{IssueID: "B", DependsOnID: "A", Type: model.DepBlocks}},
 		},
@@ -724,15 +725,15 @@ func TestParallelizationGain(t *testing.T) {
 	issues := []model.Issue{
 		{ID: "A", Title: "Root Blocker", Status: model.StatusOpen, Priority: 0},
 		{
-			ID: "B", Title: "Blocked 1", Status: model.StatusBlocked, Priority: 1,
+			ID: "B", Title: "Blocked 1", Status: model.StatusOpen, Priority: 1,
 			Dependencies: []*model.Dependency{{IssueID: "B", DependsOnID: "A", Type: model.DepBlocks}},
 		},
 		{
-			ID: "C", Title: "Blocked 2", Status: model.StatusBlocked, Priority: 1,
+			ID: "C", Title: "Blocked 2", Status: model.StatusOpen, Priority: 1,
 			Dependencies: []*model.Dependency{{IssueID: "C", DependsOnID: "A", Type: model.DepBlocks}},
 		},
 		{
-			ID: "D", Title: "Blocked 3", Status: model.StatusBlocked, Priority: 1,
+			ID: "D", Title: "Blocked 3", Status: model.StatusOpen, Priority: 1,
 			Dependencies: []*model.Dependency{{IssueID: "D", DependsOnID: "A", Type: model.DepBlocks}},
 		},
 	}
@@ -803,7 +804,7 @@ func TestParallelizationGainZero(t *testing.T) {
 	issues := []model.Issue{
 		{ID: "A", Title: "Single Blocker", Status: model.StatusOpen, Priority: 0},
 		{
-			ID: "B", Title: "Blocked", Status: model.StatusBlocked, Priority: 1,
+			ID: "B", Title: "Blocked", Status: model.StatusOpen, Priority: 1,
 			Dependencies: []*model.Dependency{{IssueID: "B", DependsOnID: "A", Type: model.DepBlocks}},
 		},
 	}

@@ -112,7 +112,7 @@ func runFeedback(feedbackAccept, feedbackIgnore string, feedbackReset, feedbackS
 // runPriorityBrief handles --priority-brief (bv-96).
 func (rc *robotCtx) runPriorityBrief(outputPath string) {
 	fmt.Printf("Generating priority brief to %s...\n", outputPath)
-	triage := analysis.ComputeTriage(rc.issues)
+	triage := analysis.ComputeTriageWithOptions(rc.analysisIssues(), rc.triageOptions(analysis.TriageOptions{}))
 
 	// Marshal triage to JSON for the export function
 	triageJSON, err := json.Marshal(triage)
@@ -151,7 +151,7 @@ func (rc *robotCtx) runAgentBrief(outputDir string) {
 	}
 
 	// Generate triage data
-	triage := analysis.ComputeTriage(rc.issues)
+	triage := analysis.ComputeTriageWithOptions(rc.analysisIssues(), rc.triageOptions(analysis.TriageOptions{}))
 	triageJSON, err := json.MarshalIndent(triage, "", "  ")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error marshaling triage: %v\n", err)
@@ -164,7 +164,7 @@ func (rc *robotCtx) runAgentBrief(outputDir string) {
 	fmt.Println("  → triage.json")
 
 	// Generate insights
-	analyzer := analysis.NewAnalyzer(rc.analysisIssues())
+	analyzer := rc.newAnalyzer()
 	stats := analyzer.Analyze()
 	insights := stats.GenerateInsights(50)
 	insightsJSON, err := json.MarshalIndent(insights, "", "  ")
@@ -227,7 +227,7 @@ func (rc *robotCtx) runAgentBrief(outputDir string) {
 
 // runEmitScript handles --emit-script (bv-89).
 func (rc *robotCtx) runEmitScript(scriptLimit int, scriptFormat string) {
-	triage := analysis.ComputeTriage(rc.issues)
+	triage := analysis.ComputeTriageWithOptions(rc.analysisIssues(), rc.triageOptions(analysis.TriageOptions{}))
 
 	// Determine script limit
 	limit := scriptLimit
@@ -513,7 +513,7 @@ func (rc *robotCtx) runDiffSince(diffSince string, robotDiff bool, asOf, asOfRes
 
 // runRobotGraph handles --robot-graph (bv-136).
 func (rc *robotCtx) runRobotGraph(graphFormat, labelScope, graphRoot string, graphDepth int) {
-	analyzer := analysis.NewAnalyzer(rc.analysisIssues())
+	analyzer := rc.newAnalyzer()
 	stats := analyzer.Analyze()
 
 	// Determine format
@@ -551,7 +551,7 @@ func (rc *robotCtx) runRobotGraph(graphFormat, labelScope, graphRoot string, gra
 
 // runExportGraph handles --export-graph (bv-94) - PNG/SVG/HTML export.
 func (rc *robotCtx) runExportGraph(exportGraphPath, labelScope, graphTitle, graphPreset string) {
-	analyzer := analysis.NewAnalyzer(rc.analysisIssues())
+	analyzer := rc.newAnalyzer()
 	stats := analyzer.Analyze()
 
 	// Apply label filter if specified

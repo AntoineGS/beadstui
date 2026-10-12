@@ -35,11 +35,9 @@ func buildCrossProjectIssues() []model.Issue {
 	}
 }
 
-// TestAnalysisIssues_SingleProjectIsIdentity confirms the byte-identical
-// single-project acceptance criterion: without --global, rc.analysisIssues()
-// returns the exact same slice header the caller put in. Equality here is
-// reference equality so any silent cloning regression trips the test.
-func TestAnalysisIssues_SingleProjectIsIdentity(t *testing.T) {
+// TestAnalysisIssues_ResolvesAgainstLoadedCorpus confirms aliases are resolved
+// against the loaded corpus before candidate filtering regardless of scope.
+func TestAnalysisIssues_ResolvesAgainstLoadedCorpus(t *testing.T) {
 	prev := flagGlobal
 	flagGlobal = false
 	t.Cleanup(func() { flagGlobal = prev })
@@ -48,13 +46,11 @@ func TestAnalysisIssues_SingleProjectIsIdentity(t *testing.T) {
 	rc := &robotCtx{issues: issues}
 
 	got := rc.analysisIssues()
-	if &got[0] != &issues[0] {
-		t.Errorf("single-project mode did not return caller's slice (got header mismatch)")
+	if got[0].Dependencies[0].DependsOnID != "cass-x" {
+		t.Errorf("loaded target was not resolved: got %q", got[0].Dependencies[0].DependsOnID)
 	}
-	// External dep must still be present as a raw string — the analyzer will
-	// silently skip it, which is the current pre-resolution behavior.
-	if got[0].Dependencies[0].DependsOnID != "external:cass:x" {
-		t.Errorf("single-project mode mutated deps: got %q", got[0].Dependencies[0].DependsOnID)
+	if issues[0].Dependencies[0].DependsOnID != "external:cass:x" {
+		t.Fatal("resolver mutated caller input")
 	}
 }
 

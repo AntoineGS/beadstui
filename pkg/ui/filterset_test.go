@@ -107,6 +107,47 @@ func TestFilterSpecApply(t *testing.T) {
 	}
 }
 
+func TestReadyFilterUsesFullCorpusAndDeferralExpiry(t *testing.T) {
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	expiry := now
+	candidate := model.Issue{ID: "bt-a", Status: model.StatusOpen, Dependencies: []*model.Dependency{{DependsOnID: "bt-b", Type: model.DepBlocks}}, DeferUntil: &expiry}
+	blocker := model.Issue{ID: "bt-b", Status: model.StatusOpen}
+	spec := FilterSpec{Status: "ready"}
+	if got := spec.Apply([]model.Issue{candidate}, FilterEnv{Readiness: model.NewReadinessIndex([]model.Issue{candidate, blocker}), EvaluatedAt: now}); len(got) != 0 {
+		t.Fatalf("open hidden blocker allowed candidate: %v", got)
+	}
+	claimable := true
+	recipeSpec := FilterSpec{Recipe: &recipe.Recipe{Filters: recipe.FilterConfig{Actionable: &claimable}}}
+	if got := recipeSpec.Apply([]model.Issue{candidate}, FilterEnv{Readiness: model.NewReadinessIndex([]model.Issue{candidate, blocker}), EvaluatedAt: now}); len(got) != 0 {
+		t.Fatalf("actionable recipe ignored hidden blocker: %v", got)
+	}
+	blocker.Status = model.StatusClosed
+	if got := spec.Apply([]model.Issue{candidate}, FilterEnv{Readiness: model.NewReadinessIndex([]model.Issue{candidate, blocker}), EvaluatedAt: now}); len(got) != 1 {
+		t.Fatalf("closed hidden blocker at exact expiry should be ready: %v", got)
+	}
+	if got := spec.Apply(nil, FilterEnv{Readiness: model.NewReadinessIndex([]model.Issue{candidate, blocker}), EvaluatedAt: now}); len(got) != 0 {
+		t.Fatalf("empty candidate selection fell back to corpus: %v", got)
+	}
+}
+
+func TestStatusTickRefreshesExpiredReadiness(t *testing.T) {
+	expiry := time.Now().Add(500 * time.Millisecond)
+	issues := []model.Issue{{ID: "a", Title: "deferred until tick", Status: model.StatusOpen, IssueType: model.TypeTask, DeferUntil: &expiry}}
+	m := newSizedModel(t, issues, 140, 40)
+	m.SetFilter("ready")
+	m.applyFilter()
+	if len(m.filter.visible) != 0 {
+		t.Fatal("future-deferred item was visible before expiry")
+	}
+	// Ensure the expiry is after the snapshot's evaluation timestamp and allow
+	// the one-shot status tick to cross the boundary.
+	time.Sleep(time.Until(expiry) + 10*time.Millisecond)
+	next, _ := m.handleStatusTick(statusTickMsg{})
+	if len(next.filter.visible) != 1 || next.filter.visible[0].ID != "a" {
+		t.Fatalf("expired item not visible after status tick: %+v", next.filter.visible)
+	}
+}
+
 func TestFilterSpecRecipeOrder(t *testing.T) {
 	issues := filterMatrixFixture()
 	r := &recipe.Recipe{Name: "by-prio", Sort: recipe.SortConfig{Field: "priority", Direction: "desc"}}
@@ -434,6 +475,7 @@ var rawCorpusReaders = map[string]string{
 	"model_modes.go:enterTimeTravelMode":         "time travel",
 	"model_modes.go:Issues":                      "full-corpus accessor",
 	"model_update_analysis.go:handlePhase2Ready": "computeAlerts and recipe re-sort",
+	"model_update_analysis.go:handleStatusTick":  "deferral expiry detection needs full-corpus timestamps",
 	"model_update_data.go:handleFileChanged":     "data load",
 	"model_update_data.go:handleSnapshotReady":   "data load",
 	"plugin_host.go:syncPluginsWithHash":         "plugin sync",

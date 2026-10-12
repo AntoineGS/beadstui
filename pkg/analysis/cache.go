@@ -193,6 +193,10 @@ func ComputeDataHash(issues []model.Issue) string {
 			h.Write([]byte(issue.ClosedAt.UTC().Format(time.RFC3339Nano)))
 		}
 		h.Write([]byte{0})
+		if issue.DeferUntil != nil {
+			h.Write([]byte(issue.DeferUntil.UTC().Format(time.RFC3339Nano)))
+		}
+		h.Write([]byte{0})
 
 		// Labels (sorted for determinism)
 		if len(issue.Labels) > 0 {
@@ -396,6 +400,7 @@ func computeIssueContentHash(issue model.Issue) string {
 	writeTimeHash(h, issue.CreatedAt)
 	writeTimeHash(h, issue.UpdatedAt)
 	writeTimePtrHash(h, issue.DueDate)
+	writeTimePtrHash(h, issue.DeferUntil)
 	writeTimePtrHash(h, issue.ClosedAt)
 
 	writeIntHash(h, issue.CompactionLevel)
@@ -508,7 +513,6 @@ func writeIntPtrHash(w io.Writer, v *int) {
 	}
 	_, _ = w.Write([]byte{0})
 }
-
 
 func writeTimeHash(w io.Writer, t time.Time) {
 	if !t.IsZero() {

@@ -184,8 +184,7 @@ func TestGetActionableIssuesParallelTracks(t *testing.T) {
 }
 
 func TestGetActionableIssuesMissingBlocker(t *testing.T) {
-	// A depends on "missing" (doesn't exist) → A is actionable
-	// Missing blockers don't block (graceful degradation)
+	// Missing required evidence withholds readiness conservatively.
 	issues := []model.Issue{
 		{ID: "A", Status: model.StatusOpen, Dependencies: []*model.Dependency{
 			{DependsOnID: "missing", Type: model.DepBlocks},
@@ -196,8 +195,8 @@ func TestGetActionableIssuesMissingBlocker(t *testing.T) {
 	actionable := an.GetActionableIssues()
 
 	ids := getIDs(actionable)
-	if len(ids) != 1 || ids[0] != "A" {
-		t.Errorf("Expected A actionable (missing blocker), got %v", ids)
+	if len(ids) != 0 {
+		t.Errorf("Expected missing-blocker issue not actionable, got %v", ids)
 	}
 }
 
@@ -434,8 +433,7 @@ func TestGetActionableIssuesInProgressStatus(t *testing.T) {
 }
 
 func TestGetActionableIssuesBlockedStatus(t *testing.T) {
-	// "Blocked" status issues are still returned if no blocking deps
-	// (status is informational, deps are structural)
+	// Only open and in-progress statuses are ready for planning.
 	issues := []model.Issue{
 		{ID: "A", Status: model.StatusBlocked},
 	}
@@ -443,8 +441,8 @@ func TestGetActionableIssuesBlockedStatus(t *testing.T) {
 	an := analysis.NewAnalyzer(issues)
 	actionable := an.GetActionableIssues()
 
-	if len(actionable) != 1 || actionable[0].ID != "A" {
-		t.Errorf("Expected blocked-status issue (no deps) to be actionable, got %v", getIDs(actionable))
+	if len(actionable) != 0 {
+		t.Errorf("Expected blocked-status issue not actionable, got %v", getIDs(actionable))
 	}
 }
 
@@ -606,9 +604,9 @@ func TestGetBlockers(t *testing.T) {
 	an := analysis.NewAnalyzer(issues)
 	blockers := an.GetBlockers("A")
 
-	// Should only include B (exists and is "blocks" type)
-	if len(blockers) != 1 || blockers[0] != "B" {
-		t.Errorf("Expected blockers [B], got %v", blockers)
+	// Preserve the unknown prerequisite reference for explanations.
+	if len(blockers) != 2 || blockers[0] != "B" || blockers[1] != "missing" {
+		t.Errorf("Expected blockers [B missing], got %v", blockers)
 	}
 }
 

@@ -169,6 +169,17 @@ Run `bt robot docs env` to see the full variable list from the binary.
 | `triage.commands` | object | Ready-to-run `bd` commands for the top pick |
 | `usage_hints` | array | `jq` snippets for common agent queries |
 
+Eligibility is evaluated against the complete corpus loaded for the invocation;
+repo, label, source, recipe, and query filters narrow candidates, not prerequisite
+evidence. `Ready` means open or in-progress, not deferred past the evaluation
+time, and all blocking prerequisites (including inherited parent gates) are
+known resolved. Missing or ambiguous prerequisites are **unknown** and
+conservatively withhold readiness. `Claimable` is stricter: it must be open,
+unassigned, non-epic, and have no unresolved immediate child. `quick_ref.top_picks`
+and claim commands contain only claimable new-work candidates; the broader
+recommendations may still discuss blocked or in-progress work. At exact
+`defer_until` expiry, an otherwise eligible issue becomes Ready.
+
 When `--by-track` is set, adds `triage.recommendations_by_track[]` (array of tracks, each with `top_pick` and `items`).
 When `--by-label` is set, adds `triage.recommendations_by_label[]` (array of label groups).
 
