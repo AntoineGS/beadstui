@@ -12,12 +12,7 @@ import (
 
 	"github.com/seanmartinsmith/beadstui/pkg/cass"
 	"github.com/seanmartinsmith/beadstui/pkg/export"
-
-	"github.com/atotto/clipboard"
 )
-
-// writeClipboard copies text to the system clipboard; tests swap it out.
-var writeClipboard = clipboard.WriteAll
 
 // getCommitURL returns the GitHub/GitLab commit URL for a SHA (bv-xf4p)
 func (m Model) getCommitURL(sha string) string {
@@ -177,14 +172,7 @@ func (m *Model) copyIssueToClipboard() {
 		}
 	}
 
-	// Copy to clipboard
-	err := writeClipboard(sb.String())
-	if err != nil {
-		m.setNotice(fmt.Sprintf("%s Clipboard error: %v", activeGlyphs.Cross, err))
-		return
-	}
-
-	m.setStatus(fmt.Sprintf("%s Copied %s to clipboard", activeGlyphs.Clipboard, issue.ID))
+	m.requestClipboard(sb.String(), fmt.Sprintf("%s Copied %s to clipboard", activeGlyphs.Clipboard, issue.ID))
 }
 
 // showCassSessionModal shows the cass session preview modal for the selected issue (bv-5bqh)

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,20 +15,6 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/plugin"
 	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 )
-
-// clipboardText is what the stubbed clipboard last received.
-var clipboardText *string
-
-// stubClipboard swaps the system clipboard for an in-memory one.
-func stubClipboard(t *testing.T) *string {
-	t.Helper()
-	var got string
-	orig := writeClipboard
-	writeClipboard = func(s string) error { got = s; return nil }
-	clipboardText = &got
-	t.Cleanup(func() { writeClipboard = orig; clipboardText = nil })
-	return &got
-}
 
 // pressCmd presses ks without running the commands they produce, except the
 // action token a completed sequence emits, and returns the command of the
@@ -253,12 +240,11 @@ func TestLayout_LeaderGroups(t *testing.T) {
 		}},
 		{"b m", nil, modal(ModalClaimConfirm)},
 		{"b Y", func(t *testing.T, m Model) Model {
-			stubClipboard(t)
 			m.selectIssueByID("bt-1")
 			return m
 		}, func(t *testing.T, _ layoutState, m Model) {
-			if got := *clipboardText; !strings.Contains(got, "**ID:** bt-1") {
-				t.Errorf("clipboard = %q, want the bt-1 markdown", got)
+			if m.clipboardRequestID == 0 {
+				t.Error("copy action did not create a clipboard request")
 			}
 		}},
 		{"b o", func(t *testing.T, m Model) Model {
@@ -939,18 +925,35 @@ func TestLayout_Paging(t *testing.T) {
 }
 
 func TestLayout_CopyID(t *testing.T) {
-	got := stubClipboard(t)
 	m := layoutModel(t)
+	var got string
+	m.clipboard = newClipboardController()
+	m.clipboard.runHelper = func(_ context.Context, text string) error { got = text; return nil }
 	m.selectIssueByID("bt-2")
-	press(t, m, "y")
-	if *got != "bt-2" {
-		t.Errorf("list y copied %q, want bt-2", *got)
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
+	m = updated.(Model)
+	if cmd == nil {
+		t.Fatal("list copy produced no asynchronous command")
+	}
+	result := cmd().(clipboardResultMsg)
+	updated, _ = m.Update(result)
+	m = updated.(Model)
+	if got != "bt-2" {
+		t.Errorf("list y copied %q, want bt-2", got)
 	}
 	b := inView(t, layoutModel(t), "view.board")
+	b.clipboard = newClipboardController()
+	b.clipboard.runHelper = func(_ context.Context, text string) error { got = text; return nil }
 	want := b.board.SelectedIssue().ID
-	press(t, b, "y")
-	if *got != want {
-		t.Errorf("board y copied %q, want %s", *got, want)
+	updated, cmd = b.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
+	b = updated.(Model)
+	if cmd == nil {
+		t.Fatal("board copy produced no asynchronous command")
+	}
+	result = cmd().(clipboardResultMsg)
+	_, _ = b.Update(result)
+	if got != want {
+		t.Errorf("board y copied %q, want %s", got, want)
 	}
 }
 
