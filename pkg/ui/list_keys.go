@@ -85,32 +85,30 @@ func (m Model) handleListKeys(msg tea.KeyMsg) Model {
 			}
 		}
 	case key.Matches(msg, k.JumpTop):
-		m.list.Select(0)
+		m.selectVisibleListIndex(0)
 		m.swallowKey = true
 	case key.Matches(msg, k.JumpBottom):
-		if len(m.list.Items()) > 0 {
-			m.list.Select(len(m.list.Items()) - 1)
-		}
+		m.selectVisibleListIndex(len(m.list.VisibleItems()) - 1)
 		m.swallowKey = true
 	case key.Matches(msg, k.PageDown):
-		itemCount := len(m.list.Items())
+		itemCount := len(m.list.VisibleItems())
 		if itemCount > 0 {
 			currentIdx := m.list.Index()
 			newIdx := currentIdx + m.height/3
 			if newIdx >= itemCount {
 				newIdx = itemCount - 1
 			}
-			m.list.Select(newIdx)
+			m.selectVisibleListIndex(newIdx)
 		}
 		m.swallowKey = true
 	case key.Matches(msg, k.PageUp):
-		if len(m.list.Items()) > 0 {
+		if len(m.list.VisibleItems()) > 0 {
 			currentIdx := m.list.Index()
 			newIdx := currentIdx - m.height/3
 			if newIdx < 0 {
 				newIdx = 0
 			}
-			m.list.Select(newIdx)
+			m.selectVisibleListIndex(newIdx)
 		}
 		m.swallowKey = true
 	case key.Matches(msg, k.TimeTravelInput):
@@ -212,6 +210,23 @@ func (m Model) handleListKeys(msg tea.KeyMsg) Model {
 		m.toggleFullscreenPane(fullscreenDetails)
 	}
 	return m
+}
+
+// selectVisibleListIndex clamps app-owned navigation to the list's current
+// filtered item set. Select updates Bubbles' page and cursor even though the
+// handled key is swallowed before list.Update.
+func (m *Model) selectVisibleListIndex(index int) {
+	visibleCount := len(m.list.VisibleItems())
+	if visibleCount == 0 {
+		return
+	}
+	if index < 0 {
+		index = 0
+	}
+	if index >= visibleCount {
+		index = visibleCount - 1
+	}
+	m.list.Select(index)
 }
 
 func issueIDForClipboard(item IssueItem) string {

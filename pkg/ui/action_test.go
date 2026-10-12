@@ -281,6 +281,90 @@ func TestListPagingBindingDispatchesOnce(t *testing.T) {
 	}
 }
 
+func filteredPagedListModel(t *testing.T) Model {
+	t.Helper()
+	m := pagedListModel(t)
+	items := make([]list.Item, 80)
+	for i := range items {
+		title := fmt.Sprintf("Other issue %d", i+1)
+		if i < 3 {
+			title = fmt.Sprintf("Match issue %d", i+1)
+		}
+		items[i] = IssueItem{Issue: model.Issue{
+			ID:    fmt.Sprintf("bt-%03d", i+1),
+			Title: title,
+		}}
+	}
+	m.list.SetItems(items)
+	m.list.SetFilterText("match")
+	if got := len(m.list.VisibleItems()); got != 3 {
+		t.Fatalf("setup: visible matches = %d, want 3", got)
+	}
+	m.list.SetSize(60, 1)
+	return m
+}
+
+func TestListNavigationClampsToVisibleFilteredItems(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		config keys.Config
+		msg    tea.KeyPressMsg
+		start  int
+		want   int
+	}{
+		{name: "pgdown", msg: tea.KeyPressMsg{Code: tea.KeyPgDown}, want: 2},
+		{name: "ctrl+d", msg: tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}, want: 2},
+		{name: "G", msg: keyRune('G'), want: 2},
+		{name: "end", msg: tea.KeyPressMsg{Code: tea.KeyEnd}, want: 2},
+		{name: "pgup", msg: tea.KeyPressMsg{Code: tea.KeyPgUp}, start: 2, want: 0},
+		{name: "ctrl+u", msg: tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl}, start: 2, want: 0},
+		{name: "home", msg: tea.KeyPressMsg{Code: tea.KeyHome}, start: 2, want: 0},
+		{name: "configured page down", config: keys.Config{Bind: map[string]keys.BindValue{
+			"nav.page_down": {"ctrl+f"},
+		}}, msg: tea.KeyPressMsg{Code: 'f', Mod: tea.ModCtrl}, want: 2},
+		{name: "page-down token", msg: tokenMsg("nav.page_down"), want: 2},
+		{name: "configured bottom", config: keys.Config{Bind: map[string]keys.BindValue{
+			"nav.bottom": {"ctrl+e"},
+		}}, msg: tea.KeyPressMsg{Code: 'e', Mod: tea.ModCtrl}, want: 2},
+		{name: "bottom token", msg: tokenMsg("nav.bottom"), want: 2},
+		{name: "configured page up", config: keys.Config{Bind: map[string]keys.BindValue{
+			"nav.page_up": {"ctrl+b"},
+		}}, msg: tea.KeyPressMsg{Code: 'b', Mod: tea.ModCtrl}, start: 2, want: 0},
+		{name: "page-up token", msg: tokenMsg("nav.page_up"), start: 2, want: 0},
+		{name: "configured top", config: keys.Config{Bind: map[string]keys.BindValue{
+			"nav.top": {"ctrl+a"},
+		}}, msg: tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl}, start: 2, want: 0},
+		{name: "top token", msg: tokenMsg("nav.top"), start: 2, want: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := filteredPagedListModel(t)
+			m.SetKeyConfig(tc.config, nil)
+			m.list.Select(tc.start)
+			m = runKey(t, m, tc.msg)
+			if got := m.list.Index(); got != tc.want {
+				t.Fatalf("list index = %d, want %d", got, tc.want)
+			}
+			got, ok := m.list.SelectedItem().(IssueItem)
+			if !ok {
+				t.Fatal("selected item is nil after navigation")
+			}
+			want, ok := m.list.VisibleItems()[tc.want].(IssueItem)
+			if !ok {
+				t.Fatalf("visible item %d has type %T, want IssueItem", tc.want, m.list.VisibleItems()[tc.want])
+			}
+			if got.Issue.ID != want.Issue.ID {
+				t.Fatalf("selected issue = %q, want visible issue %q", got.Issue.ID, want.Issue.ID)
+			}
+			if got, want := m.list.Paginator.Page, tc.want/m.list.Paginator.PerPage; got != want {
+				t.Fatalf("paginator page = %d, want %d for selected index %d", got, want, tc.want)
+			}
+			if m.list.Paginator.Page < 0 || m.list.Paginator.Page >= m.list.Paginator.TotalPages {
+				t.Fatalf("paginator page %d outside %d total pages", m.list.Paginator.Page, m.list.Paginator.TotalPages)
+			}
+		})
+	}
+}
+
 func TestListSearchTypesVimLettersByDefaultAndUsesConfiguredNavigation(t *testing.T) {
 	t.Run("default letters and email", func(t *testing.T) {
 		m := actionTestModel(t)
@@ -295,6 +379,36 @@ func TestListSearchTypesVimLettersByDefaultAndUsesConfiguredNavigation(t *testin
 		if got, want := m.list.FilterInput.Value(), "jka@b"; got != want {
 			t.Fatalf("list search query = %q, want %q", got, want)
 		}
+		if got := m.list.FilterState(); got != list.Filtering {
+			t.Fatalf("list filter state = %v, want Filtering", got)
+		}
+	})
+
+	t.Run("default arrows navigate while filtering", func(t *testing.T) {
+		m := actionTestModel(t)
+		m = runKey(t, m, tea.KeyPressMsg{Code: '/', Text: "/"})
+		m.list.SetFilterText("open")
+		m.list.SetFilterState(list.Filtering)
+		m.list.Select(0)
+
+		m = runKey(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
+		if got := m.list.Index(); got != 1 {
+			t.Fatalf("down arrow selected %d, want 1", got)
+		}
+		if got := m.list.FilterInput.Value(); got != "open" {
+			t.Fatalf("down arrow changed query to %q", got)
+		}
+		if got := m.list.FilterState(); got != list.Filtering {
+			t.Fatalf("down arrow changed filter state to %v", got)
+		}
+
+		m = runKey(t, m, tea.KeyPressMsg{Code: tea.KeyUp})
+		if got := m.list.Index(); got != 0 {
+			t.Fatalf("up arrow selected %d, want 0", got)
+		}
+		if got := m.list.FilterInput.Value(); got != "open" {
+			t.Fatalf("up arrow changed query to %q", got)
+		}
 	})
 
 	t.Run("configured physical and action navigation", func(t *testing.T) {
@@ -302,10 +416,14 @@ func TestListSearchTypesVimLettersByDefaultAndUsesConfiguredNavigation(t *testin
 		m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{"nav.down": {"z"}}}, nil)
 		m = runKey(t, m, tea.KeyPressMsg{Code: '/', Text: "/"})
 		m.list.SetFilterText("open")
+		m.list.SetFilterState(list.Filtering)
 		m.list.Select(0)
 		m = runKey(t, m, tea.KeyPressMsg{Code: 'z', Text: "z"})
 		if got := m.list.Index(); got != 1 {
 			t.Fatalf("configured search navigation selected %d, want 1", got)
+		}
+		if got := m.list.FilterState(); got != list.Filtering {
+			t.Fatalf("configured navigation changed filter state to %v", got)
 		}
 		if got := m.list.FilterValue(); got != "open" {
 			t.Fatalf("configured navigation changed query to %q", got)
@@ -537,6 +655,69 @@ func TestUniversalPagingBindingsMoveAllCursorViews(t *testing.T) {
 				m = runKey(t, m, upMsg)
 				if up := view.cursor(m); up >= down {
 					t.Fatalf("page up cursor = %d, want < %d", up, down)
+				}
+			})
+		}
+	}
+}
+
+func TestFlowMatrixPagingUsesActiveCursor(t *testing.T) {
+	newModel := func(t *testing.T, drilldown bool) Model {
+		t.Helper()
+		m := actionTestModel(t)
+		m.mode, m.focused = ViewFlowMatrix, focusFlowMatrix
+		m.flowMatrix.labelStats = make([]labelFlowStats, 80)
+		m.flowMatrix.drilldownIssues = make([]model.Issue, 80)
+		m.flowMatrix.SetSize(120, 30)
+		m.flowMatrix.cursor = 20
+		m.flowMatrix.drilldownCursor = 20
+		m.flowMatrix.showDrilldown = drilldown
+		return m
+	}
+	for _, tc := range []struct {
+		name      string
+		msg       tea.KeyPressMsg
+		direction int
+	}{
+		{name: "ctrl+d", msg: tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}, direction: 1},
+		{name: "pgdown", msg: tea.KeyPressMsg{Code: tea.KeyPgDown}, direction: 1},
+		{name: "page-down token", msg: tokenMsg("nav.page_down"), direction: 1},
+		{name: "ctrl+u", msg: tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl}, direction: -1},
+		{name: "pgup", msg: tea.KeyPressMsg{Code: tea.KeyPgUp}, direction: -1},
+		{name: "page-up token", msg: tokenMsg("nav.page_up"), direction: -1},
+	} {
+		for _, drilldown := range []bool{false, true} {
+			context := "parent"
+			if drilldown {
+				context = "drilldown"
+			}
+			t.Run(context+"/"+tc.name, func(t *testing.T) {
+				m := newModel(t, drilldown)
+				parentStart := m.flowMatrix.cursor
+				drilldownStart := m.flowMatrix.drilldownCursor
+				m = runKey(t, m, tc.msg)
+				if drilldown {
+					got := m.flowMatrix.drilldownCursor
+					if tc.direction > 0 && got <= drilldownStart || tc.direction < 0 && got >= drilldownStart {
+						t.Fatalf("drilldown cursor = %d, want movement direction %d from %d", got, tc.direction, drilldownStart)
+					}
+					if got < 0 || got >= len(m.flowMatrix.drilldownIssues) {
+						t.Fatalf("drilldown cursor = %d, outside %d issues", got, len(m.flowMatrix.drilldownIssues))
+					}
+					if got := m.flowMatrix.cursor; got != parentStart {
+						t.Fatalf("parent cursor = %d, want unchanged %d", got, parentStart)
+					}
+					return
+				}
+				got := m.flowMatrix.cursor
+				if tc.direction > 0 && got <= parentStart || tc.direction < 0 && got >= parentStart {
+					t.Fatalf("parent cursor = %d, want movement direction %d from %d", got, tc.direction, parentStart)
+				}
+				if got < 0 || got >= len(m.flowMatrix.labelStats) {
+					t.Fatalf("parent cursor = %d, outside %d labels", got, len(m.flowMatrix.labelStats))
+				}
+				if got := m.flowMatrix.drilldownCursor; got != drilldownStart {
+					t.Fatalf("drilldown cursor = %d, want unchanged %d", got, drilldownStart)
 				}
 			})
 		}

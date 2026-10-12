@@ -57,9 +57,9 @@ func (m Model) handleFlowMatrixKeys(msg tea.KeyMsg) Model {
 	case key.Matches(msg, k.JumpTop):
 		m.flowMatrix.GoToStart()
 	case key.Matches(msg, k.PageDown):
-		m.flowMatrix.moveCursor(max(1, m.flowMatrix.visibleRows()/2))
+		m.flowMatrix.PageDown()
 	case key.Matches(msg, k.PageUp):
-		m.flowMatrix.moveCursor(-max(1, m.flowMatrix.visibleRows()/2))
+		m.flowMatrix.PageUp()
 	}
 	return m
 }

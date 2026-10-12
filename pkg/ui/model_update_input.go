@@ -111,11 +111,12 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			return m, nil
 		}
 	}
-	if keys.IsToken(msg.Text) && m.activeModal == ModalNone && m.focused == focusList &&
-		m.mode == ViewList && m.list.FilterState() == list.Filtering {
-		// Bubbles' filtering handler sends every key that is not its own
-		// apply/cancel binding to FilterInput. Route action tokens here so they
-		// remain actions rather than becoming literal query text.
+	if m.activeModal == ModalNone && m.focused == focusList && m.mode == ViewList &&
+		m.list.FilterState() == list.Filtering &&
+		(keys.IsToken(msg.Text) || key.Matches(msg, m.keys.ListSearch.Up, m.keys.ListSearch.Down)) {
+		// Bubbles' filtering handler sends ordinary physical navigation keys to
+		// FilterInput. Route resolved search navigation and action tokens here so
+		// they move results without editing the query.
 		switch {
 		case key.Matches(msg, m.keys.ListSearch.Up):
 			m.list.CursorUp()

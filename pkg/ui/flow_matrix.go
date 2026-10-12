@@ -184,9 +184,9 @@ func (m *FlowMatrixModel) Update(msg tea.KeyMsg) tea.Cmd {
 			m.openDrilldown()
 		}
 	case key.Matches(msg, k.PageDown):
-		m.moveCursor(m.visibleRows() / 2)
+		m.PageDown()
 	case key.Matches(msg, k.PageUp):
-		m.moveCursor(-m.visibleRows() / 2)
+		m.PageUp()
 	}
 
 	return nil
@@ -207,6 +207,10 @@ func (m *FlowMatrixModel) updateDrilldown(msg tea.KeyMsg) tea.Cmd {
 			m.drilldownCursor--
 			m.ensureDrilldownVisible()
 		}
+	case key.Matches(msg, k.PageDown):
+		m.PageDown()
+	case key.Matches(msg, k.PageUp):
+		m.PageUp()
 	}
 	return nil
 }
@@ -814,6 +818,34 @@ func (m *FlowMatrixModel) MoveDown() {
 	} else {
 		m.moveCursor(1)
 	}
+}
+
+// PageDown moves the active flow-matrix cursor by half a viewport.
+func (m *FlowMatrixModel) PageDown() {
+	pageSize := max(1, m.visibleRows()/2)
+	if m.showDrilldown {
+		if len(m.drilldownIssues) == 0 {
+			return
+		}
+		m.drilldownCursor = min(m.drilldownCursor+pageSize, len(m.drilldownIssues)-1)
+		m.ensureDrilldownVisible()
+		return
+	}
+	m.moveCursor(pageSize)
+}
+
+// PageUp moves the active flow-matrix cursor by half a viewport.
+func (m *FlowMatrixModel) PageUp() {
+	pageSize := max(1, m.visibleRows()/2)
+	if m.showDrilldown {
+		if len(m.drilldownIssues) == 0 {
+			return
+		}
+		m.drilldownCursor = max(0, m.drilldownCursor-pageSize)
+		m.ensureDrilldownVisible()
+		return
+	}
+	m.moveCursor(-pageSize)
 }
 
 // TogglePanel switches focus between the labels list and detail panel
