@@ -13,8 +13,8 @@ import (
 
 // Defaults for the leader key and the which-key debounce (bt-i4k).
 const (
-	defaultLeaderKey     = "space"
-	defaultWhichKeyDelay = 250 * time.Millisecond
+	defaultLeaderKey     = keys.DefaultLeaderKey
+	defaultWhichKeyDelay = keys.DefaultWhichKeyDelay
 )
 
 // seqState is a pending leader or gg sequence. prefix is "" when idle; node is
@@ -85,10 +85,7 @@ func (m Model) isGlobalToken(msg tea.KeyPressMsg) bool {
 
 // leaderLabel is the leader as shown to the user.
 func (m Model) leaderLabel() string {
-	if m.leaderKey == "space" {
-		return "SPC"
-	}
-	return m.leaderKey
+	return keys.LeaderLabel(m.leaderKey)
 }
 
 func (m Model) seqTree(prefix string) *keys.SeqNode {

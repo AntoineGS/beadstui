@@ -46,6 +46,18 @@ func TestLeader_SequenceFiresAction(t *testing.T) {
 	}
 }
 
+func TestLeader_ConfiguredPhysicalKeyRoutesSequence(t *testing.T) {
+	m := leaderModel(t)
+	m.SetKeyConfig(keys.Config{Leader: ","}, nil)
+	m = runKeys(t, m, runeKey(','), runeKey('v'), runeKey('b'))
+	if m.mode != ViewBoard {
+		t.Errorf("mode = %v, want ViewBoard after , v b", m.mode)
+	}
+	if m.seq.pending() {
+		t.Errorf("sequence still pending: %+v", m.seq)
+	}
+}
+
 func TestLeader_EscCancels(t *testing.T) {
 	m := runKeys(t, leaderModel(t), keySpace, runeKey('v'), keyEsc)
 	if m.mode != ViewList {

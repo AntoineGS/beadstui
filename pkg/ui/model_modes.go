@@ -2,10 +2,12 @@ package ui
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/seanmartinsmith/beadstui/internal/datasource"
@@ -15,6 +17,7 @@ import (
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/plugin"
 	"github.com/seanmartinsmith/beadstui/pkg/projects"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 )
 
 // enumerateDoltDatabasesFn opens a connection to the shared Dolt server at
@@ -209,6 +212,110 @@ func (m *Model) SetPluginHost(h *plugin.Host) {
 	m.pluginStatuses = h.Statuses
 	m.pluginLaneFields = h.LaneFields
 	h.Register(m.slotRegistry)
+}
+
+// SetKeyConfig applies user key overrides and refreshes every copied keymap
+// used by the model or its Bubbles list. Config errors are retained for the
+// help surface and summarized in the status line; they never prevent startup.
+func (m *Model) SetKeyConfig(cfg keys.Config, loadErr error) {
+	settings, _, errs := m.keys.Apply(cfg)
+	if loadErr != nil {
+		errs = append(errs, splitKeyConfigErrors(loadErr)...)
+	}
+	m.keyConfigErrs = errs
+	m.leaderKey = settings.Leader
+	m.whichKeyDelay = settings.WhichKeyDelay
+	m.whichKeyOff = settings.WhichKeyOff
+
+	m.labelDashboard.keys = m.keys.LabelDashboard
+	m.tutorialModel.keys = m.keys.Tutorial
+	m.flowMatrix.keys = m.keys.FlowMatrix
+	m.agentPromptModal.keys = m.keys.AgentPrompt
+	m.cassModal.keys = m.keys.Cass
+	m.updateModal.keys = m.keys.Update
+
+	// The list component owns dispatch for navigation and filter-state keys.
+	// Refresh only bindings whose action IDs were successfully configured so
+	// Bubbles' extra defaults (notably pgup/pgdown paging) remain unchanged for
+	// an empty config and rejected entries.
+	if m.keyConfigBindingApplied(cfg, "nav.up") {
+		setListKeyBinding(&m.list.KeyMap.CursorUp, m.keys.ListNormal.Up)
+	}
+	if m.keyConfigBindingApplied(cfg, "nav.down") {
+		setListKeyBinding(&m.list.KeyMap.CursorDown, m.keys.ListNormal.Down)
+	}
+	if m.keyConfigBindingApplied(cfg, "nav.page_up") {
+		setListKeyBinding(&m.list.KeyMap.PrevPage, m.keys.ListNormal.PageUp)
+	}
+	if m.keyConfigBindingApplied(cfg, "nav.page_down") {
+		setListKeyBinding(&m.list.KeyMap.NextPage, m.keys.ListNormal.PageDown)
+	}
+	if m.keyConfigBindingApplied(cfg, "nav.top") {
+		setListKeyBinding(&m.list.KeyMap.GoToStart, m.keys.ListNormal.JumpTop)
+	}
+	if m.keyConfigBindingApplied(cfg, "nav.bottom") {
+		setListKeyBinding(&m.list.KeyMap.GoToEnd, m.keys.ListNormal.JumpBottom)
+	}
+	if m.keyConfigBindingApplied(cfg, "app.search") {
+		setListKeyBinding(&m.list.KeyMap.Filter, m.keys.Global.SearchBounce)
+	}
+	if m.keyConfigBindingApplied(cfg, "app.cancel") {
+		setListKeyBinding(&m.list.KeyMap.ClearFilter, m.keys.Global.Cancel)
+	}
+	if m.keyConfigBindingApplied(cfg, "list_search.cancel") {
+		setListKeyBinding(&m.list.KeyMap.CancelWhileFiltering, m.keys.ListSearch.Cancel)
+	}
+	if m.keyConfigBindingApplied(cfg, "list_search.apply") {
+		setListKeyBinding(&m.list.KeyMap.AcceptWhileFiltering, m.keys.ListSearch.Apply)
+	}
+
+	if len(errs) > 0 {
+		m.setStatus(fmt.Sprintf("keys: %d config error(s) - see ?", len(errs)))
+	}
+}
+
+func splitKeyConfigErrors(err error) []error {
+	var joined interface{ Unwrap() []error }
+	if errors.As(err, &joined) {
+		var errs []error
+		for _, child := range joined.Unwrap() {
+			errs = append(errs, splitKeyConfigErrors(child)...)
+		}
+		return errs
+	}
+	return []error{err}
+}
+
+func (m *Model) keyConfigBindingApplied(cfg keys.Config, id string) bool {
+	configured, ok := cfg.Bind[id]
+	if !ok {
+		return false
+	}
+	want := make([]string, 0, len(configured)+1)
+	want = append(want, configured...)
+	want = append(want, keys.Token(id))
+	bindings := m.keys.Lookup(id)
+	if len(bindings) == 0 {
+		return false
+	}
+	for _, binding := range bindings {
+		got := binding.Keys()
+		if len(got) != len(want) {
+			return false
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func setListKeyBinding(target *key.Binding, source key.Binding) {
+	target.SetKeys(source.Keys()...)
+	help := source.Help()
+	target.SetHelp(help.Key, help.Desc)
 }
 
 // PluginHost returns the plugin host, or nil when none is set.

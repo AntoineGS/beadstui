@@ -15,6 +15,14 @@ Plugins are listed in `~/.config/bt/config.yaml`. There are no project-level
 plugins.
 
 ```yaml
+keys:
+  leader: space
+  which_key_delay: 250ms
+  bind:
+    filter.open: o
+    view.board: "<leader>B"
+    app.refresh: none
+
 plugins:
   - name: example               # unique; prefixes BQL fields and action IDs
     command: ["example", "plugin"]  # argv, never run through a shell
@@ -26,6 +34,17 @@ plugins:
       dispatch: D
       jump: none
 ```
+
+The top-level `keys` section configures bt's built-in actions. `leader` defaults
+to `space`; `which_key_delay` accepts a Go duration such as `250ms`, `0` to show
+the sequence hint immediately, or `off` to disable it. `bind` maps stable action
+IDs to one key or a list of keys. A value of `none` removes the action's direct
+key while keeping it available through its action token. Use `<leader>` in a
+sequence to refer to the configured leader. Invalid entries are reported while
+other valid entries are still applied.
+
+Plugin action overrides are separate: keep them under each plugin's `keys` map,
+keyed by plugin action ID. They do not belong in the top-level `keys.bind` map.
 
 `name` must match `^[a-z][a-z0-9_]*$`. An entry with an invalid name or an empty
 command is ignored, and a duplicate name disables the later entry. `bt plugins`

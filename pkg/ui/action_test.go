@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -95,6 +96,50 @@ func TestActionToken_FilterOpen(t *testing.T) {
 	m := runKey(t, actionTestModel(t), tokenMsg("filter.open"))
 	if m.filter.currentFilter != "open" {
 		t.Errorf("currentFilter = %q, want open", m.filter.currentFilter)
+	}
+}
+
+func TestSetKeyConfigPromotesFilterOpen(t *testing.T) {
+	m := actionTestModel(t)
+	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{"filter.open": {"o"}}}, nil)
+	m = runKey(t, m, tea.KeyPressMsg{Code: 'o', Text: "o"})
+	if m.filter.currentFilter != "open" {
+		t.Errorf("currentFilter = %q, want open", m.filter.currentFilter)
+	}
+}
+
+func TestSetKeyConfigCountsJoinedLoadErrorsIndividually(t *testing.T) {
+	m := actionTestModel(t)
+	m.SetKeyConfig(keys.Config{}, errors.Join(errors.New("bad first bind"), errors.New("bad second bind")))
+	if len(m.keyConfigErrs) != 2 {
+		t.Errorf("retained %d errors, want 2: %v", len(m.keyConfigErrs), m.keyConfigErrs)
+	}
+	if m.statusMsg != "keys: 2 config error(s) - see ?" {
+		t.Errorf("status = %q, want 2 config errors", m.statusMsg)
+	}
+}
+
+func TestSetKeyConfigUpdatesBubblesNavigationAndFilterBindings(t *testing.T) {
+	m := actionTestModel(t)
+	m.list.Select(1)
+	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{
+		"nav.up":     {"z"},
+		"app.search": {";"},
+	}}, nil)
+
+	// The old vim navigation key must no longer be owned by Bubbles' copied map.
+	m = runKey(t, m, tea.KeyPressMsg{Code: 'k', Text: "k"})
+	if m.list.Index() != 1 {
+		t.Fatalf("old nav.up key moved selection to %d", m.list.Index())
+	}
+	m = runKey(t, m, tea.KeyPressMsg{Code: 'z', Text: "z"})
+	if m.list.Index() != 0 {
+		t.Errorf("configured nav.up key left selection at %d, want 0", m.list.Index())
+	}
+
+	m = runKey(t, m, tea.KeyPressMsg{Code: ';', Text: ";"})
+	if m.list.FilterState() != list.Filtering {
+		t.Errorf("configured app.search did not open the list filter: state=%v", m.list.FilterState())
 	}
 }
 
