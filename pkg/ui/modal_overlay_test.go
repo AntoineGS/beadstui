@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
@@ -139,6 +140,24 @@ func TestHelpPreservesConfiguredKeyLabels(t *testing.T) {
 		if !found[desc] {
 			t.Errorf("help did not include %q binding", desc)
 		}
+	}
+}
+
+func TestDirectHelpBindingRegeneratesLabelFromPhysicalKeys(t *testing.T) {
+	binding := key.NewBinding(
+		key.WithKeys("b", "<leader>vb", uiKeys.Token("view.board")),
+		key.WithHelp("b/SPC v b", "board"),
+	)
+
+	direct, ok := directHelpBinding(binding)
+	if !ok {
+		t.Fatal("mixed direct/leader binding was omitted")
+	}
+	if got := direct.Help().Key; got != "b" {
+		t.Fatalf("direct label = %q, want only retained physical key b", got)
+	}
+	if strings.Contains(direct.Help().Key, "SPC") {
+		t.Fatalf("direct label leaked leader label: %q", direct.Help().Key)
 	}
 }
 

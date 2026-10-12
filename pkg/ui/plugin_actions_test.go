@@ -254,6 +254,67 @@ func TestPluginHintsDropUnderWidthPressure(t *testing.T) {
 	}
 }
 
+func TestPluginAndBuiltinFooterHintsShareFourSlotBudget(t *testing.T) {
+	actions := []plugin.Action{
+		{Plugin: "example", ID: "dispatch", Label: "Dispatch", Key: "D"},
+		{Plugin: "example", ID: "jump", Label: "Jump", Key: "J"},
+		{Plugin: "example", ID: "zoom", Label: "Zoom", Key: "Z"},
+	}
+	m := newSizedModel(t, pluginTestIssues(), 160, 40)
+	m.pluginActions = perBeadActions{"proj-1": actions}
+	fd := m.footerData()
+	if got := len(fd.Hints) + len(fd.PluginHints); got > 4 {
+		t.Fatalf("footer exposes %d direct hints across builtin and plugin maps, want at most 4: %+v", got, fd)
+	}
+	for _, want := range []string{"Dispatch", "Jump", "Zoom"} {
+		if !strings.Contains(ansi.Strip(fd.Render()), want) {
+			t.Errorf("selected bead plugin hint %q was omitted:\n%s", want, ansi.Strip(fd.Render()))
+		}
+	}
+}
+
+func TestHelpRestoresPluginPromptWithoutLosingItsState(t *testing.T) {
+	fake := &fakePluginActions{actions: []plugin.Action{dispatchAction, stopAction}}
+	m := newPluginActionModel(t, fake)
+	m, _ = sendMsg(m, tokenMsg("plugin.menu"))
+	if m.activeModal != ModalPluginPrompt || m.pluginPrompt == nil {
+		t.Fatalf("plugin menu setup failed: modal=%v prompt=%+v", m.activeModal, m.pluginPrompt)
+	}
+	prompt := m.pluginPrompt
+	issueID := prompt.issue.ID
+	options := len(prompt.options)
+
+	m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyF1})
+	if m.activeModal != ModalHelp || m.helpContextTitle() != "PLUGIN" {
+		t.Fatalf("F1 did not open plugin-prompt help: modal=%v context=%q", m.activeModal, m.helpContextTitle())
+	}
+	foundNavigation := false
+	for _, group := range m.helpGroups() {
+		if group.title != "PLUGIN" {
+			continue
+		}
+		for _, row := range group.rows {
+			if row.right == "move down" {
+				foundNavigation = true
+			}
+		}
+	}
+	if !foundNavigation {
+		t.Fatal("plugin prompt help omitted its navigation keys")
+	}
+	if m.pluginPrompt != prompt || m.pluginPrompt.issue.ID != issueID || len(m.pluginPrompt.options) != options {
+		t.Fatal("opening help changed plugin prompt state")
+	}
+
+	m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	if m.activeModal != ModalPluginPrompt || m.focused != focusPluginPrompt {
+		t.Fatalf("Esc did not restore plugin prompt: modal=%v focus=%v", m.activeModal, m.focused)
+	}
+	if m.pluginPrompt != prompt || m.pluginPrompt.issue.ID != issueID || len(m.pluginPrompt.options) != options {
+		t.Fatal("dismissing help lost plugin prompt state")
+	}
+}
+
 func TestPluginActionMenuInvokes(t *testing.T) {
 	fake := &fakePluginActions{actions: []plugin.Action{dispatchAction, stopAction}}
 	m := newPluginActionModel(t, fake)

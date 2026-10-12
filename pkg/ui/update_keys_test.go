@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -187,6 +188,129 @@ func TestUpdateHelpQuitAndTabFocus(t *testing.T) {
 	_, cmd := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	if cmd == nil {
 		t.Fatalf("expected quit command on confirm quit")
+	}
+}
+
+func TestHelpFromRecipePickerUsesModalKeysAndRestoresPicker(t *testing.T) {
+	m := newSizedModel(t, fieldEditTestIssues(), 120, 32)
+	m.recipePicker = NewRecipePickerModel(nil, m.theme)
+	m.openModal(ModalRecipePicker)
+	m.focused = focusRecipePicker
+	selected := m.recipePicker.SelectedIndex()
+
+	m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyF1})
+	if m.activeModal != ModalHelp || m.focused != focusHelp {
+		t.Fatalf("F1 did not open help from the recipe picker: modal=%v focus=%v", m.activeModal, m.focused)
+	}
+	if m.helpContextTitle() != "RECIPES" {
+		t.Fatalf("help context = %q, want RECIPES", m.helpContextTitle())
+	}
+	foundApply := false
+	for _, group := range m.helpGroups() {
+		if group.title != "RECIPES" {
+			continue
+		}
+		for _, row := range group.rows {
+			if row.right == "apply recipe" {
+				foundApply = true
+			}
+		}
+	}
+	if !foundApply {
+		t.Fatal("recipe picker help omitted its apply key")
+	}
+
+	m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	if m.activeModal != ModalRecipePicker || m.focused != focusRecipePicker {
+		t.Fatalf("Esc did not restore recipe picker: modal=%v focus=%v", m.activeModal, m.focused)
+	}
+	if got := m.recipePicker.SelectedIndex(); got != selected {
+		t.Fatalf("help changed recipe selection from %d to %d", selected, got)
+	}
+}
+
+func TestHelpFromFieldInputKeepsF1SeparateFromQuestionMark(t *testing.T) {
+	m := newSizedModel(t, fieldEditTestIssues(), 120, 32)
+	m.fieldInput = NewFieldInputModal("title", "Title", "draft", m.theme)
+	m.fieldInput.Focus()
+	m.openModal(ModalFieldInput)
+	m.focused = focusFieldInput
+
+	m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyF1})
+	if m.activeModal != ModalHelp || m.helpContextTitle() != "FIELD INPUT" {
+		t.Fatalf("F1 did not open field-input help: modal=%v context=%q", m.activeModal, m.helpContextTitle())
+	}
+	m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	if m.activeModal != ModalFieldInput || m.focused != focusFieldInput {
+		t.Fatalf("Esc did not restore field input: modal=%v focus=%v", m.activeModal, m.focused)
+	}
+
+	m, _ = sendMsg(m, keyRune('?'))
+	if m.activeModal != ModalFieldInput || m.fieldInput.Value() != "draft?" {
+		t.Fatalf("question mark was not typed into field input: modal=%v value=%q", m.activeModal, m.fieldInput.Value())
+	}
+}
+
+func TestHelpFromAlertsModalUsesAlertKeysAndRestoresModal(t *testing.T) {
+	m := newSizedModel(t, fieldEditTestIssues(), 120, 32)
+	m.activeTab = TabAlerts
+	m.openModal(ModalAlerts)
+
+	m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyF1})
+	if m.activeModal != ModalHelp || m.helpContextTitle() != "ALERTS" {
+		t.Fatalf("F1 did not open alert help: modal=%v context=%q", m.activeModal, m.helpContextTitle())
+	}
+	foundDismiss := false
+	for _, group := range m.helpGroups() {
+		if group.title != "ALERTS" {
+			continue
+		}
+		for _, row := range group.rows {
+			if row.right == "dismiss alert" {
+				foundDismiss = true
+			}
+		}
+	}
+	if !foundDismiss {
+		t.Fatal("alert help omitted its dismiss key")
+	}
+
+	m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	if m.activeModal != ModalAlerts {
+		t.Fatalf("Esc did not restore alerts modal: modal=%v", m.activeModal)
+	}
+}
+
+func TestF1OpensHelpFromEveryModal(t *testing.T) {
+	for modal := ModalQuitConfirm; modal <= ModalPluginPrompt; modal++ {
+		t.Run(fmt.Sprint(modal), func(t *testing.T) {
+			m := newSizedModel(t, fieldEditTestIssues(), 120, 32)
+			m.activeModal = modal
+			m.focused = focusList
+
+			updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyF1})
+			got := updated.(Model)
+			if got.activeModal != ModalHelp || got.helpOriginModal != modal || got.focused != focusHelp {
+				t.Fatalf("F1 from modal %v produced modal=%v origin=%v focus=%v", modal, got.activeModal, got.helpOriginModal, got.focused)
+			}
+			if modal == ModalTutorial && got.helpContextTitle() != "TUTORIAL" {
+				t.Fatalf("help context from tutorial = %q, want TUTORIAL", got.helpContextTitle())
+			}
+		})
+	}
+}
+
+func TestQuitKeyStillQuitsFromHelp(t *testing.T) {
+	m := newSizedModel(t, fieldEditTestIssues(), 120, 32)
+	m.openModal(ModalHelp)
+	m.focused = focusHelp
+
+	_, cmd := sendMsg(m, keyRune('q'))
+	if cmd == nil {
+		t.Fatal("q from help did not produce a quit command")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatal("q from help did not return tea.QuitMsg")
 	}
 }
 

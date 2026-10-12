@@ -74,6 +74,20 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
+	// Help is the only global key accepted by every modal. F1 always opens it;
+	// the printable '?' opens it only when the current context is not text input.
+	// Capture the source modal and focus before replacing the active overlay.
+	if key.Matches(msg, m.keys.Global.Help) && (msg.Code == tea.KeyF1 ||
+		!m.inTextInput() && m.seq.prefix != keys.LeaderPrefix) {
+		if m.activeModal == ModalHelp {
+			m.closeHelp()
+		} else {
+			m.openModal(ModalHelp)
+			m.focused = focusHelp
+		}
+		return m, nil
+	}
+
 	// Handle AGENTS.md prompt modal (bv-i8dk)
 	if m.activeModal == ModalAgentPrompt {
 		m.agentPromptModal, cmd = m.agentPromptModal.Update(msg)
@@ -648,20 +662,6 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	var handled bool
 	if m, cmd, handled = m.routeSequence(msg); handled {
 		return m, cmd
-	}
-
-	// Handle help overlay toggle (? or F1)
-	if key.Matches(msg, m.keys.Global.Help) && m.list.FilterState() != list.Filtering {
-		if m.activeModal == ModalHelp {
-			m.closeModal()
-			m.focused = m.restoreFocusFromHelp()
-		} else {
-			m.focusBeforeHelp = m.focused // Store current focus before switching to help
-			m.openModal(ModalHelp)
-			m.focused = focusHelp
-			m.helpScroll = 0 // Reset scroll position when opening help
-		}
-		return m, nil
 	}
 
 	// Handle tutorial toggle (backtick `) - bv-8y31

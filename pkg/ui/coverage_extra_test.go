@@ -1367,20 +1367,21 @@ func TestHelpOverlayScroll(t *testing.T) {
 		t.Fatalf("expected helpScroll=helpScrollMax after G, got %d (max %d)", m.helpScroll, m.helpScrollMax())
 	}
 
-	// Test q closes help
+	// q is the global quit key, including while help is open.
+	m.focused = focusList
 	m.openModal(ModalHelp)
+	m.focused = focusHelp
 	m.helpScroll = 5
-	m = m.handleHelpKeys(tea.KeyPressMsg{Code: 'q', Text: "q"})
-	if m.activeModal == ModalHelp {
-		t.Fatalf("expected modal closed after q")
+	var quit tea.Cmd
+	m, quit = sendMsg(m, tea.KeyPressMsg{Code: 'q', Text: "q"})
+	if quit == nil {
+		t.Fatal("expected q to return a quit command from help")
 	}
-	if m.helpScroll != 0 {
-		t.Fatalf("expected helpScroll=0 after closing, got %d", m.helpScroll)
+	if _, ok := quit().(tea.QuitMsg); !ok {
+		t.Fatal("expected q from help to produce tea.QuitMsg")
 	}
 
 	// Test any other key closes help
-	m.openModal(ModalHelp)
-	m.focused = focusHelp
 	m.helpScroll = 5
 	m = m.handleHelpKeys(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	if m.activeModal == ModalHelp {

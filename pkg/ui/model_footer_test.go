@@ -736,6 +736,45 @@ func TestFooterData_ProgressiveHintTruncation(t *testing.T) {
 	}
 }
 
+func TestFooterNarrowKeepsLeaderHelpAndBellWhenTheyFit(t *testing.T) {
+	setGlyphs(t, asciiGlyphs)
+	fd := FooterData{
+		ScopeLabel:   strings.Repeat("long-scope-", 8),
+		StatusFilter: "open",
+		TotalItems:   4921,
+		BellCount:    3,
+		Hints: []FooterHint{
+			{Key: "A", Desc: strings.Repeat("long builtin label ", 3)},
+			{Key: "B", Desc: strings.Repeat("long builtin label ", 3)},
+			{Key: "C", Desc: strings.Repeat("long builtin label ", 3)},
+			{Key: "D", Desc: strings.Repeat("long builtin label ", 3)},
+		},
+		PluginHints: []FooterHint{
+			{Key: "P", Desc: strings.Repeat("long plugin label ", 3)},
+			{Key: "Q", Desc: strings.Repeat("long plugin label ", 3)},
+		},
+	}
+	for width := 0; width <= 16; width++ {
+		fd.Width = width
+		out := fd.Render()
+		if got := lipgloss.Width(out); got > width {
+			t.Fatalf("width %d: footer width %d exceeds terminal:\n%s", width, got, ansiStripForTest(out))
+		}
+		if strings.Contains(out, "\n") {
+			t.Fatalf("width %d: footer wrapped:\n%s", width, ansiStripForTest(out))
+		}
+		if width >= 5 {
+			plain := ansiStripForTest(out)
+			if !strings.Contains(plain, "SPC") || !strings.Contains(plain, "?") {
+				t.Fatalf("width %d: leader/help pair was clipped despite fitting:\n%s", width, plain)
+			}
+		}
+		if width >= 9 && !strings.Contains(out, activeGlyphs.Bell) {
+			t.Fatalf("width %d: bell was clipped despite fitting with leader/help:\n%s", width, ansiStripForTest(out))
+		}
+	}
+}
+
 // TestFooterData_NeverWrapsAcrossWidths is the core guarantee of the smart
 // footer: at every terminal width the rendered footer occupies exactly one row
 // and never exceeds the column count (which the terminal would wrap, stealing a

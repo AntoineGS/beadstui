@@ -125,6 +125,37 @@ func TestNewTutorialModel(t *testing.T) {
 	}
 }
 
+func TestOnboardingTutorialUsesLeaderKeyForms(t *testing.T) {
+	structured := getStructuredPage("workflow-onboarding")
+	if structured == nil {
+		t.Fatal("structured onboarding page not found")
+	}
+	structuredText := ansi.Strip(RenderStructuredPage(*structured, DefaultTheme(), 180))
+	for _, want := range []string{"SPC T", "SPC f o / SPC f r", "SPC v g"} {
+		if !strings.Contains(structuredText, want) {
+			t.Errorf("structured onboarding page omitted %q:\n%s", want, structuredText)
+		}
+	}
+	for _, stale := range []string{"filters (o/r)", "details, g for graph"} {
+		if strings.Contains(structuredText, stale) {
+			t.Errorf("structured onboarding page contains stale key advice %q", stale)
+		}
+	}
+
+	var onboarding string
+	for _, page := range defaultTutorialPages() {
+		if page.ID == "workflow-onboarding" {
+			onboarding = page.Content
+			break
+		}
+	}
+	for _, want := range []string{"SPC T for the tutorial", "SPC f o / SPC f r", "SPC v g"} {
+		if !strings.Contains(onboarding, want) {
+			t.Errorf("prose onboarding tutorial omitted %q", want)
+		}
+	}
+}
+
 func TestTutorialNavigation(t *testing.T) {
 	m := newTestTutorialModel()
 	totalPages := len(m.pages)

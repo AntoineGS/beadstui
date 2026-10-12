@@ -246,16 +246,3 @@ func renderLeaderHelpHints(leaderLabel string, compact bool) string {
 	return keyStyle.Render(leaderLabel) + labelStyle.Render(" leader") + sep +
 		keyStyle.Render("?") + labelStyle.Render(" help")
 }
-
-// renderPluginHints renders the selected bead's plugin action keys in the
-// static pair's style, each followed by the separator so they lead into it.
-func renderPluginHints(hints []FooterHint) string {
-	keyStyle := ActiveTextStyles.Heading
-	labelStyle := ActiveTextStyles.Metadata
-	sep := ActiveTextStyles.Metadata.Render(" " + activeGlyphs.Sep + " ")
-	var b strings.Builder
-	for _, h := range hints {
-		b.WriteString(keyStyle.Render(h.Key) + labelStyle.Render(" "+h.Desc) + sep)
-	}
-	return b.String()
-}

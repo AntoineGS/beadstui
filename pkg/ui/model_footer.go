@@ -259,8 +259,8 @@ type FooterData struct {
 	// LeaderLabel is the configured leader's display label.
 	LeaderLabel string
 
-	// PluginHints are the selected bead's plugin action keys, drawn before
-	// the static ?/; pair and dropped early under width pressure.
+	// PluginHints are selected-bead plugin actions. They share the four-key
+	// direct-hint budget with Hints and appear before builtin view hints.
 	PluginHints []FooterHint
 
 	// PendingSeq is the pending leader / gg sequence ("SPC v…"); while set it
@@ -426,6 +426,7 @@ func (m *Model) footerData() FooterData {
 	for _, b := range m.pluginKeyBindings() {
 		fd.PluginHints = append(fd.PluginHints, FooterHint{Key: b.Help().Key, Desc: b.Help().Desc})
 	}
+	fd.Hints, fd.PluginHints = limitFooterHints(fd.Hints, fd.PluginHints)
 	fd.PendingSeq = m.pendingSeqText()
 
 	// Per-view center meaning (Phase 3)
@@ -786,9 +787,40 @@ func (m *Model) extractKeyHints() []FooterHint {
 	return hints
 }
 
+// limitFooterHints applies one four-key budget across selected-bead plugin
+// actions and the active view's direct bindings. Plugin actions retain the
+// visual precedence they had in the footer before the two groups were unified.
+func limitFooterHints(hints, pluginHints []FooterHint) ([]FooterHint, []FooterHint) {
+	plugins := make([]FooterHint, 0, min(4, len(pluginHints)))
+	for _, hint := range pluginHints {
+		if hint.Key == "" || len(plugins) == 4 {
+			continue
+		}
+		plugins = append(plugins, hint)
+	}
+
+	remaining := 4 - len(plugins)
+	direct := make([]FooterHint, 0, min(remaining, len(hints)))
+	for _, hint := range hints {
+		if hint.Key == "" || len(direct) == remaining {
+			continue
+		}
+		direct = append(direct, hint)
+	}
+	return direct, plugins
+}
+
+func combinedFooterHints(hints, pluginHints []FooterHint) []FooterHint {
+	hints, pluginHints = limitFooterHints(hints, pluginHints)
+	combined := make([]FooterHint, 0, len(hints)+len(pluginHints))
+	combined = append(combined, pluginHints...)
+	combined = append(combined, hints...)
+	return combined
+}
+
 // directHelpBinding returns a copy of b with action tokens and sequences
-// removed. It keeps configured display labels for physical keys while dropping
-// sequence labels such as "gg".
+// removed. Its display label is regenerated from the retained physical keys so
+// rendered labels cannot leak a leader sequence from a mixed binding.
 func directHelpBinding(b key.Binding) (key.Binding, bool) {
 	if !b.Enabled() {
 		return b, false
@@ -807,27 +839,96 @@ func directHelpBinding(b key.Binding) (key.Binding, bool) {
 		return b, false
 	}
 	help := b.Help()
-	displayKey := help.Key
-	if displayKey != "/" {
-		var labels []string
-		for _, label := range strings.Split(displayKey, "/") {
-			if strings.TrimSpace(label) == "" {
-				continue
+	b.SetKeys(direct...)
+	b.SetHelp(directHelpLabel(help.Key, direct), help.Desc)
+	return b, true
+}
+
+func directHelpLabel(configured string, direct []string) string {
+	if configured == "/" {
+		for _, raw := range direct {
+			if raw == "/" {
+				return configured
 			}
-			if _, _, ok := keys.ParseSeq(label); ok {
-				continue
-			}
-			labels = append(labels, label)
-		}
-		if len(labels) > 0 {
-			displayKey = strings.Join(labels, "/")
-		} else {
-			displayKey = strings.Join(direct, "/")
 		}
 	}
-	b.SetKeys(direct...)
-	b.SetHelp(displayKey, help.Desc)
-	return b, true
+
+	var labels []string
+	for _, label := range strings.Split(configured, "/") {
+		if strings.TrimSpace(label) == "" {
+			continue
+		}
+		if _, _, ok := keys.ParseSeq(label); ok {
+			continue
+		}
+		for _, raw := range direct {
+			if label == raw || label == directKeyLabel(raw) {
+				labels = append(labels, label)
+				break
+			}
+		}
+	}
+	if len(labels) > 0 {
+		return strings.Join(labels, "/")
+	}
+	return directKeysLabel(direct)
+}
+
+func directKeysLabel(direct []string) string {
+	if len(direct) == 9 {
+		consecutive := true
+		for i, raw := range direct {
+			if raw != string(rune('1'+i)) {
+				consecutive = false
+				break
+			}
+		}
+		if consecutive {
+			return "1-9"
+		}
+	}
+	labels := make([]string, len(direct))
+	for i, raw := range direct {
+		labels[i] = directKeyLabel(raw)
+	}
+	return strings.Join(labels, "/")
+}
+
+func directKeyLabel(raw string) string {
+	switch raw {
+	case "up":
+		return "↑"
+	case "down":
+		return "↓"
+	case "left":
+		return "←"
+	case "right":
+		return "→"
+	case "enter":
+		return "⏎"
+	case "tab":
+		return "⇥"
+	case "backspace":
+		return "⌫"
+	case "delete":
+		return "⌦"
+	case "pgup":
+		return "pgup"
+	case "pgdown":
+		return "pgdn"
+	case "space":
+		return "space"
+	}
+	if strings.HasPrefix(raw, "ctrl+") {
+		return "⌃" + strings.TrimPrefix(raw, "ctrl+")
+	}
+	if strings.HasPrefix(raw, "shift+") {
+		return "⇧" + directKeyLabel(strings.TrimPrefix(raw, "shift+"))
+	}
+	if strings.HasPrefix(raw, "alt+") {
+		return "⌥" + directKeyLabel(strings.TrimPrefix(raw, "alt+"))
+	}
+	return raw
 }
 
 // l1KeyMap returns the help.KeyMap whose ShortHelp() drives the L1
@@ -930,6 +1031,8 @@ func (m Model) modalKeyMap() help.KeyMap {
 		return m.keys.BQLQuery
 	case ModalTimeTravelInput:
 		return m.keys.TimeTravelInput
+	case ModalSettings, ModalSettingsMenu:
+		return m.keys.Settings
 	case ModalRepoPicker:
 		if m.repoPicker.IsSearchFocused() {
 			return m.keys.RepoPickerSearch
@@ -937,6 +1040,8 @@ func (m Model) modalKeyMap() help.KeyMap {
 		return m.keys.RepoPickerNav
 	case ModalEpicCard:
 		return m.keys.EpicCard
+	case ModalQuitConfirm, ModalClaimConfirm:
+		return m.keys.Confirm
 	case ModalFieldSelect:
 		return m.keys.FieldSelect
 	case ModalFieldPicker:
@@ -971,8 +1076,7 @@ func (m Model) modalKeyMap() help.KeyMap {
 	case ModalUpdate:
 		return m.keys.Update
 	}
-	// Other modals (quit-confirm, claim-confirm, settings, …) carry their own
-	// internal footers; the L1 slot stays empty for them.
+	// Modals without a dedicated key map carry their own internal footers.
 	return nil
 }
 
@@ -982,6 +1086,9 @@ func (m Model) modalKeyMap() help.KeyMap {
 
 // Render produces the footer string from pre-computed FooterData.
 func (fd FooterData) Render() string {
+	if fd.Width <= 0 {
+		return ""
+	}
 	// Full-width banner: reserved for non-inline errors or explicit user-initiated
 	// confirmations. An inline status (StatusIsInline) is NOT rendered by the footer
 	// at all - it is owned by the floating notification bubble (toast_bubble.go), the
@@ -1162,10 +1269,9 @@ func (fd FooterData) Render() string {
 		}
 	}
 
-	// Bell badge (Phase 4): always rendered; the count appears only when > 0.
-	// Pinned (last to drop) alongside the leader/help hints. Built BEFORE the cascade so
-	// its width can be reserved — otherwise the toast consumes the whole right
-	// zone and the final ansi.Truncate clips the bell (bt-a3zi3.1).
+	// Bell badge (Phase 4): the count appears only when > 0. Its width is included
+	// in the right-side budget and the final fallback reserves it when it fits
+	// beside the leader/help affordances (bt-a3zi3.1).
 	bellText := activeGlyphs.Bell
 	if fd.BellCount > 0 {
 		bellText = fmt.Sprintf("%s%d", activeGlyphs.Bell, fd.BellCount)
@@ -1178,16 +1284,14 @@ func (fd FooterData) Render() string {
 	bellWidth := lipgloss.Width(bellSection)
 
 	// Degradation cascade (bt-2vshd drop order): lens placeholders -> daemon /
-	// degraded badges -> triad (total survives) -> hint labels -> lens filter
-	// words (scope survives) -> last resort scope · total · leader/help · !N. The
-	// engine shape is unchanged: reduce in order until the content fits; a final
-	// ansi truncate makes wrapping impossible. lensLvl and hintsCompact are the
-	// lens/right-zone density knobs the cascade advances. The triad's zero-count
-	// segments never render at any width (dark cockpit, bt-p8y2f — buildStats
-	// skips them unconditionally), so the cascade drops the triad whole.
+	// degraded badges -> triad (total survives) -> hint labels -> individual direct
+	// hints -> lens filter words (scope survives) -> shorter count -> last-resort
+	// scope · leader/help · bell when they fit. The triad's zero-count segments
+	// never render at any width (dark cockpit, bt-p8y2f — buildStats skips them
+	// unconditionally), so the cascade drops the triad whole.
 	lensLvl := lensFull
 	hintsCompact := false
-	pluginHints := renderPluginHints(fd.PluginHints)
+	directHints := combinedFooterHints(fd.Hints, fd.PluginHints)
 
 	// Left indent so the footer's leftmost content (the lens scope) sits just
 	// inside where the body's left border wall lands rather than flush under the
@@ -1200,10 +1304,10 @@ func (fd FooterData) Render() string {
 		if fd.PendingSeq != "" {
 			return ActiveTextStyles.Heading.Render(fd.PendingSeq)
 		}
-		return renderFooterHints(fd.Hints, fd.LeaderLabel, hintsCompact)
+		return renderFooterHints(directHints, fd.LeaderLabel, hintsCompact)
 	}
 	rightWidth := func() int {
-		w := lipgloss.Width(pluginHints) + lipgloss.Width(hints()) + bellWidth
+		w := lipgloss.Width(hints()) + bellWidth
 		if alertsSection != "" {
 			w += lipgloss.Width(alertsSection)
 		}
@@ -1218,7 +1322,6 @@ func (fd FooterData) Render() string {
 	reductions := []func(){
 		func() { lensLvl = lensNoPlace }, // 1. label placeholder (lb:-)
 		func() { dropTier(3) },           // 2. daemon / degraded badges
-		func() { pluginHints = "" },      // 2b. plugin action keys
 		func() { // 3. triad drops whole; total survives via countBadge. A
 			// detail/memories center override is the most protected content
 			// and yields only at the cascade's last resort.
@@ -1226,7 +1329,16 @@ func (fd FooterData) Render() string {
 				statsSection = ""
 			}
 		},
-		func() { hintsCompact = true },          // 4. direct-hint and static labels drop
+		func() { hintsCompact = true }, // 4. direct-hint and static labels drop
+	}
+	for range 4 {
+		reductions = append(reductions, func() {
+			if len(directHints) > 0 {
+				directHints = directHints[:len(directHints)-1]
+			}
+		})
+	}
+	reductions = append(reductions,
 		func() { lensLvl = lensStatusOnly },     // 5. lens filter words drop; status + scope remain
 		func() { countBadge = countBadgeShort }, // 6. "4921 issues" -> "4921"
 		func() { lensLvl = lensScopeOnly },      // 7. scope survives alone
@@ -1235,7 +1347,7 @@ func (fd FooterData) Render() string {
 				statsSection = ""
 			}
 		},
-	}
+	)
 	for _, reduce := range reductions {
 		if contentWidth() <= fd.Width {
 			break
@@ -1254,13 +1366,13 @@ func (fd FooterData) Render() string {
 	nonHint := leftWidth + countWidth +
 		lipgloss.Width(alertsSection) + bellWidth
 
-	// Right zone: static hints only. The Phase 4 embedded-toast override that
-	// used to borrow this zone for an active inline toast (replacing the key
-	// hints, then ansi.Truncate-ing anything wider than the remaining
-	// columns — the bt-8scek truncation root cause) has moved to a floating
-	// bubble overlay (bt-kuvzj, toast_bubble.go). The footer no longer
-	// renders notification content at all; it keeps only the bell.
-	rightZone := pluginHints + hintsSection
+	// Right zone: capped direct hints followed by static leader/help hints. The
+	// Phase 4 embedded-toast override that used to borrow this zone for an active
+	// inline toast (replacing the key hints, then ansi.Truncate-ing anything wider
+	// than the remaining columns — the bt-8scek truncation root cause) has moved
+	// to a floating bubble overlay (bt-kuvzj, toast_bubble.go). The footer no
+	// longer renders notification content at all; it keeps only the bell.
+	rightZone := hintsSection
 
 	// Split spare columns around the total so it is centered in the terminal,
 	// not just in the gap between the side zones. Clamp its position when either
@@ -1279,25 +1391,38 @@ func (fd FooterData) Render() string {
 	// lens (Zone 1) · stats + daemon chrome · spacer · total · spacer
 	// · direct/leader/help hints (Zone 3) · anomaly · bell.
 	var parts []string
+	var leftParts []string
 	addIf := func(s string) {
 		if s != "" {
 			parts = append(parts, s)
 		}
 	}
+	addLeft := func(s string) {
+		if s != "" {
+			leftParts = append(leftParts, s)
+			parts = append(parts, s)
+		}
+	}
 	// Leading indent (see footerLeftPad): always present so the left content
 	// clears the border wall even when the lens degrades to empty.
-	parts = append(parts, strings.Repeat(" ", footerLeftPad))
-	addIf(lensSection)
-	addIf(statsSection)
-	addIf(optional["phase2Section"].content)
-	addIf(optional["watcherSection"].content)
-	addIf(optional["workerSection"].content)
-	addIf(optional["instanceSection"].content)
-	addIf(optional["sessionSection"].content)
-	addIf(optional["updateSection"].content)
-	parts = append(parts, strings.Repeat(" ", beforeCount))
-	addIf(countBadge)
-	parts = append(parts, strings.Repeat(" ", remaining-beforeCount))
+	indent := strings.Repeat(" ", footerLeftPad)
+	leftParts = append(leftParts, indent)
+	parts = append(parts, indent)
+	addLeft(lensSection)
+	addLeft(statsSection)
+	addLeft(optional["phase2Section"].content)
+	addLeft(optional["watcherSection"].content)
+	addLeft(optional["workerSection"].content)
+	addLeft(optional["instanceSection"].content)
+	addLeft(optional["sessionSection"].content)
+	addLeft(optional["updateSection"].content)
+	beforeCountSpace := strings.Repeat(" ", beforeCount)
+	leftParts = append(leftParts, beforeCountSpace)
+	parts = append(parts, beforeCountSpace)
+	addLeft(countBadge)
+	afterCountSpace := strings.Repeat(" ", remaining-beforeCount)
+	leftParts = append(leftParts, afterCountSpace)
+	parts = append(parts, afterCountSpace)
 	addIf(rightZone)
 	addIf(alertsSection)
 	addIf(bellSection)
@@ -1308,7 +1433,33 @@ func (fd FooterData) Render() string {
 	// error) can still overrun. Hard-truncate ANSI-aware so the footer can never
 	// wrap to a second row and steal a content line.
 	if ansi.StringWidth(footer) > fd.Width {
-		footer = ansi.Truncate(footer, fd.Width, "")
+		leaderLabel := fd.LeaderLabel
+		if leaderLabel == "" {
+			leaderLabel = "SPC"
+		}
+		essentialHints := renderLeaderHelpHints(leaderLabel, true)
+		if fd.PendingSeq != "" {
+			essentialHints = ActiveTextStyles.Heading.Render(fd.PendingSeq)
+		}
+		reserved := essentialHints
+		if lipgloss.Width(reserved)+bellWidth <= fd.Width {
+			reserved += bellSection
+		}
+		reservedWidth := lipgloss.Width(reserved)
+		leftBudget := fd.Width - reservedWidth
+		if leftBudget < 0 {
+			leftBudget = 0
+		}
+		left := lipgloss.JoinHorizontal(lipgloss.Bottom, leftParts...)
+		if leftBudget == 0 {
+			left = ""
+		} else {
+			left = ansi.Truncate(left, leftBudget, "")
+		}
+		footer = left + reserved
+		if ansi.StringWidth(footer) > fd.Width {
+			footer = ansi.Truncate(footer, fd.Width, "")
+		}
 	}
 	return footer
 }
