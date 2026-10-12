@@ -872,11 +872,19 @@ func TestFlowMatrixEndpointInspectionIgnoresListFilter(t *testing.T) {
 		t.Fatal("page-down did not update live inspection view")
 	}
 	press(tea.KeyPressMsg{Code: tea.KeyHome})
-	wheelStart := ansi.Strip(m.View().Content)
+	wheelStartOffset := m.flowMatrix.inspectionVP.YOffset()
 	update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
-	wheelView := ansi.Strip(m.View().Content)
-	if wheelView == wheelStart {
-		t.Fatal("mouse wheel did not scroll live inspection view")
+	wheelDownOffset := m.flowMatrix.inspectionVP.YOffset()
+	if wheelDownOffset <= wheelStartOffset {
+		t.Fatalf("wheel down did not scroll inspection down: %d -> %d", wheelStartOffset, wheelDownOffset)
+	}
+	for i := 0; i < 100; i++ {
+		press(tea.KeyPressMsg{Code: tea.KeyPgDown})
+	}
+	bottomOffset := m.flowMatrix.inspectionVP.YOffset()
+	update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+	if got := m.flowMatrix.inspectionVP.YOffset(); got >= bottomOffset {
+		t.Fatalf("wheel up did not move upward from bottom: %d -> %d", bottomOffset, got)
 	}
 	update(tea.WindowSizeMsg{Width: 72, Height: 18})
 	update(resizeSettledMsg{gen: m.resizeGen})
@@ -921,6 +929,47 @@ func boundedFlowView(view string, width, height int) bool {
 		}
 	}
 	return true
+}
+
+func TestFlowMatrixWindowSizeBoundsEmptyAndPopulatedDrilldowns(t *testing.T) {
+	fixtures := []struct {
+		name   string
+		issues []model.Issue
+	}{
+		{
+			name: "populated",
+			issues: []model.Issue{
+				{ID: "bt-blocker", Title: "Blocker", Labels: []string{"api"}, Status: model.StatusOpen},
+				{ID: "bt-blocked", Title: "Blocked", Labels: []string{"web"}, Status: model.StatusOpen,
+					Dependencies: []*model.Dependency{{DependsOnID: "bt-blocker", Type: model.DepBlocks}}},
+			},
+		},
+		{
+			name: "empty",
+			issues: []model.Issue{
+				{ID: "bt-api", Title: "API", Labels: []string{"api"}, Status: model.StatusOpen},
+				{ID: "bt-web", Title: "Web", Labels: []string{"web"}, Status: model.StatusOpen},
+			},
+		},
+	}
+	for _, fixture := range fixtures {
+		t.Run(fixture.name, func(t *testing.T) {
+			m := NewModel(fixture.issues, nil, "", nil, nil)
+			next, _ := m.Update(tea.WindowSizeMsg{Width: 20, Height: 5})
+			m = next.(Model)
+			m.mode, m.focused = ViewFlowMatrix, focusFlowMatrix
+			m.refreshFlowMatrix()
+			next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			m = next.(Model)
+			view := ansi.Strip(m.flowMatrix.View())
+			if !boundedFlowView(view, 20, 4) {
+				t.Fatalf("Model.Update-sized drilldown exceeded 20x4 bounds:\n%s", view)
+			}
+			if fixture.name == "empty" && !strings.Contains(view, "No blocking") {
+				t.Fatalf("empty relationship drilldown state missing:\n%s", view)
+			}
+		})
+	}
 }
 
 // buildSharedLabelFlowFixture returns a bug-blocks-feature dependency pair
