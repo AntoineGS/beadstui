@@ -52,3 +52,23 @@ Round 1 verification:
 - `git diff --check` passed.
 
 `go.mod` remains an unrelated pre-existing change and is excluded from the fix commit. No ignored report artifacts were force-added in this round.
+
+## Review round 2 fix report
+
+Fix base: `817a83e46426d50f85e446cc6f2adb40e9f567ac`.
+
+- Corrected inspection wheel-up routing to scroll by -3 while wheel-down remains +3.
+- Extended the full `Model.Update` inspection regression to assert wheel-down increases the viewport offset and wheel-up decreases it from the bottom.
+- Added narrow populated and empty relationship bounds checks after `WindowSizeMsg` is delivered through `Model.Update`.
+
+Round 2 RED evidence: `go test ./pkg/ui -run 'TestFlowMatrix(EndpointInspectionIgnoresListFilter|WindowSizeBoundsEmptyAndPopulatedDrilldowns)' -count=1` failed before the fix because wheel-up at the bottom left offset unchanged (`230 -> 230`).
+
+Round 2 verification:
+
+- `go test ./pkg/ui -run 'TestFlowMatrix(EndpointInspectionIgnoresListFilter|WindowSizeBoundsEmptyAndPopulatedDrilldowns)' -count=1` passed.
+- `go test ./pkg/ui -run 'FlowMatrix|FilterPreservation' -count=1` passed.
+- `go build ./...` passed (silent success).
+- `go vet ./...` passed (silent success).
+- `git diff --check` passed.
+
+No `go.mod` changes were made; no ignored report artifacts were force-added.

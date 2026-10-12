@@ -2090,7 +2090,7 @@ func (m Model) handleMouseWheel(msg tea.MouseWheelMsg) (Model, tea.Cmd) {
 			}
 		case focusFlowMatrix:
 			if m.flowMatrix.Inspecting() {
-				m.flowMatrix.ScrollInspection(3)
+				m.flowMatrix.ScrollInspection(-3)
 			} else {
 				m.flowMatrix.MoveUp()
 			}
