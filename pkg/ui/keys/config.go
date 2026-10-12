@@ -356,12 +356,12 @@ func mapsOverlap(a, b string) bool {
 		return true
 	}
 	if a == "Global" {
-		_, modal := modalMaps[b]
-		return !modal
+		_, view := viewMaps[b]
+		return view
 	}
 	if b == "Global" {
-		_, modal := modalMaps[a]
-		return !modal
+		_, view := viewMaps[a]
+		return view
 	}
 	return false
 }
@@ -473,6 +473,12 @@ var modalMaps = map[string]struct{}{
 	"LongformEdit": {}, "PluginSelect": {}, "Help": {}, "Notifications": {},
 	"Alerts": {}, "LabelHealth": {}, "LabelDrilldown": {}, "LabelGraph": {},
 	"Cass": {}, "AgentPrompt": {}, "Tutorial": {}, "Update": {},
+}
+
+var viewMaps = map[string]struct{}{
+	"ListNormal": {}, "Tree": {}, "BoardNormal": {}, "Graph": {}, "Insights": {},
+	"HistoryNormal": {}, "HistoryFileTree": {}, "Actionable": {}, "FlowMatrix": {},
+	"Epics": {}, "LabelDashboard": {}, "Attention": {}, "MemoriesNormal": {},
 }
 
 var textInputMaps = map[string]struct{}{

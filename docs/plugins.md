@@ -51,6 +51,31 @@ overrides under the plugin's own `keys` map.
 Plugin action overrides are separate: keep them under each plugin's `keys` map,
 keyed by plugin action ID. They do not belong in the top-level `keys.bind` map.
 
+### Binding conflicts
+
+bt resolves built-in conflicts after applying valid `keys.bind` entries. A
+configured binding wins over conflicting built-in bindings in the same map;
+global and ordinary view maps also conflict with each other. Search sub-states
+and modals are separate contexts and only conflict with bindings in their own
+map. For example, `filter.open: o` takes `o` from conflicting view actions such
+as tree expansion or opening a history commit.
+
+If two configured actions claim the same key in overlapping maps, action IDs
+are considered in sorted order: the first keeps the key and the later action
+loses it and is reported as a config error. A configured sequence that is a
+prefix of other sequences removes those unreachable descendants. A direct key
+and a leader sequence using the same step remain distinct chords (`v` versus
+`SPC v`).
+
+When there are shadows or config errors, startup reports their counts, for
+example `keys: 3 shadowed, 1 config error - see ?`. The `?` overlay's
+`SHADOWED / ERRORS` group lists losing built-in bindings with the winning action
+ID, config errors, and (for the selected bead in the current view) plugin
+actions whose keys are already used by bt. Shadowed rows are struck through.
+Unshadowed plugin keys remain available, and the plugin action menu remains at
+`SPC x`. Plugin key overrides under each plugin's own `keys` map remain direct
+keys and are not reinterpreted as built-in action IDs.
+
 `name` must match `^[a-z][a-z0-9_]*$`. An entry with an invalid name or an empty
 command is ignored, and a duplicate name disables the later entry. `bt plugins`
 reports these errors.

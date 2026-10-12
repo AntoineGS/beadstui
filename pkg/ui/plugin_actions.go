@@ -123,6 +123,34 @@ func btBindsKeyIn(ks keys.AppKeys, leader, view, k string) bool {
 	return view == "list" && bindingsMatch(k, listPagingKeys)
 }
 
+func btBindingIDForKeyIn(ks keys.AppKeys, leader, view, k string) string {
+	if k == leader {
+		return "leader sequence"
+	}
+	viewMap := map[string]string{
+		"list": "ListNormal", "board": "BoardNormal", "tree": "Tree", "epics": "Epics",
+	}[view]
+	if viewMap == "" {
+		return ""
+	}
+	var id string
+	ks.Walk(func(ref keys.Ref, binding *key.Binding) {
+		if id != "" || ref.Map != "Global" && ref.Map != viewMap {
+			return
+		}
+		if bindingsMatch(k, *binding) {
+			id = ref.ID
+		}
+	})
+	if id != "" {
+		return id
+	}
+	if view == "list" && bindingsMatch(k, listPagingKeys) {
+		return "list paging"
+	}
+	return ""
+}
+
 // bindingsMatch is key.Matches for a key string. The g of a gg sequence
 // counts as bound: the sequence router takes it before plugin keys run.
 func bindingsMatch(k string, bs ...key.Binding) bool {

@@ -3,12 +3,14 @@ package ui
 import (
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
@@ -103,10 +105,51 @@ func TestActionToken_FilterOpen(t *testing.T) {
 
 func TestSetKeyConfigPromotesFilterOpen(t *testing.T) {
 	m := actionTestModel(t)
-	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{"filter.open": {"o"}}}, nil)
-	m = runKey(t, m, tea.KeyPressMsg{Code: 'o', Text: "o"})
+	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{"filter.open": {"y"}}}, nil)
+	if slices.Contains(m.keys.ListNormal.CopyID.Keys(), "y") {
+		t.Fatal("ListNormal.CopyID retained y after filter.open claimed it")
+	}
+	m = runKey(t, m, tea.KeyPressMsg{Code: 'y', Text: "y"})
 	if m.filter.currentFilter != "open" {
 		t.Errorf("currentFilter = %q, want open", m.filter.currentFilter)
+	}
+}
+
+func TestSetKeyConfigReportsShadowsAndErrors(t *testing.T) {
+	m := actionTestModel(t)
+	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{
+		"filter.open":    {"y"},
+		"unknown.action": {"x"},
+	}}, nil)
+	if m.statusMsg != "keys: 3 shadowed, 1 config error - see ?" {
+		t.Fatalf("status = %q, want shadow and config-error counts", m.statusMsg)
+	}
+}
+
+func TestSetKeyConfigWithoutProblemsDoesNotWarn(t *testing.T) {
+	m := actionTestModel(t)
+	m.SetKeyConfig(keys.Config{}, nil)
+	if strings.HasPrefix(m.statusMsg, "keys:") {
+		t.Fatalf("status = %q, want no key-config warning", m.statusMsg)
+	}
+}
+
+func TestHelpRendersConfigShadowAndError(t *testing.T) {
+	m := actionTestModel(t)
+	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{
+		"filter.open":    {"y"},
+		"unknown.action": {"x"},
+	}}, nil)
+	m, _ = sendMsg(m, tea.KeyPressMsg{Code: '?', Text: "?"})
+	rendered := m.renderHelpOverlay()
+	plain := ansi.Strip(rendered)
+	for _, want := range []string{"SHADOWED / ERRORS", "bead.copy_id", "filter.open", "unknown.action"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("help overlay missing %q:\n%s", want, plain)
+		}
+	}
+	if !strings.Contains(rendered, ";9m") {
+		t.Errorf("help overlay did not render the shadowed binding with strike-through:\n%q", rendered)
 	}
 }
 
@@ -116,7 +159,7 @@ func TestSetKeyConfigCountsJoinedLoadErrorsIndividually(t *testing.T) {
 	if len(m.keyConfigErrs) != 2 {
 		t.Errorf("retained %d errors, want 2: %v", len(m.keyConfigErrs), m.keyConfigErrs)
 	}
-	if m.statusMsg != "keys: 2 config error(s) - see ?" {
+	if m.statusMsg != "keys: 0 shadowed, 2 config errors - see ?" {
 		t.Errorf("status = %q, want 2 config errors", m.statusMsg)
 	}
 }

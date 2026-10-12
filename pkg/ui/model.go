@@ -847,6 +847,7 @@ type Model struct {
 	whichKeyDelay time.Duration // debounce before the which-key panel; 0 shows it at once
 	whichKeyOff   bool          // never show the which-key panel
 	swallowKey    bool          // the router consumed this key; Update skips forwarding it to the list
+	keyShadows    []keys.Shadow // resolved built-in binding conflicts, shown in the help surface
 	keyConfigErrs []error       // invalid user key config entries, retained for the help surface
 
 	// Actionable view

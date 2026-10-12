@@ -223,6 +223,7 @@ func (m *Model) SetKeyConfig(cfg keys.Config, loadErr error) {
 	if loadErr != nil {
 		errs = append(errs, splitKeyConfigErrors(loadErr)...)
 	}
+	m.keyShadows = append([]keys.Shadow(nil), shadows...)
 	m.keyConfigErrs = errs
 	m.leaderKey = settings.Leader
 	m.whichKeyDelay = settings.WhichKeyDelay
@@ -237,8 +238,12 @@ func (m *Model) SetKeyConfig(cfg keys.Config, loadErr error) {
 
 	m.syncBubblesKeyBindings(cfg, applyErrs, shadows)
 
-	if len(errs) > 0 {
-		m.setStatus(fmt.Sprintf("keys: %d config error(s) - see ?", len(errs)))
+	if len(shadows)+len(errs) > 0 {
+		errorLabel := "errors"
+		if len(errs) == 1 {
+			errorLabel = "error"
+		}
+		m.setStatus(fmt.Sprintf("keys: %d shadowed, %d config %s - see ?", len(shadows), len(errs), errorLabel))
 	}
 }
 

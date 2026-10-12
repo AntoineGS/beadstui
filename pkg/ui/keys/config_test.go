@@ -416,49 +416,118 @@ func TestApplyShadowsConflictsWithinOneMapAndPreservesOtherViews(t *testing.T) {
 	}
 }
 
-func TestApplyShadowsGlobalKeysAcrossViewAndSearchSiblingMaps(t *testing.T) {
+func TestApplyGlobalKeyShadowsViewButNotSearchSubstate(t *testing.T) {
 	a := NewAppKeys()
 	_, shadows, errs := a.Apply(Config{Bind: map[string]BindValue{"app.search": {"enter"}}})
 	if len(errs) != 0 {
 		t.Fatalf("Apply errors = %v, want none", errs)
 	}
-	for _, want := range []Shadow{
-		{ID: "list.open", Key: "enter", By: "app.search"},
-		{ID: "list_search.apply", Key: "enter", By: "app.search"},
-	} {
-		if !hasShadow(shadows, want) {
-			t.Errorf("shadows = %#v, missing %#v", shadows, want)
-		}
+	if !hasShadow(shadows, Shadow{ID: "list.open", Key: "enter", By: "app.search"}) {
+		t.Errorf("shadows = %#v, missing list.open's view-map enter binding", shadows)
 	}
 	if containsKey(a.ListNormal.Enter.Keys(), "enter") {
 		t.Errorf("view binding retained Global conflict: %v", a.ListNormal.Enter.Keys())
 	}
-	if containsKey(a.ListSearch.Apply.Keys(), "enter") {
-		t.Errorf("search sibling retained Global conflict: %v", a.ListSearch.Apply.Keys())
+	for _, id := range []string{"list_search.apply", "board_search.finish", "history_search.confirm", "memories_search.confirm"} {
+		for _, shadow := range shadows {
+			if shadow.ID == id {
+				t.Errorf("Global key incorrectly shadowed sub-state binding: %+v", shadow)
+			}
+		}
+		bindings := a.Lookup(id)
+		if len(bindings) == 0 || !containsKey(bindings[0].Keys(), "enter") {
+			t.Errorf("exclusive search sub-state %s lost enter: %v", id, bindings)
+		}
 	}
 	if !containsKey(a.ListNormal.Enter.Keys(), Token("list.open")) || !containsKey(a.ListSearch.Apply.Keys(), Token("list_search.apply")) {
 		t.Errorf("conflict resolution removed action tokens: normal=%v search=%v", a.ListNormal.Enter.Keys(), a.ListSearch.Apply.Keys())
 	}
 }
 
+func TestApplyFilterOpenNDoesNotShadowBoardSearchNextMatch(t *testing.T) {
+	a := NewAppKeys()
+	_, shadows, errs := a.Apply(Config{Bind: map[string]BindValue{"filter.open": {"n"}}})
+	if len(errs) != 0 {
+		t.Fatalf("Apply errors = %v, want none", errs)
+	}
+	if !containsKey(a.BoardSearch.NextMatch.Keys(), "n") {
+		t.Fatalf("BoardSearch.NextMatch lost n to a Global binding: %v", a.BoardSearch.NextMatch.Keys())
+	}
+	for _, shadow := range shadows {
+		if shadow.ID == "board_search.next_match" {
+			t.Fatalf("Global binding shadowed BoardSearch.NextMatch: %+v", shadow)
+		}
+	}
+}
+
+func TestMapOverlapKinds(t *testing.T) {
+	for _, view := range []string{
+		"ListNormal", "Tree", "BoardNormal", "Graph", "Insights", "HistoryNormal", "HistoryFileTree",
+		"Actionable", "FlowMatrix", "Epics", "LabelDashboard", "Attention", "MemoriesNormal",
+	} {
+		if !mapsOverlap("Global", view) || !mapsOverlap(view, "Global") {
+			t.Errorf("Global and view map %s should overlap", view)
+		}
+	}
+	for name := range textInputMaps {
+		if mapsOverlap("Global", name) {
+			t.Errorf("Global and text sub-state map %s should not overlap", name)
+		}
+		if !mapsOverlap(name, name) {
+			t.Errorf("sub-state map %s should overlap itself", name)
+		}
+	}
+	for name := range modalMaps {
+		if mapsOverlap("Global", name) {
+			t.Errorf("Global and modal map %s should not overlap", name)
+		}
+		if !mapsOverlap(name, name) {
+			t.Errorf("modal map %s should overlap itself", name)
+		}
+	}
+	if mapsOverlap("ListNormal", "Tree") || mapsOverlap("ListSearch", "BoardSearch") {
+		t.Fatal("exclusive view or sub-state siblings unexpectedly overlap")
+	}
+}
+
 func TestApplyConflictingConfiguredKeysChooseSortedIDWinner(t *testing.T) {
 	a := NewAppKeys()
 	_, shadows, errs := a.Apply(Config{Bind: map[string]BindValue{
-		"list.detail_page_up":   {"x"},
-		"list.detail_page_down": {"x"},
+		"list.detail_page_up":   {"o"},
+		"list.detail_page_down": {"o"},
 	}})
 	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "list.detail_page_up") {
 		t.Fatalf("Apply errors = %v, want one error for sorted loser list.detail_page_up", errs)
 	}
-	want := Shadow{ID: "list.detail_page_up", Key: "x", By: "list.detail_page_down"}
+	want := Shadow{ID: "list.detail_page_up", Key: "o", By: "list.detail_page_down"}
 	if !hasShadow(shadows, want) {
 		t.Errorf("shadows = %#v, want %#v", shadows, want)
 	}
-	if got := a.ListNormal.DetailPageDown.Keys(); !reflect.DeepEqual(got, []string{"x", Token("list.detail_page_down")}) {
+	if got := a.ListNormal.DetailPageDown.Keys(); !reflect.DeepEqual(got, []string{"o", Token("list.detail_page_down")}) {
 		t.Errorf("sorted winner keys = %v", got)
 	}
 	if got := a.ListNormal.DetailPageUp.Keys(); !reflect.DeepEqual(got, []string{Token("list.detail_page_up")}) {
 		t.Errorf("sorted loser keys = %v, want token only", got)
+	}
+}
+
+func TestApplyGlobalConfiguredKeyShadowsCopyID(t *testing.T) {
+	a := NewAppKeys()
+	_, shadows, errs := a.Apply(Config{Bind: map[string]BindValue{"filter.open": {"y"}}})
+	if len(errs) != 0 {
+		t.Fatalf("Apply errors = %v, want none", errs)
+	}
+	if containsKey(a.ListNormal.CopyID.Keys(), "y") {
+		t.Fatalf("ListNormal.CopyID retained y after filter.open claimed it: %v", a.ListNormal.CopyID.Keys())
+	}
+	if !containsKey(a.ListNormal.CopyID.Keys(), Token("bead.copy_id")) {
+		t.Fatalf("ListNormal.CopyID lost its action token: %v", a.ListNormal.CopyID.Keys())
+	}
+	if got := a.ListNormal.CopyID.Help().Key; got != "" {
+		t.Errorf("ListNormal.CopyID help key = %q after y was removed, want empty", got)
+	}
+	if !hasShadow(shadows, Shadow{ID: "bead.copy_id", Key: "y", By: "filter.open"}) {
+		t.Errorf("shadows = %#v, want bead.copy_id y shadowed by filter.open", shadows)
 	}
 }
 
@@ -524,6 +593,51 @@ func TestApplySequencePrefixShadowsDefaultGroupEntries(t *testing.T) {
 	}
 	if got := a.Global.FilterOpen.Keys(); !reflect.DeepEqual(got, []string{"<leader>f", Token("filter.open")}) {
 		t.Errorf("configured prefix binding = %v", got)
+	}
+}
+
+func TestApplyConfiguredLeaderPrefixShadowsAllDescendants(t *testing.T) {
+	a := NewAppKeys()
+	_, shadows, errs := a.Apply(Config{Bind: map[string]BindValue{"view.board": {"<leader>v"}}})
+	if len(errs) != 0 {
+		t.Fatalf("Apply errors = %v, want none", errs)
+	}
+	for _, id := range []string{
+		"view.list", "view.graph", "view.tree", "view.epics", "view.insights", "view.history",
+		"view.actionable", "view.flow", "view.labels", "view.attention", "view.memories",
+	} {
+		bindings := a.Lookup(id)
+		if len(bindings) == 0 {
+			t.Fatalf("setup: no binding for %s", id)
+		}
+		for _, binding := range bindings {
+			for _, raw := range binding.Keys() {
+				prefix, steps, ok := ParseSeq(raw)
+				if ok && prefix == LeaderPrefix && len(steps) > 0 && steps[0] == "v" {
+					t.Errorf("%s retained dead descendant %q", id, raw)
+				}
+			}
+		}
+	}
+	for _, want := range []Shadow{
+		{ID: "view.list", Key: "<leader>vl", By: "view.board"},
+		{ID: "view.graph", Key: "<leader>vg", By: "view.board"},
+		{ID: "view.tree", Key: "<leader>vt", By: "view.board"},
+		{ID: "view.insights", Key: "<leader>vi", By: "view.board"},
+		{ID: "view.history", Key: "<leader>vh", By: "view.board"},
+		{ID: "view.actionable", Key: "<leader>va", By: "view.board"},
+		{ID: "view.flow", Key: "<leader>vf", By: "view.board"},
+		{ID: "view.labels", Key: "<leader>vL", By: "view.board"},
+		{ID: "view.attention", Key: "<leader>vA", By: "view.board"},
+		{ID: "view.epics", Key: "<leader>ve", By: "view.board"},
+		{ID: "view.memories", Key: "<leader>vm", By: "view.board"},
+	} {
+		if !hasShadow(shadows, want) {
+			t.Errorf("shadows = %#v, missing %#v", shadows, want)
+		}
+	}
+	if got := a.Global.Board.Keys(); !reflect.DeepEqual(got, []string{"<leader>v", Token("view.board")}) {
+		t.Errorf("configured prefix = %v", got)
 	}
 }
 

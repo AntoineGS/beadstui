@@ -13,6 +13,7 @@ import (
 
 	"github.com/seanmartinsmith/beadstui/pkg/model"
 	"github.com/seanmartinsmith/beadstui/pkg/plugin"
+	"github.com/seanmartinsmith/beadstui/pkg/ui/keys"
 )
 
 type fakeInvoke struct {
@@ -231,6 +232,86 @@ func TestPluginActionKeysInFooterAndHelp(t *testing.T) {
 	m, _ = sendMsg(m, keyRune(':'))
 	if fd := m.footerData(); len(fd.PluginHints) != 0 {
 		t.Fatalf("footer shows plugin keys under a modal: %+v", fd.PluginHints)
+	}
+}
+
+func TestPluginShadowAppearsInHelpWhileFreeKeyAndMenuWork(t *testing.T) {
+	blocked := plugin.Action{Plugin: "example", ID: "blocked", Label: "Blocked action", Key: "y"}
+	free := plugin.Action{Plugin: "example", ID: "free", Label: "Free action", Key: "D"}
+	fake := &fakePluginActions{actions: []plugin.Action{blocked, free}}
+	m := newPluginActionModel(t, fake)
+	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{"filter.open": {"y"}}}, nil)
+
+	m, _ = sendMsg(m, keyRune('?'))
+	rendered := m.renderHelpOverlay()
+	plain := ansi.Strip(rendered)
+	for _, want := range []string{"SHADOWED / ERRORS", "Blocked action", "filter.open"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("help overlay missing plugin shadow %q:\n%s", want, plain)
+		}
+	}
+	if !strings.Contains(rendered, ";9m") {
+		t.Errorf("plugin shadow was not struck through:\n%q", rendered)
+	}
+
+	m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	if m.activeModal != ModalNone {
+		t.Fatalf("Esc did not close help: modal=%v", m.activeModal)
+	}
+	_, cmd := sendMsg(m, keyRune('D'))
+	_ = actionResults(cmd)
+	if len(fake.calls) != 1 || fake.calls[0].action.ID != "free" {
+		t.Fatalf("free plugin key calls = %+v, want the D action", fake.calls)
+	}
+
+	menu := newPluginActionModel(t, fake)
+	menu.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{"filter.open": {"y"}}}, nil)
+	menu = runKeys(t, menu, keySpace, keyRune('x'))
+	if menu.activeModal != ModalPluginPrompt || menu.pluginPrompt == nil || menu.pluginPrompt.kind != pluginPromptMenu {
+		t.Fatalf("SPC x did not open plugin menu: modal=%v prompt=%+v", menu.activeModal, menu.pluginPrompt)
+	}
+}
+
+func TestHelpFromModalDoesNotReportViewPluginShadows(t *testing.T) {
+	fake := &fakePluginActions{actions: []plugin.Action{{Plugin: "example", ID: "blocked", Label: "Blocked action", Key: "y"}}}
+	m := newPluginActionModel(t, fake)
+	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{"filter.open": {"y"}}}, nil)
+	m.openModal(ModalBQLQuery)
+	m.focused = focusBQLQuery
+	m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyF1})
+	if m.activeModal != ModalHelp || m.helpOriginModal != ModalBQLQuery {
+		t.Fatalf("F1 help origin = modal %v origin %v, want BQL", m.activeModal, m.helpOriginModal)
+	}
+	plain := ansi.Strip(m.renderHelpOverlay())
+	if strings.Contains(plain, "Blocked action") || strings.Contains(plain, "LIST PLUGINS") {
+		t.Fatalf("help from BQL reported list plugin actions:\n%s", plain)
+	}
+}
+
+func TestPluginShadowDiagnosticsFollowSelectedBead(t *testing.T) {
+	blocked := plugin.Action{Plugin: "first", ID: "blocked", Label: "First blocked", Key: "y"}
+	free := plugin.Action{Plugin: "second", ID: "free", Label: "Second free", Key: "D"}
+	m := newSizedModel(t, pluginTestIssues(), 120, 40)
+	m.pluginActions = perBeadActions{"proj-1": {blocked}, "proj-2": {free}}
+	m.SetKeyConfig(keys.Config{Bind: map[string]keys.BindValue{"filter.open": {"y"}}}, nil)
+	if selectedID(m) != "proj-1" {
+		t.Fatalf("setup selected = %q, want proj-1", selectedID(m))
+	}
+
+	m, _ = sendMsg(m, keyRune('?'))
+	firstHelp := ansi.Strip(m.renderHelpOverlay())
+	if !strings.Contains(firstHelp, "First blocked") || strings.Contains(firstHelp, "Second free") {
+		t.Fatalf("help reported plugin actions for the wrong bead:\n%s", firstHelp)
+	}
+	m, _ = sendMsg(m, tea.KeyPressMsg{Code: tea.KeyEsc})
+	m, _ = sendMsg(m, keyRune('j'))
+	if selectedID(m) != "proj-2" {
+		t.Fatalf("after j selected = %q, want proj-2", selectedID(m))
+	}
+	m, _ = sendMsg(m, keyRune('?'))
+	secondHelp := ansi.Strip(m.renderHelpOverlay())
+	if strings.Contains(secondHelp, "First blocked") || !strings.Contains(secondHelp, "Second free") {
+		t.Fatalf("help retained plugin actions from the previous bead:\n%s", secondHelp)
 	}
 }
 
