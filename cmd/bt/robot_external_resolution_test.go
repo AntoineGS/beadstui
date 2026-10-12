@@ -61,6 +61,37 @@ func TestAnalysisIssues_ResolvesAgainstLoadedCorpus(t *testing.T) {
 	}
 }
 
+func TestExportTriageRetainsClosedHiddenExternalGate(t *testing.T) {
+	allIssues := buildCrossProjectIssues()
+	allIssues[1].SourceRepo = "hidden-repo"
+	allIssues[1].Status = model.StatusClosed
+	selected := []model.Issue{allIssues[0]}
+	_, triage := buildExportAnalysis(selected, allIssues, time.Date(2026, 4, 20, 10, 0, 0, 0, time.UTC))
+	if triage.QuickRef.ActionableCount != 1 {
+		t.Fatalf("export actionable count = %d, want 1 with the closed hidden external prerequisite", triage.QuickRef.ActionableCount)
+	}
+}
+
+func TestExportWatchReplacementRebuildsFullReadiness(t *testing.T) {
+	allIssues := buildCrossProjectIssues()
+	allIssues[1].SourceRepo = "hidden-repo"
+	selected := []model.Issue{allIssues[0]}
+	now := time.Date(2026, 4, 20, 10, 0, 0, 0, time.UTC)
+
+	_, before := buildExportAnalysis(selected, allIssues, now)
+	if before.QuickRef.ActionableCount != 0 {
+		t.Fatalf("open hidden external gate produced %d actionable candidates, want 0", before.QuickRef.ActionableCount)
+	}
+
+	// The watch callback supplies each freshly loaded corpus to the same export
+	// analysis builder; closing a hidden prerequisite replaces the old authority.
+	allIssues[1].Status = model.StatusClosed
+	_, after := buildExportAnalysis(selected, allIssues, now)
+	if after.QuickRef.ActionableCount != 1 {
+		t.Fatalf("replacement closed gate produced %d actionable candidates, want 1", after.QuickRef.ActionableCount)
+	}
+}
+
 func TestClaimableRecommendationsExcludeNonClaimableIssues(t *testing.T) {
 	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
 	deferUntil := now.Add(time.Hour)

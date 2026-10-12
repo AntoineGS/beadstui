@@ -363,13 +363,49 @@ if !reflect.DeepEqual(got, want) { t.Fatalf("suggestions differ:\ngot %#v\nwant 
 
 ## Integration verification and delivery
 
-- [ ] Independently review each task for spec compliance and code quality before
+- [x] Independently review each task for spec compliance and code quality before
   starting the next one. Fix and re-review important findings through subagents.
-- [ ] After the six tasks, run `go test ./...`, `go build ./...`, `go vet ./...`,
+- [x] After the six tasks, run `go test ./...`, `go build ./...`, `go vet ./...`,
   and focused race tests covering the introduced concurrent paths.
-- [ ] Run whole-branch review against `622f3637`; include task reports and any
-  baseline failures. Fix confirmed integration defects through a subagent.
-- [ ] Update plan completion boxes, record verification evidence in bt-k20,
-  close completed beads before directed commits, and sync beads from the primary
-  checkout. Keep the feature worktree/branch available for user-directed merge;
-  do not push code or delete worktrees/scratch without authorization.
+- [x] Run the initial whole-branch review against `622f3637`; include task
+  reports and baseline notes. The review found three integration defects, fixed
+  in this wave; controller re-review is still pending.
+- [ ] Record final review evidence in bt-k20.8, close it before the directed
+  integration commit, and sync beads from the primary checkout. Keep the feature
+  worktree/branch available for user-directed merge; do not push code or delete
+  worktrees/scratch without authorization.
+
+### Delivered task commits and corrected benchmark evidence
+
+- Task 1 (`bt-k20.2`): `4d48d1a0`, `1a079b44`, `1ee90f34`.
+- Task 2 (`bt-k20.3`): `2e886f71`, `817a83e4`, `61c6a129`.
+- Task 3 (`bt-k20.4`): `d9444fc6`, `3191b77d`.
+- Task 4 (`bt-k20.5`): `0b9da418`.
+- Task 5 (`bt-k20.6`): `72dee66c`, `51d238d5`.
+- Task 6 (`bt-k20.7`): `9b39a679`, `b8ad6dec`.
+- Corrected paired dense500/K20 median: literal baseline 69.19 ms / 100.0 MB /
+  588086 allocations; bounded selection 7.51 ms / 0.938 MB / 6199 allocations.
+  Sparse500/K20: literal baseline 6.83 ms / 6.59 MB / 13646 allocations;
+  bounded selection 3.27 ms / 0.544 MB / 4922 allocations.
+
+### Final integration-fix wave (base `b8ad6dec`)
+
+- `FileChangedMsg` now resolves the reloaded corpus and rebuilds readiness,
+  evaluation time, and analyzer together. Added add-blocker and close-blocker
+  reload regressions.
+- Export/pages/watch now resolve full loaded source readiness before candidate
+  membership and closed-row filtering, with the same captured clock for analyzer
+  and triage. Added hidden closed/external alias and replacement-corpus tests.
+- Transitive what-if now walks bounded readiness impact frontiers intersected
+  with selected candidates and counts only new ReadyAfter transitions. Added
+  hidden-parent inheritance/cascade, independent outstanding gate, and already-
+  ready candidate coverage.
+- Initial whole-branch review findings are implemented; final controller
+  re-review is pending and is not claimed as passed.
+- Verification: `go test ./...`, `go build ./...`, and `go vet ./...` passed.
+  Focused race tests for changed UI/readiness/analysis/export paths passed. A
+  broader `go test -race ./pkg/ui ./pkg/model ./pkg/analysis ./cmd/bt` run had
+  one instrumentation-sensitive failure: `TestViewSwitchingPerformance`
+  measured 2.378 s for 600 switches against its 2 s limit; other packages in
+  that run passed. Details and exact focused commands are in
+  `.superpowers/sdd/2026-10-11-selected-upstream-improvements/final-fix-report.md`.
