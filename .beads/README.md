@@ -4,19 +4,50 @@ This fork uses **Beads** for independent issue tracking. Issues are stored in
 the `beadstui_antoinegs` Dolt database on the local shared server, with the
 `bt-` issue prefix and a project identity separate from upstream.
 
-`dolt.local-only: true` disables remote synchronization and prevents adopting
-the upstream code repository as a Dolt remote. The upstream private Beads
-repository is not used, and upstream issue history has not been imported.
+The Dolt `origin` remote explicitly targets
+`git+ssh://git@github.com/AntoineGS/beadstui.git`. Both `sync.remote` (clone
+recovery) and `federation.remote` (configuration validation and reconciliation)
+declare that same fork-owned URL in `.beads/config.yaml`.
+The upstream private Beads repository is not used, and upstream issue history
+has not been imported. Git's code remotes are separate from Dolt's remotes;
+do not adopt Git `origin`, which may still point upstream.
 
-The database is local runtime state, not part of git. Cloning this fork does
-not restore its issues. Use a Dolt backup or explicitly configure a fork-owned
-Dolt remote before relying on cross-machine persistence. `bd sync` is a safe
-no-op while local-only mode is enabled.
+### Synchronization and recovery
 
-Beads 1.3.1's `bd config validate` reports `federation.remote: required for
-Dolt sync` even with local-only mode enabled. That validator does not check
-`dolt.local-only`; use `bd doctor --server` to check database health and
-`bd sync --json` to confirm the `disabled` sync status instead.
+With SSH access to the fork, run:
+
+```bash
+# Pull and push the issue database, without adopting a Git remote
+bd sync --no-adopt
+
+# Verify the configured target and database health
+bd dolt remote list
+bd config validate
+bd doctor --server
+```
+
+Dolt stores its data separately from code branches in the fork repository.
+`bd sync` does not push code commits, and code commits alone do not back up
+the database. Issue changes are committed locally by Beads; run `bd sync`
+after changes to publish them.
+
+After cloning the fork on another machine, install Beads and Dolt, ensure the
+configured local shared Dolt server is running, then recover the issues:
+
+```bash
+bd bootstrap --dry-run
+bd bootstrap --yes
+bd sync --no-adopt
+```
+
+Bootstrap uses the explicit `sync.remote` rather than the upstream code remote.
+Use it for a fresh clone without an existing database; for an already populated
+shared-server database, use `bd sync --no-adopt` instead. Review the dry-run plan
+before recovery, and do not use `bd init --force`.
+
+If sync refuses to auto-commit pending internal configuration changes, inspect
+them with `bd sql "SELECT * FROM dolt_status"`. Once reviewed, explicitly commit
+them with `bd dolt commit` before retrying sync; do not discard them or force-push.
 
 ## What is Beads?
 
@@ -42,14 +73,14 @@ bd show <issue-id>
 bd update <issue-id> --status in_progress
 bd close <issue-id> --reason="Summary: ..."
 
-# Safe no-op in this fork's local-only mode
-bd sync
+# Synchronize only with the explicitly configured fork remote
+bd sync --no-adopt
 ```
 
 ### Working with Issues
 
 Issues in Beads are:
-- **Dolt-native**: Stored in the local Dolt database, with versioned history
+- **Dolt-native**: Stored in the local Dolt database, with remotely synchronized history
 - **AI-friendly**: CLI-first design works perfectly with AI coding agents
 - **Branch-aware**: Issues can follow your branch workflow
 - **Independent**: Fork issues do not modify upstream issue state
@@ -68,7 +99,7 @@ Issues in Beads are:
 
 🔧 **Git Integration**
 - Dolt commit history for issue changes
-- Optional Dolt remotes for cross-machine synchronization
+- Fork-owned Dolt remote for cross-machine synchronization
 - Code commits alone do not back up the issue database
 
 ## Get Started with Beads
